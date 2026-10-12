@@ -56,7 +56,7 @@ import { join } from "node:path";
 export const VOICE_MIME = "audio/ogg;codecs=opus";
 
 /** Teto de segurança: nota de voz é curta, e acima disto é outra coisa. */
-const MAX_BYTES = 16 * 1024 * 1024;
+export const MAX_VOICE_BYTES = 16 * 1024 * 1024;
 
 /**
  * Precisa converter? Só `webm` com opus — o resto ou já serve, ou não é nosso
@@ -104,7 +104,7 @@ export async function transcodificarNotaDeVoz(
   if (!precisaTranscodificar(input.mime)) {
     return { buffer: input.buffer, mime: input.mime, convertido: false };
   }
-  if (input.buffer.length > MAX_BYTES) {
+  if (input.buffer.length > MAX_VOICE_BYTES) {
     return { buffer: input.buffer, mime: input.mime, convertido: false };
   }
 
