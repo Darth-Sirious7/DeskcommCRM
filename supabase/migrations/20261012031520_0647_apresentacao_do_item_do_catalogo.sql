@@ -109,6 +109,8 @@ revoke all on public.catalog_product_presentations from public, anon;
 grant select, insert, update, delete on public.catalog_product_presentations to authenticated;
 grant all on public.catalog_product_presentations to service_role;
 
+do $f$ begin perform public.fn_aplicar_travas_de_suporte(); end $f$;
+
 drop trigger if exists trg_catalog_product_presentations_updated_at
   on public.catalog_product_presentations;
 create trigger trg_catalog_product_presentations_updated_at
