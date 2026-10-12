@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { MAXIMO_DE_FOTOS } from "@/lib/catalogo/fotos";
-import { MAX_VOICE_BYTES, VOICE_MIME } from "@/lib/messaging/media/voice-transcode";
+import { MAX_VOICE_BYTES, VOICE_MIME } from "@/lib/messaging/media/voice-constants";
 
 export const BUCKET_DA_APRESENTACAO = "catalog-presentation-media";
 export const TAMANHO_MAXIMO_DO_AUDIO = MAX_VOICE_BYTES;

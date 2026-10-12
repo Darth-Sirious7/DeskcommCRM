@@ -53687,14 +53687,14 @@ drop policy if exists catalog_product_presentations_write
 create policy catalog_product_presentations_write
   on public.catalog_product_presentations
   using (
-    public.fn_is_platform_admin()
+    public.fn_is_platform_admin_full()
     or (
       organization_id in (select public.fn_user_org_ids())
       and public.fn_role_at_least(organization_id, 'manager')
     )
   )
   with check (
-    public.fn_is_platform_admin()
+    public.fn_is_platform_admin_full()
     or (
       organization_id in (select public.fn_user_org_ids())
       and public.fn_role_at_least(organization_id, 'manager')
