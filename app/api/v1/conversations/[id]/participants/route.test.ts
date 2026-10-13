@@ -118,27 +118,33 @@ function clienteFake() {
   return { from: builder } as unknown as SupabaseClient;
 }
 
-function req(url: string, metodo: string, body: unknown) {
-  return new NextRequest(`http://localhost${url}`, {
+function req(url: string, metodo: string, body?: unknown) {
+  const init: RequestInit = {
     method: metodo,
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  };
+  // GET/HEAD não pode levar corpo — o NextRequest rejeita antes da rota rodar.
+  if (metodo !== "GET" && metodo !== "HEAD") init.body = JSON.stringify(body ?? {});
+  return new NextRequest(`http://localhost${url}`, init);
 }
 
 const contexto = (id = CONV_A) => ({ params: Promise.resolve({ id }) });
 
-/** A autorização: `agent` sempre OK (org A), e `manager` conforme o caso. */
-function autoriza(gestorOk: boolean) {
+/**
+ * A autorização: `agent` sempre OK (org A), e `manager` conforme o caso.
+ * `chamador` é quem está logado — é ele, e não o dono da conversa, que decide
+ * se o caminho "dono OU gestor" passa.
+ */
+function autoriza(gestorOk: boolean, chamador = DONO) {
   vi.mocked(requireRole).mockImplementation(async (role: string) => {
     if (role === "manager") {
       return gestorOk
-        ? ({ ok: true, user: { id: DONO, idioma: "pt-BR" }, org: { orgId: ORG_A, role: "manager" } } as never)
+        ? ({ ok: true, user: { id: chamador, idioma: "pt-BR" }, org: { orgId: ORG_A, role: "manager" } } as never)
         : ({ ok: false, response: fail("forbidden_role", "negado", 403) } as never);
     }
     return {
       ok: true,
-      user: { id: DONO, idioma: "pt-BR" },
+      user: { id: chamador, idioma: "pt-BR" },
       org: { orgId: ORG_A, role: "agent" },
     } as never;
   });
@@ -182,7 +188,7 @@ describe("POST /api/v1/conversations/[id]/participants — convidar", () => {
   });
 
   it("um agent que NÃO é o dono e NÃO é gestor recebe 403 e nada é gravado", async () => {
-    autoriza(false);
+    autoriza(false, COLEGA);
     const resposta = await POST(
       req(`/api/v1/conversations/${CONV_A}/participants`, "POST", { user_id: COLEGA }),
       contexto(),
