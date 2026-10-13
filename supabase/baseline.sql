@@ -51968,6 +51968,69 @@ begin
 end;
 $fn$;
 
+-- ---- participantes do atendimento conjunto (migration 0655, issue #2542) ----
+-- Conteúdo IDÊNTICO ao da migration 0655 (quem aplica a cadeia de migrations
+-- e quem aplica SÓ o baseline têm de terminar no mesmo schema). Nasce ANTES da
+-- VARREDURA anon por vizinhança, embora não crie função.
+--
+-- A tabela, a RLS de leitura (organização + papel + a PRÓPRIA linha) e — a
+-- linha que faz o convidado VER — o ramo de participante no `conversations_select`
+-- (o `fn_can_view_conversation` continua a régua; aqui só se ACRESCENTA a porta).
+-- `messages` herda o escopo por `exists` na própria policy. O DONO único
+-- (`assigned_to_user_id`) não é tocado por nada disto: entrar não é assumir.
+create table if not exists public.conversation_participants (
+  id               uuid primary key default gen_random_uuid(),
+  organization_id  uuid not null references public.organizations(id) on delete cascade,
+  conversation_id  uuid not null references public.conversations(id) on delete cascade,
+  user_id          uuid not null references auth.users(id) on delete cascade,
+  invited_by       uuid references auth.users(id) on delete set null,
+  joined_at        timestamptz not null default now(),
+  left_at          timestamptz,
+  constraint conversation_participants_unico unique (conversation_id, user_id)
+);
+
+alter table public.conversation_participants add column if not exists invited_by uuid;
+alter table public.conversation_participants add column if not exists joined_at timestamptz not null default now();
+alter table public.conversation_participants add column if not exists left_at timestamptz;
+
+create index if not exists participantes_por_usuario
+  on public.conversation_participants (organization_id, user_id)
+  where left_at is null;
+create index if not exists participantes_por_conversa
+  on public.conversation_participants (organization_id, conversation_id);
+
+alter table public.conversation_participants enable row level security;
+
+revoke all    on public.conversation_participants from anon, authenticated;
+grant  select on public.conversation_participants to authenticated;
+grant  all    on public.conversation_participants to service_role;
+
+drop policy if exists tenant_isolation_conversation_participants_select on public.conversation_participants;
+create policy tenant_isolation_conversation_participants_select
+  on public.conversation_participants
+  for select to authenticated
+  using (
+    organization_id in (select public.fn_user_org_ids())
+    and public.fn_role_at_least(organization_id, 'agent')
+    and user_id = auth.uid()
+  );
+
+drop policy if exists "conversations_select" on public.conversations;
+create policy "conversations_select" on public.conversations
+  for select using (
+    public.fn_can_view_conversation(organization_id, assigned_to_user_id)
+    or exists (
+      select 1
+        from public.conversation_participants cp
+       where cp.conversation_id = conversations.id
+         and cp.organization_id = conversations.organization_id
+         and cp.user_id = auth.uid()
+         and cp.left_at is null
+    )
+  );
+
+do $f$ begin perform public.fn_aplicar_travas_de_suporte(); end $f$;
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
