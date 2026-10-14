@@ -86,6 +86,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const { data: minha } = await admin
     .from("conversation_participants")
     .select("id")
+    .eq("organization_id", orgId)
     .eq("conversation_id", id)
     .eq("user_id", user.id)
     .is("left_at", null)

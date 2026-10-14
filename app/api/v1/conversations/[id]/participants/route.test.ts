@@ -119,13 +119,16 @@ function clienteFake() {
 }
 
 function req(url: string, metodo: string, body?: unknown) {
-  const init: RequestInit = {
+  // GET/HEAD não pode levar corpo — o NextRequest rejeita antes da rota rodar.
+  // O `body` vai no literal (e não num `RequestInit` mutado em dois tempos): o
+  // `RequestInit` do DOM tem `signal?: AbortSignal | null`, que NÃO casa com o do
+  // `NextRequest` (`signal?: AbortSignal`) — anotar explicitamente reprovava o
+  // `typecheck`. Sem anotação, o literal é tipado pelo próprio construtor.
+  return new NextRequest(`http://localhost${url}`, {
     method: metodo,
     headers: { "content-type": "application/json" },
-  };
-  // GET/HEAD não pode levar corpo — o NextRequest rejeita antes da rota rodar.
-  if (metodo !== "GET" && metodo !== "HEAD") init.body = JSON.stringify(body ?? {});
-  return new NextRequest(`http://localhost${url}`, init);
+    body: metodo === "GET" || metodo === "HEAD" ? undefined : JSON.stringify(body ?? {}),
+  });
 }
 
 const contexto = (id = CONV_A) => ({ params: Promise.resolve({ id }) });
