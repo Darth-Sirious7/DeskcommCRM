@@ -8,12 +8,15 @@ import { Button } from "@/components/ui/button";
 import { useT } from "@/hooks/i18n/useT";
 import { apiClient } from "@/lib/api/client";
 import {
-  catalogProductPresentationPreview,
   emptyCatalogProductPresentation,
   type CatalogProductPresentationPublic,
   type PresentationBlocker,
 } from "@/lib/catalogo/apresentacao";
-import { formatCents } from "@/lib/money";
+import { planCatalogPresentation } from "@/lib/catalogo/plano-de-apresentacao";
+import {
+  prepareCatalogPresentationPayloads,
+  type PreparedCatalogPresentationPayload,
+} from "@/lib/catalogo/preparo-de-apresentacao";
 import type { Produto } from "@/lib/schemas/produtos";
 
 type Envelope<T> = { data: T };
@@ -24,6 +27,11 @@ const BLOCKER_LABEL: Record<PresentationBlocker, string> = {
   missing_photos: "Fotos ausentes: cadastre fotos ou desative o uso das fotos.",
   physical_limit_exceeded: "O limite físico estimado de mensagens foi excedido.",
 };
+
+// A API pública confirma a existência do áudio sem expor o path privado. O
+// planner precisa apenas de uma referência opaca para montar a sequência; a
+// tela continua usando a URL assinada exclusivamente para reprodução.
+const AUDIO_REFERENCE_FOR_PREVIEW = "preview/catalog-presentation.ogg";
 
 function messageFrom(response: unknown, fallback: string): string {
   if (!response || typeof response !== "object" || !("error" in response)) return fallback;
@@ -42,7 +50,9 @@ export function CatalogProductAiPresentation({
   const [open, setOpen] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
-  const [presentation, setPresentation] = React.useState<CatalogProductPresentationPublic | null>(null);
+  const [presentation, setPresentation] = React.useState<CatalogProductPresentationPublic | null>(
+    null,
+  );
   const fileRef = React.useRef<HTMLInputElement>(null);
 
   const load = React.useCallback(async () => {
@@ -66,16 +76,76 @@ export function CatalogProductAiPresentation({
   }
 
   const draft = presentation ?? emptyCatalogProductPresentation();
-  const preview = catalogProductPresentationPreview({
-    product_name: product.nome,
-    kind: draft.kind,
-    title: draft.title,
-    text_content: draft.text_content,
-    use_catalog_photos: draft.use_catalog_photos,
-    show_price: draft.show_price,
-    has_audio: draft.has_audio,
-    photo_count: product.fotos.length,
+  const previewResult = planCatalogPresentation({
+    ordered_product_codes: [product.codigo],
+    resolved_items: [
+      {
+        product_id: product.id,
+        product_code: product.codigo,
+        product_name: product.nome,
+        price_cents: product.preco_cents,
+        currency: product.moeda,
+        photo_storage_paths: product.fotos,
+        presentation: {
+          enabled: draft.enabled,
+          kind: draft.kind,
+          title: draft.title,
+          text_content: draft.text_content,
+          use_catalog_photos: draft.use_catalog_photos,
+          show_price: draft.show_price,
+          audio_storage_path: draft.has_audio ? AUDIO_REFERENCE_FOR_PREVIEW : null,
+          audio_mime: draft.audio_mime,
+        },
+      },
+    ],
   });
+  const preparationResult = previewResult.ok
+    ? prepareCatalogPresentationPayloads(previewResult.plan)
+    : null;
+  const previewPayloads = preparationResult?.ok ? preparationResult.prepared.payloads : null;
+  const previewBlockers =
+    !previewResult.ok && previewResult.error.code === "presentation_incomplete"
+      ? previewResult.error.blockers
+      : [];
+
+  function renderPreviewPayload(payload: PreparedCatalogPresentationPayload) {
+    switch (payload.kind) {
+      case "text":
+        return <span className="whitespace-pre-wrap">{payload.text}</span>;
+      case "audio":
+        return draft.audio_url ? (
+          <audio
+            controls
+            src={draft.audio_url}
+            className="w-full"
+            data-testid="preview-apresentacao-audio"
+          />
+        ) : (
+          t("Áudio OGG/Opus")
+        );
+      case "image": {
+        const url = photoUrls[payload.media.storage_path];
+        return (
+          <div className="flex items-center gap-2">
+            {url ? (
+              // URL privada assinada pela página; não entra no build do Next Image.
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={url}
+                alt={`${product.nome} — ${t("foto")} ${payload.position + 1}`}
+                className="h-16 w-16 rounded-md border object-cover"
+              />
+            ) : null}
+            <span>
+              {t("Fotos cadastradas")} {payload.position + 1}
+            </span>
+          </div>
+        );
+      }
+      case "price":
+        return `${t("Preço")}: ${payload.text}`;
+    }
+  }
 
   function change(patch: Partial<CatalogProductPresentationPublic>) {
     setPresentation({ ...draft, ...patch });
@@ -116,9 +186,7 @@ export function CatalogProductAiPresentation({
         body: form,
       });
       const body = (await response.json().catch(() => null)) as
-        | Envelope<CatalogProductPresentationPublic>
-        | { error?: { message?: string } }
-        | null;
+        Envelope<CatalogProductPresentationPublic> | { error?: { message?: string } } | null;
       if (!response.ok || !body || !("data" in body)) {
         toast.error(messageFrom(body, t("Não consegui enviar o áudio.")));
         return;
@@ -222,7 +290,12 @@ export function CatalogProductAiPresentation({
                 ) : (
                   <div className="sm:col-span-2">
                     {draft.audio_url ? (
-                      <audio controls src={draft.audio_url} className="w-full" data-testid="apresentacao-audio" />
+                      <audio
+                        controls
+                        src={draft.audio_url}
+                        className="w-full"
+                        data-testid="apresentacao-audio"
+                      />
                     ) : (
                       <p className="text-sm text-muted-foreground">{t("Nenhum áudio enviado.")}</p>
                     )}
@@ -285,57 +358,55 @@ export function CatalogProductAiPresentation({
                 </label>
               </div>
 
-              <div className="mt-4 rounded-md border border-dashed p-3" data-testid="preview-apresentacao">
+              <div
+                className="mt-4 rounded-md border border-dashed p-3"
+                data-testid="preview-apresentacao"
+              >
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <p className="text-sm font-medium">{t("Ordem futura de envio")}</p>
-                  <span className="text-xs text-muted-foreground" data-testid="quantidade-mensagens">
-                    {preview.physical_message_count} {t("mensagens físicas estimadas")}
+                  <span
+                    className="text-xs text-muted-foreground"
+                    data-testid="quantidade-mensagens"
+                  >
+                    {preparationResult?.ok ? preparationResult.prepared.physical_payload_count : 0}{" "}
+                    {t("mensagens físicas estimadas")}
                   </span>
                 </div>
-                <ol className="space-y-2 text-sm">
-                  <li><strong>1.</strong> {preview.effective_title}</li>
-                  <li>
-                    <strong>2.</strong>{" "}
-                    {draft.kind === "text"
-                      ? draft.text_content || t("Texto ainda não configurado")
-                      : draft.audio_url
-                        ? t("Áudio OGG/Opus")
-                        : t("Áudio ainda não configurado")}
-                  </li>
-                  <li>
-                    <strong>3.</strong>{" "}{t("Fotos cadastradas")}
-                    {draft.use_catalog_photos ? (
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {product.fotos.map((path, index) =>
-                          photoUrls[path] ? (
-                            // URL privada assinada pela página; não entra no build do Next Image.
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              key={path}
-                              src={photoUrls[path]}
-                              alt={`${product.nome} — ${t("foto")} ${index + 1}`}
-                              className="h-16 w-16 rounded-md border object-cover"
-                            />
-                          ) : null,
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-muted-foreground"> — {t("não serão usadas")}</span>
-                    )}
-                  </li>
-                  <li>
-                    <strong>4.</strong>{" "}{t("Preço")}: {draft.show_price
-                      ? formatCents(product.preco_cents, product.moeda)
-                      : t("não será exibido")}
-                  </li>
-                </ol>
+                {previewPayloads ? (
+                  <ol className="space-y-2 text-sm">
+                    {previewPayloads.map((payload, index) => (
+                      <li
+                        key={`${payload.kind}-${index}`}
+                        className="flex items-start gap-2"
+                        data-testid={`mensagem-apresentacao-${index}`}
+                      >
+                        <strong>{index + 1}.</strong>
+                        <div className="min-w-0 flex-1">{renderPreviewPayload(payload)}</div>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p
+                    className="text-sm text-muted-foreground"
+                    data-testid="estado-preview-apresentacao"
+                  >
+                    {!previewResult.ok && previewResult.error.code === "presentation_disabled"
+                      ? `${t("Apresentação pela IA")}: ${t("Desativada")}`
+                      : t("Configuração incompleta: escreva o texto de apresentação.")}
+                  </p>
+                )}
               </div>
 
-              {preview.blockers.length > 0 ? (
-                <div className="mt-3 rounded-md border border-warning bg-warning-bg p-3 text-sm text-warning-fg" data-testid="bloqueios-apresentacao">
+              {previewBlockers.length > 0 ? (
+                <div
+                  className="mt-3 rounded-md border border-warning bg-warning-bg p-3 text-sm text-warning-fg"
+                  data-testid="bloqueios-apresentacao"
+                >
                   <p className="font-medium">{t("Bloqueios")}</p>
                   <ul className="mt-1 list-disc pl-5">
-                    {preview.blockers.map((blocker) => <li key={blocker}>{t(BLOCKER_LABEL[blocker])}</li>)}
+                    {previewBlockers.map((blocker) => (
+                      <li key={blocker}>{t(BLOCKER_LABEL[blocker])}</li>
+                    ))}
                   </ul>
                 </div>
               ) : null}
@@ -343,7 +414,12 @@ export function CatalogProductAiPresentation({
               <Button
                 type="button"
                 className="mt-4"
-                disabled={saving || (draft.enabled && preview.blockers.length > 0)}
+                disabled={
+                  saving ||
+                  (draft.enabled &&
+                    (previewBlockers.length > 0 ||
+                      Boolean(preparationResult && !preparationResult.ok)))
+                }
                 onClick={() => void save()}
                 data-testid="salvar-apresentacao-ia"
               >
