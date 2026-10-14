@@ -1,5 +1,5 @@
 -- manifest: **Atendimento conjunto — participantes da conversa (issue #2542).** Hoje cada conversa tem dono único (`conversations.assigned_to_user_id`) e o sistema só sabe ASSUMIR, PASSAR e SOLTAR — não sabe DIVIDIR. Esta migration cria a peça que faltava: a tabela `conversation_participants` (tenant-aware, uma linha por convidado) e a UMA linha que faz o convidado VER a conversa — o ramo de participante no `SELECT` de `conversations` (`conversations_select`). O convidado passa a ler a conversa e as mensagens dela (que herdam o escopo por `exists`), sem tocar no dono: `assigned_to_user_id` não é escrito por nenhuma linha desta migration. RLS de leitura com o molde da 0291 (organização + papel `agent`+ + só a PRÓPRIA linha de participação), escrita `revoke all`/`grant select` — as rotas escrevem pelo service role. `left_at` marca a saída (soft delete): remover o participante tira o acesso sem apagar o fato de ele ter participado. Idempotente.
--- ---- participantes do atendimento conjunto (migration 0655) ----
+-- ---- participantes do atendimento conjunto (migration 0661) ----
 --
 -- Issue #2542 (proposta 💡). Situações (fechamento com dois perfis,
 -- escalonamento sem troca de mão, onboarding, treinamento, supervisão, dois
