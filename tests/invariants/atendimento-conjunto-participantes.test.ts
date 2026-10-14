@@ -1,6 +1,6 @@
 /**
  * ATENDIMENTO CONJUNTO — O CONVIDADO VÊ A CONVERSA, E O DONO NÃO MUDA (issue
- * #2542, migration 0655).
+ * #2542, migration 0661).
  *
  * ## O que este arquivo prova, e por que não cabe em `rls-isolation`
  *
@@ -138,7 +138,7 @@ beforeAll(() => {
   `);
 });
 
-describe("0655 — atendimento conjunto: o convidado vê, o dono não muda", () => {
+describe("0661 — atendimento conjunto: o convidado vê, o dono não muda", () => {
   it("CONTROLE DE VACUIDADE: a conversa e a participação existem no banco", () => {
     // Sem isto, uma semente que não entrou faria TODAS as contagens abaixo
     // devolverem 0 — e o caso do convidado passaria afirmando "vê" sobre nada.

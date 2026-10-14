@@ -362,7 +362,7 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "por JWT (agent): o convidado LÊ a própria participação e passa a ver a " +
       "conversa e as mensagens dela, o dono não lê a linha alheia, um membro de " +
       "outra organização lê 0 nos dois sentidos e INSERT direto de authenticated " +
-      "dá permission denied. Migration 0655 (issue #2542).",
+      "dá permission denied. Migration 0661 (issue #2542).",
   },
 ];
 

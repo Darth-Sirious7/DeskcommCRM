@@ -59947,6 +59947,8 @@ revoke execute on function public.fn_enfileirar_midia_vencida(integer) from publ
 grant execute on function public.fn_enfileirar_midia_vencida(integer) to service_role;
 -- ---- participantes do atendimento conjunto (migration 0655, issue #2542) ----
 -- Conteúdo IDÊNTICO ao da migration 0655 (quem aplica a cadeia de migrations
+-- ---- participantes do atendimento conjunto (migration 0661, issue #2542) ----
+-- Conteúdo IDÊNTICO ao da migration 0661 (quem aplica a cadeia de migrations
 -- e quem aplica SÓ o baseline têm de terminar no mesmo schema). Nasce ANTES da
 -- VARREDURA anon por vizinhança, embora não crie função.
 --
