@@ -62,14 +62,14 @@ export interface SendMessageInput {
    * colidirem no ledger e o segundo virar `already_sent` sem ter saído.
    */
   template?: { name: string; language: string; values: Record<string, string> };
-  /** Presente = imagem da pasta da conversa em `whatsapp-media`; `body` é a legenda. */
-  media?: { storagePath: string; mime: string };
+  /** Presente = imagem ou áudio da pasta da conversa em `whatsapp-media`. */
+  media?: { kind: 'audio' | 'image'; storagePath: string; mime: string };
 }
 
 /**
- * O corpo que o handler de mensagens recebe: texto, template ou imagem da
+ * O corpo que o handler de mensagens recebe: texto, template ou mídia da
  * conversa. Exportado para o teste — o tipo decide o caminho no handler, e um
- * `type` errado manda a foto como texto sem ninguém ver.
+ * `type` errado degrada áudio ou imagem sem ninguém ver.
  */
 export function corpoDoEnvio(
   input: SendMessageInput,
@@ -86,7 +86,7 @@ export function corpoDoEnvio(
         }
       : input.media
         ? {
-            type: 'image' as const,
+            type: input.media.kind,
             media_storage_path: input.media.storagePath,
             media_mime: input.media.mime,
           }
