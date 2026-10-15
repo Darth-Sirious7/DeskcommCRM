@@ -78,11 +78,11 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (convErr) return fail("internal_error", convErr.message, 500, { requestId });
   if (!conv) return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
 
-  // Quem vê a lista: o dono, um gestor, ou quem JÁ participa.
+  // Quem vê a lista: o dono, quem JÁ participa, ou um gestor. A participação é
+  // consultada ANTES do `requireRole("manager")` porque ele audita a negação:
+  // na ordem inversa, todo GET legítimo de um participante gravava um
+  // `authz.denied` falso no api_audit_log.
   const souDono = conv.assigned_to_user_id === user.id;
-  const gestor = souDono
-    ? { ok: true as const }
-    : await requireRole("manager", { requestId, resource: "conversations" });
   const { data: minha } = await admin
     .from("conversation_participants")
     .select("id")
@@ -91,7 +91,11 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     .eq("user_id", user.id)
     .is("left_at", null)
     .maybeSingle();
-  if (!gestor.ok && !minha) {
+  const gestor =
+    souDono || minha
+      ? { ok: true as const }
+      : await requireRole("manager", { requestId, resource: "conversations" });
+  if (!gestor.ok) {
     return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
   }
 

@@ -288,4 +288,30 @@ describe("GET /api/v1/conversations/[id]/participants — listar", () => {
     expect(corpo.data.participantes).toHaveLength(1);
     expect(corpo.data.participantes[0]?.user_id).toBe(COLEGA);
   });
+
+  it("um PARTICIPANTE lê a lista sem passar pela checagem de gestor (que auditaria um authz.denied falso)", async () => {
+    participantes = [
+      { id: "00000000-0000-4000-8000-0000000000dd", conversation_id: CONV_A, user_id: COLEGA, organization_id: ORG_A, invited_by: DONO, joined_at: "2026-10-14T00:00:00Z", left_at: null },
+    ];
+    autoriza(false, COLEGA);
+    const resposta = await GET(
+      req(`/api/v1/conversations/${CONV_A}/participants`, "GET", {}),
+      contexto(),
+    );
+
+    expect(resposta.status).toBe(200);
+    // `requireRole("manager")` audita a negação: chamá-lo para quem já participa
+    // gravava `authz.denied` em todo GET legítimo.
+    expect(vi.mocked(requireRole).mock.calls.map((c) => c[0])).not.toContain("manager");
+  });
+
+  it("quem não é dono, nem participante, nem gestor recebe 404", async () => {
+    autoriza(false, COLEGA);
+    const resposta = await GET(
+      req(`/api/v1/conversations/${CONV_A}/participants`, "GET", {}),
+      contexto(),
+    );
+
+    expect(resposta.status).toBe(404);
+  });
 });
