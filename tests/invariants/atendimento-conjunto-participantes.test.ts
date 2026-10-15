@@ -204,6 +204,42 @@ describe("0661 — atendimento conjunto: o convidado vê, o dono não muda", () 
     expect(contaComoMembro(ATENDENTE_B, CONVERSAS_QUE_VEJO)).toBe(1);
   });
 
+  it("membro REVOGADO com participação ativa deixa de ver a conversa", () => {
+    // A participação não sobrevive à saída da organização: o `exists` de
+    // `conversations_select` lê `conversation_participants` sob a RLS dela, que
+    // exige `fn_user_org_ids` — quem foi revogado some dali. Sem esse recorte,
+    // um ex-funcionário seguiria lendo a conversa enquanto ninguém o removesse.
+    sql(`update public.user_organizations set revoked_at = now()
+          where user_id = '${ATENDENTE_B}' and organization_id = '${ORG_A}';`);
+    try {
+      expect(
+        contaComoMembro(ATENDENTE_B, CONVERSAS_QUE_VEJO),
+        "o membro revogado continua vendo a conversa pela participação",
+      ).toBe(0);
+    } finally {
+      sql(`update public.user_organizations set revoked_at = null
+            where user_id = '${ATENDENTE_B}' and organization_id = '${ORG_A}';`);
+    }
+    expect(contaComoMembro(ATENDENTE_B, CONVERSAS_QUE_VEJO)).toBe(1);
+  });
+
+  it("membro REBAIXADO a viewer não lê a própria participação", () => {
+    // `fn_role_at_least(…, 'agent')` na policy de participantes: `viewer` não
+    // carrega vínculo de atendimento, mesmo que a linha continue ativa.
+    sql(`update public.user_organizations set role = 'viewer'
+          where user_id = '${ATENDENTE_B}' and organization_id = '${ORG_A}';`);
+    try {
+      expect(
+        contaComoMembro(ATENDENTE_B, MINHA_PARTICIPACAO),
+        "o viewer lê o vínculo de participação",
+      ).toBe(0);
+    } finally {
+      sql(`update public.user_organizations set role = 'agent'
+            where user_id = '${ATENDENTE_B}' and organization_id = '${ORG_A}';`);
+    }
+    expect(contaComoMembro(ATENDENTE_B, MINHA_PARTICIPACAO)).toBe(1);
+  });
+
   it("CONVIDAR não muda o DONO da conversa (entrar não é assumir)", () => {
     // A linha de `conversations.assigned_to_user_id` continua sendo A depois de
     // o colega entrar. É a invariante que separa esta feature da transferência.
