@@ -157,6 +157,15 @@ export function RedesSociaisClient() {
               ? "Conexão verificada"
               : "A conexão precisa de atenção",
         }));
+      } else if (body.action === "resync") {
+        toast.success(
+          t(
+            result.data.resynced
+              ? "Webhook ressincronizado com o endereço atual."
+              : "O webhook já apontava para este endereço.",
+          ),
+        );
+        await load();
       } else if (body.action === "disconnect") {
         toast.success(
           t(body.remove_account ? "Conta desconectada." : "Conta removida do atendimento."),
@@ -369,6 +378,17 @@ export function RedesSociaisClient() {
                   {account.channel && (
                     <Button asChild variant="outline">
                       <Link href="/app/inbox">{t("Abrir atendimento")}</Link>
+                    </Button>
+                  )}
+                  {account.channel && (
+                    <Button
+                      variant="outline"
+                      disabled={!!busy}
+                      onClick={() =>
+                        void perform(account.id, { action: "resync", account_id: account.id })
+                      }
+                    >
+                      {t("Ressincronizar webhook")}
                     </Button>
                   )}
                   {account.channel && (

@@ -178,6 +178,29 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
   resposta_vazia: "A IA não devolveu nenhuma escolha entre as opções desta ação. Tente de novo ou corrija a instrução.",
   sem_json: "A IA respondeu fora do formato esperado e nada foi executado. Tente de novo em alguns minutos.",
   escolha_ausente: "A IA respondeu sem dizer qual opção escolher, então nada foi executado. Tente de novo ou corrija a instrução.",
+  /* #2726 — a ação `send_email`. Os sete nascem em
+     lib/automation/actions/send-email.ts e chegam aos DOIS canais da tela:
+     `detail.reason` nas recusas (pelo `para.motivo`, origem declarada em
+     ORIGENS no teste da guarda — `no_contact`, `contact_blocked` e
+     `consent_declined` já moravam aqui, `no_email` e `dono_sem_email` são
+     novos) e `action.error` nos cinco códigos do provedor (pelo
+     `codigoDaFalha`, literal no resultado). Sem frase aqui quem operava a
+     automação lia o código cru. */
+  no_email: "O contato não tem e-mail cadastrado, então não havia endereço para onde enviar.",
+  dono_sem_email:
+    "O negócio não tem responsável com e-mail cadastrado, então não havia endereço para onde enviar. Escolha outro destinatário na automação.",
+  dono_fora_da_equipe:
+    "O responsável do negócio não faz mais parte da equipe, então o e-mail não foi enviado. Troque o responsável do negócio ou escolha outro destinatário na automação.",
+  email_nao_configurado:
+    "Nenhum e-mail está configurado nesta instalação: ligue o servidor em Admin › E-mail ou conecte o serviço externo de envio.",
+  email_recusado:
+    "O servidor de e-mail recusou a mensagem. O detalhe técnico abaixo traz o motivo que o provedor devolveu.",
+  email_limite_atingido:
+    "O provedor de e-mail limitou os envios por causa do volume. Tente de novo mais tarde.",
+  remetente_recusado:
+    "O servidor recusou o endereço de quem envia. Confira o remetente em Admin › E-mail.",
+  dominio_nao_verificado:
+    "O domínio do remetente não está verificado na Resend. Verifique o domínio na conta Resend e tente de novo.",
 };
 
 function explicacaoDe(

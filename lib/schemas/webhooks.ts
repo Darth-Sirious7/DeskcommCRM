@@ -66,6 +66,13 @@ export const ENTIDADE_ESPERADA_POR_GATILHO = {
   "message.failed": "message",
   "lead.tag_added": "crm_lead",
   "contact.tag_added": "contact",
+  // O contato GANHOU telefone (#2812): a ficha que estava sem número passa a ter
+  // um. É o gatilho que faltava para a operação que só consegue chamar o cliente
+  // no WhatsApp depois que ele informa o número — sem ele, a única saída era o
+  // operador fazer à mão. A entidade é o CONTATO (é dele o dado que mudou), como
+  // os irmãos `contact.tag_added` e `contact.birthday`. O emissor vive em
+  // `app/api/v1/contacts/_handler.ts`, depois do UPDATE que grava o número.
+  "contact.phone_added": "contact",
   // O aniversário nasce do cron `contact-birthdays`, e não de uma ação de
   // alguém: a entidade que ele traz é o próprio contato que faz aniversário.
   "contact.birthday": "contact",
@@ -231,6 +238,42 @@ export const conditionSchema = z.object({
 const acoesFixas = [
   z.object({ type: z.literal("create_or_move_lead"), config: z.object({ pipeline_id: z.string().uuid(), stage_id: z.string().uuid() }) }),
   z.object({ type: z.literal("send_whatsapp_message"), config: z.object({ channel_session_id: z.string().uuid(), template: z.string().min(1).max(2000) }) }),
+  // #2726 — o e-mail como SAÍDA. O transporte não é configuração da regra: ele
+  // já existe em `lib/email` (SMTP ou Resend, escolhido em Admin › E-mail), e
+  // esta ação só diz QUEM recebe, o ASSUNTO e o CORPO. `destinatario` é o modo
+  // (contato / responsável / endereço fixo) e `email_fixo` só existe para o
+  // terceiro — por isso é opcional: exigir endereço num envio ao contato
+  // recusaria na porta a regra que não precisa dele.
+  z.object({
+    type: z.literal("send_email"),
+    config: z.object({
+      destinatario: z.enum(["contato", "dono_do_lead", "fixo"]),
+      // O editor guarda o campo como "" (input controlado) quando o modo não
+      // é `fixo`; "" vira AUSÊNCIA aqui, na porta que o editor e a API
+      // dividem, e não um e-mail inválido. Quem EXIGE o endereço é o
+      // `superRefine` abaixo — só no modo `fixo`.
+      email_fixo: z.preprocess(
+        (v) => (v === "" ? undefined : v),
+        z.string().email("E-mail inválido").max(320).optional(),
+      ),
+      // Assunto e corpo levam as MESMAS variáveis do WhatsApp: `{{nome}}`,
+      // `{{primeiro_nome}}`, `{{lead.*}}` e o campo do funil (`{{destino}}`).
+      assunto: z.string().min(1).max(200),
+      corpo: z.string().min(1).max(5000),
+      // Texto simples (padrão) ou HTML simples — negrito, links e quebras.
+      formato: z.enum(["texto", "html"]).optional(),
+    }).superRefine((config, ctx) => {
+      // Sem isto, `fixo` sem endereço salvaria e só falharia na execução
+      // (`missing_config` em send-email.ts) — a regra "salva" que nunca envia.
+      if (config.destinatario === "fixo" && !config.email_fixo) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["email_fixo"],
+          message: "Informe o endereço de e-mail que recebe os envios desta regra.",
+        });
+      }
+    }),
+  }),
   z.object({
     type: z.literal("add_tag"),
     config: z.object({

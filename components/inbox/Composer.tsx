@@ -285,7 +285,15 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     // o id só viaja no corpo que sai para o banco. Em modo RESPOSTA não há
     // token nenhum — menção é assunto de nota interna, e uma menção no campo
     // de resposta sairia para o cliente.
-    const corpo = mode === "note" ? embutirMencoes(legivel, mencoes) : legivel;
+    // O curinga DIGITADO interpola como o template aplicado (#2891): quem escreve
+    // `{{primeiro_nome}}` à mão quer o nome do cliente, não o token cru — e até
+    // 14/10/2026 esse texto saía literal para o contato, sem faixa e com o
+    // Enviar habilitado. A fonte é a MESMA do `applyTemplate` e da trava: o
+    // `contato` montado uma linha acima, e a MESMA `interpolateTemplate`. Só a
+    // RESPOSTA passa por aqui: a nota interna não vai ao cliente e continua
+    // levando o texto como escrito (fronteira do `janelaFechada`, #2744).
+    const corpo =
+      mode === "note" ? embutirMencoes(legivel, mencoes) : interpolateTemplate(legivel, contato);
 
     setText("");
     requestAnimationFrame(() => autoresize());
@@ -328,7 +336,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     send.mutate(
       {
         conversation_id: conversationId,
-        body: legivel,
+        body: corpo,
         type: "text",
         ...(respondendo ? { reply_to_message_id: respondendo.id } : {}),
       },

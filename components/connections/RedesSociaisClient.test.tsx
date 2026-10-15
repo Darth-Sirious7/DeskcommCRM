@@ -169,3 +169,32 @@ it("titles the card with the name typed in Renomear, and keeps the username when
   expect(screen.getByRole("heading", { name: "Loja do centro" })).toBeTruthy();
   expect(screen.getByText("loja")).toBeTruthy();
 });
+
+it("ressincroniza o webhook do canal social pela origem atual, sem desconectar", async () => {
+  h.get.mockResolvedValue({
+    data: {
+      configured: true,
+      label: "Partner",
+      networks: [{ id: "instagram", label: "Instagram" }],
+      accounts: [
+        {
+          id: "a",
+          platform: "instagram",
+          username: "brand",
+          active: true,
+          inbox_supported: true,
+          channel: { id: "c", status: "WORKING", metadata: {} },
+        },
+      ],
+    },
+  });
+  h.post.mockResolvedValue({ data: { channel_id: "c", resynced: true } });
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "Ressincronizar webhook" }));
+  await vi.waitFor(() =>
+    expect(h.post).toHaveBeenCalledWith("/api/v1/channels/social", {
+      action: "resync",
+      account_id: "a",
+    }),
+  );
+});

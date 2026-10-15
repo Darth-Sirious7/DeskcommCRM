@@ -212,7 +212,7 @@ import { diffCheckpoint } from '@/lib/leads/checkpoint-diff';
 import { CORRECAO_DO_TURNO_MUDO, turnoMudoPedeCorrecao } from './turno-mudo';
 import { emitAgentActivityForContact } from '@/lib/leads/agent-activity';
 import { resolveActiveLeadForContact, type LeadCandidate } from '@/lib/leads/active-lead';
-import { aplicaDestinoDaIntencao } from './destino-da-intencao';
+import { aplicaDestinoDaIntencao, funisDeProdutoDoRoteador } from './destino-da-intencao';
 import { recalculaScoreDoLead } from '@/lib/leads/score-writer';
 import {
   JAILBREAK_ESCALATION_LEVEL,
@@ -2307,6 +2307,12 @@ async function executarTurnoDoAgente(
         contactId: leadId,
         destinoPipelineId,
         destinoStageId,
+        // Os funis de produto do roteador: quem tem card num deles e fala de outro
+        // ganha um card a mais, não troca de funil (consórcio ↔ investimentos).
+        funisDeProduto:
+          routed.routerId === null
+            ? []
+            : await funisDeProdutoDoRoteador(deps.crmCfg.supabase, tenantId, routed.routerId),
         handlerCtx: {
           organization_id: tenantId,
           actor: {
