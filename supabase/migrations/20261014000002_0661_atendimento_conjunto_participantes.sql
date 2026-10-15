@@ -104,19 +104,25 @@ create policy tenant_isolation_conversation_participants_select
 -- Recria `conversations_select` acrescentando SÓ o `or exists (…)`: a parte
 -- `fn_can_view_conversation` fica byte a byte igual (a régua de visibilidade
 -- continua sendo ELA; aqui só se ACRESCENTA a porta do participante).
-drop policy if exists "conversations_select" on public.conversations;
-create policy "conversations_select" on public.conversations
-  for select using (
-    public.fn_can_view_conversation(organization_id, assigned_to_user_id)
-    or exists (
-      select 1
-        from public.conversation_participants cp
-       where cp.conversation_id = conversations.id
-         and cp.organization_id = conversations.organization_id
-         and cp.user_id = auth.uid()
-         and cp.left_at is null
-    )
-  );
+-- O drop e o create vão num ÚNICO bloco DO: o update.sh aplica o baseline sem
+-- ON_ERROR_STOP e em autocommit. Soltos, um create que falhasse depois do drop
+-- deixaria `conversations` com RLS e SEM policy de SELECT — o inbox sumiria
+-- para todos. Dentro do DO, a falha desfaz o drop e a policy anterior fica.
+do $conversations_select$ begin
+  drop policy if exists "conversations_select" on public.conversations;
+  create policy "conversations_select" on public.conversations
+    for select using (
+      public.fn_can_view_conversation(organization_id, assigned_to_user_id)
+      or exists (
+        select 1
+          from public.conversation_participants cp
+         where cp.conversation_id = conversations.id
+           and cp.organization_id = conversations.organization_id
+           and cp.user_id = auth.uid()
+           and cp.left_at is null
+      )
+    );
+end $conversations_select$;
 
 -- ── travas do suporte, depois de toda tabela nova (migration 0274) ─────────
 -- `conversation_participants` nasce SERVER-ONLY na escrita (revoke de
