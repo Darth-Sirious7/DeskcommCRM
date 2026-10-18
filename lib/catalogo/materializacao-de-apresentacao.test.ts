@@ -91,7 +91,12 @@ function persisted(
   return {
     ok: true,
     reused: false,
-    snapshot: { schema_version: 1, ordered_product_codes: codes, plan: planned.plan },
+    snapshot: {
+      schema_version: 1,
+      sends_already_counted: 0,
+      ordered_product_codes: codes,
+      plan: planned.plan,
+    },
   };
 }
 

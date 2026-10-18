@@ -249,6 +249,30 @@ describe("executor serial da apresentação do catálogo", () => {
     expect(f.sent).toEqual([]);
   });
 
+  it("preserva a proxima abertura do veto para o worker reagendar sem IA", async () => {
+    const f = fixture();
+    const nextAllowedAt = new Date("2026-10-15T10:00:00.000Z");
+    const veto = vi.fn(async () => ({
+      status: "vetoed" as const,
+      gate: "pacing",
+      code: "daily_cap",
+      message: "aguarde",
+      nextAllowedAt,
+      trace: [],
+    })) as unknown as typeof runBeforeSend;
+
+    const result = await executeCatalogPresentationSerial(plan(["A"], [product("A")]), {
+      ...f.args,
+      contracts: { ...f.args.contracts, beforeSend: veto },
+    });
+
+    expect(result).toMatchObject({
+      status: "stopped",
+      reason: "vetoed",
+      next_allowed_at: nextAllowedAt,
+    });
+  });
+
   it("aceita interrupção somente na fronteira entre itens", async () => {
     const first = product("A", { photo_storage_paths: [`${ORG}/id-A/fachada.jpg`] });
     if (!first.presentation) throw new Error("fixture sem apresentação");

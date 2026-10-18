@@ -57,6 +57,7 @@ const catalogPresentationPlanSchema = z.object({
 export const catalogPresentationSnapshotSchema = z
   .object({
     schema_version: z.literal(1),
+    sends_already_counted: z.number().int().nonnegative(),
     ordered_product_codes: z.array(z.string().min(1)).min(1),
     plan: catalogPresentationPlanSchema,
   })
@@ -285,6 +286,7 @@ export async function resolveAndSnapshotCatalogPresentation(
     organizationId: string;
     jobId: string;
     claim: JobClaim;
+    sendsAlreadyCounted: number;
     orderedProductCodes: readonly string[];
   },
 ): Promise<CatalogPresentationSnapshotResult> {
@@ -311,6 +313,9 @@ export async function resolveAndSnapshotCatalogPresentation(
         throw new CatalogPresentationSnapshotInvalidError();
       }
       if (!arraysEqual(parsed.data.ordered_product_codes, selection.productCodes)) {
+        throw new CatalogPresentationSnapshotConflictError();
+      }
+      if (parsed.data.sends_already_counted !== input.sendsAlreadyCounted) {
         throw new CatalogPresentationSnapshotConflictError();
       }
       await client.query("commit");
@@ -342,6 +347,7 @@ export async function resolveAndSnapshotCatalogPresentation(
 
     const snapshot: CatalogPresentationSnapshot = {
       schema_version: 1,
+      sends_already_counted: input.sendsAlreadyCounted,
       ordered_product_codes: selection.productCodes,
       plan: planned.plan,
     };

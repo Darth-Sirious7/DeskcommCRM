@@ -80,6 +80,8 @@ import {
   type FotoParaEnvio,
 } from './fotos-do-produto';
 import { enqueueJob, rescheduleJob, type JobRow, type Queryable } from '../queue/queue';
+import { resumePersistedCatalogPresentation } from '@/lib/catalogo/retomada-de-apresentacao';
+import { CHAVE_DO_SNAPSHOT_DA_APRESENTACAO } from '@/lib/catalogo/snapshot-de-apresentacao';
 import {
   applyLeadStateUpdate,
   getLeadState,
@@ -149,7 +151,11 @@ import {
   catalogoEntregueAoOperador,
 } from './entrega-de-capacidade';
 import { composeSystemPrompt, loadOrgMemory, renderOrgMemory } from './org-memory';
-import { matchesHandoffKeyword, type PublishedAgentConfig } from './agent-config';
+import {
+  loadConversationAgentConfig,
+  matchesHandoffKeyword,
+  type PublishedAgentConfig,
+} from './agent-config';
 import { garantirPerguntaDoRoteiro, perguntaDoRoteiroPodeSair, prepararRoteiroDoTurno } from './roteiro-no-turno';
 import { validarRespostaDoFluxo } from './flow-validate';
 import { moduloLigadoComMemo } from '@/lib/instalacao/modulos';
@@ -5345,6 +5351,45 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
         job_id: job.id,
         error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
       });
+    }
+    // Snapshot persistido ja contem a decisao e a ordem da apresentacao. Retoma-lo
+    // nao e um novo turno de decisao: usa apenas o agente ja aderido a conversa
+    // para preservar pausa/assistido, sem passar novamente pelo roteador, Jev ou LLM.
+    if (job.payload[CHAVE_DO_SNAPSHOT_DA_APRESENTACAO] !== undefined) {
+      const presentationAgent = await loadConversationAgentConfig(
+        pool,
+        job.organization_id,
+        payload.conversation_id,
+        payload.channel_session_id,
+      );
+      if (presentationAgent?.pausedAt || presentationAgent?.operationMode === 'assisted') return;
+      const resumedPresentation = await resumePersistedCatalogPresentation(
+        pool,
+        job,
+        ctx,
+        {
+          conversationId: payload.conversation_id,
+          channelSessionId: payload.channel_session_id,
+        },
+        {
+          channel: (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p, deps.crmCfg)))(pool),
+          log: deps.log,
+          maxSendsPerTurn: deps.knobs.maxSendsPerTurn ?? DEFAULT_MAX_SENDS_PER_TURN,
+          queuedRetryDelayMs: deps.knobs.queuedRetryDelayMs,
+          respostaObsoletaTetoMs: deps.knobs.respostaObsoletaTetoMs ?? 0,
+          ...(deps.knobs.disclosureMode !== undefined
+            ? { disclosureMode: deps.knobs.disclosureMode }
+            : {}),
+          ...(deps.clock !== undefined ? { clock: deps.clock } : {}),
+          ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
+        },
+      );
+      if (resumedPresentation.handled) {
+        if (resumedPresentation.disposition === 'settled') {
+          throw new JobSettledError('apresentacao do catalogo retomada e job reagendado/cancelado');
+        }
+        return;
+      }
     }
     const resolvedAgent = await resolveConversationTurn(pool, deps.llmCfg, {
       tenantId: job.organization_id,

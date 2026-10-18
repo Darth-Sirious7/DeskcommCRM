@@ -81,6 +81,7 @@ const input = {
   organizationId: ORG,
   jobId: JOB,
   claim: CLAIM,
+  sendsAlreadyCounted: 2,
   orderedProductCodes: ["APTO-A"],
 };
 
@@ -109,7 +110,11 @@ describe("snapshot durável da apresentação do catálogo", () => {
       CHAVE_DO_SNAPSHOT_DA_APRESENTACAO,
     ]);
     expect(JSON.parse(String(update?.values?.[5]))).toEqual(
-      expect.objectContaining({ schema_version: 1, ordered_product_codes: ["APTO-A"] }),
+      expect.objectContaining({
+        schema_version: 1,
+        sends_already_counted: 2,
+        ordered_product_codes: ["APTO-A"],
+      }),
     );
     expect(f.calls.at(-1)?.sql).toBe("commit");
     expect(f.releasedWith()).toBeUndefined();
@@ -127,6 +132,16 @@ describe("snapshot durável da apresentação do catálogo", () => {
     expect(f.calls.some((call) => call.sql.includes("from public.catalog_products"))).toBe(false);
     expect(f.calls.some((call) => call.sql.includes("update public.job_queue"))).toBe(false);
     expect(f.calls.at(-1)?.sql).toBe("commit");
+
+    const changedOffset = fixture({
+      payload: { [CHAVE_DO_SNAPSHOT_DA_APRESENTACAO]: created.snapshot },
+    });
+    await expect(
+      resolveAndSnapshotCatalogPresentation(changedOffset.pool, {
+        ...input,
+        sendsAlreadyCounted: 1,
+      }),
+    ).rejects.toBeInstanceOf(CatalogPresentationSnapshotConflictError);
   });
 
   it("não sobrescreve snapshot concorrente de outra seleção", async () => {

@@ -89,6 +89,7 @@ export type CatalogPresentationExecutionResult =
       reason: "vetoed";
       gate: string;
       code: string;
+      next_allowed_at?: Date;
       steps: CatalogPresentationExecutedStep[];
       next_seq: number;
     }
@@ -219,6 +220,7 @@ export async function executeCatalogPresentationSerial(
         reason: "vetoed",
         gate: guarded.gate,
         code: guarded.code,
+        ...(guarded.nextAllowedAt !== undefined ? { next_allowed_at: guarded.nextAllowedAt } : {}),
         steps,
         next_seq: seq,
       };
