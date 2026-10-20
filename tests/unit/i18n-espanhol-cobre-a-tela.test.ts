@@ -6,8 +6,8 @@ import { describe, expect, it } from "vitest";
 
 import { DICIONARIO } from "@/lib/i18n/dicionario";
 import { traduzir } from "@/lib/i18n/dicionario";
-import { IDIOMAS } from "@/lib/i18n/idiomas";
-import { IDIOMAS_EM_CONSTRUCAO } from "@/lib/i18n/registro";
+import { IDIOMAS, type Idioma } from "@/lib/i18n/idiomas";
+import { IDIOMAS_EM_CONSTRUCAO, IDIOMAS_VISIVEIS } from "@/lib/i18n/registro";
 
 import {
   AREAS_DE_PRODUTO,
@@ -623,6 +623,58 @@ describe("chave dinâmica: o valor que sai de tabela também tem de ter espanhol
       pagas,
       `${pagas.length} entrada(s) da DIVIDA_CONGELADA não casam mais com buraco nenhum: o valor foi traduzido, ` +
         "ou a chamada saiu de t(), ou o valor mudou de arquivo. Remova a entrada deste arquivo — a lista só encolhe.",
+    ).toEqual([]);
+  });
+});
+
+/** O catálogo `lib/i18n/traducoes/<codigo>.json`, ou vazio quando o idioma não tem um. */
+function catalogoDe(codigo: string): Record<string, string> {
+  const arquivo = join(RAIZ, "lib", "i18n", "traducoes", `${codigo}.json`);
+  return existsSync(arquivo) ? (JSON.parse(readFileSync(arquivo, "utf8")) as Record<string, string>) : {};
+}
+
+/** O idioma tem a frase: na coluna dele no dicionário, ou no catálogo dele. */
+function temTraducao(idioma: Idioma): (chave: string) => boolean {
+  const catalogo = catalogoDe(idioma);
+  return (chave) => Boolean(DICIONARIO[chave]?.[idioma as Exclude<Idioma, "pt-BR">] ?? catalogo[chave]);
+}
+
+/**
+ * A mesma régua do espanhol, para todo idioma `completo` além dele.
+ *
+ * `completo` é a promessa de que toda frase de tela existe naquele idioma, e
+ * nada nela afrouxa — vale para quem mora num catálogo (o turco) tanto quanto
+ * para quem mora numa coluna do dicionário. As verificações do espanhol acima
+ * ficam como estão.
+ */
+const COMPLETOS_ALEM_DO_ESPANHOL = IDIOMAS_VISIVEIS.filter(
+  (idioma) => idioma.nivel === "completo" && idioma.codigo !== "pt-BR" && idioma.codigo !== "es",
+).map((idioma) => idioma.codigo);
+
+const COMO_CONSERTAR_NO_CATALOGO =
+  "Traduza pelo catálogo: `pnpm tsx scripts/i18n/lotes-para-traduzir.ts --idioma <codigo> --tamanho 400 --saida <pasta>`, " +
+  "traduza os lotes e junte com `pnpm tsx scripts/i18n/juntar-lotes.ts --idioma <codigo> --entrada <pasta>`.";
+
+describe.each(COMPLETOS_ALEM_DO_ESPANHOL)("toda chave usada na tela tem %s", (idioma) => {
+  const tem = temTraducao(idioma);
+
+  it("nenhuma chamada t() cai no português por falta de tradução", () => {
+    const sem = [...chavesUsadas().entries()]
+      .filter(([chave]) => !tem(chave))
+      .map(([chave, onde]) => `${onde[0]} → t(${JSON.stringify(chave)})`);
+    expect(
+      sem,
+      `${sem.length} chamada(s) t() sem tradução em "${idioma}": a tela cai no português. ${COMO_CONSERTAR_NO_CATALOGO}`,
+    ).toEqual([]);
+  });
+
+  it("nenhum valor de chave dinâmica cai no português", () => {
+    const buracos = buracosDeEspanhol(varrerChavesDeI18n(AREAS_DE_PRODUTO), tem).map(
+      (b) => `${b.locais.join(" ")} → ${JSON.stringify(b.chave)}\n      ${b.procedencia}`,
+    );
+    expect(
+      buracos,
+      `${buracos.length} valor(es) de chave dinâmica sem tradução em "${idioma}". ${COMO_CONSERTAR_NO_CATALOGO}`,
     ).toEqual([]);
   });
 });
