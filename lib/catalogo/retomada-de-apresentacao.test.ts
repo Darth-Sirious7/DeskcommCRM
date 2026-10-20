@@ -283,34 +283,56 @@ describe("retomada da apresentacao persistida pelo worker", () => {
       paused = true;
       return outcome;
     };
-    const resumeDeps = deps(f, async () => false, async () => paused);
+    const resumeDeps = deps(
+      f,
+      async () => false,
+      async () => paused,
+    );
     const persisted = job();
 
-    expect(await resumePersistedCatalogPresentation(
-      f.pool, persisted, { workerId: "worker-a" },
-      { conversationId: CONVERSATION, channelSessionId: SESSION }, resumeDeps,
-    )).toEqual({ handled: true, disposition: "settled" });
+    expect(
+      await resumePersistedCatalogPresentation(
+        f.pool,
+        persisted,
+        { workerId: "worker-a" },
+        { conversationId: CONVERSATION, channelSessionId: SESSION },
+        resumeDeps,
+      ),
+    ).toEqual({ handled: true, disposition: "settled" });
     expect(f.sent.map((input) => input.seq)).toEqual([1]);
     expect(f.sql.some((text) => text.includes("attempts = greatest(attempts - 1, 0)"))).toBe(true);
     expect(persisted.payload).toHaveProperty(CHAVE_DO_SNAPSHOT_DA_APRESENTACAO);
 
     paused = false;
     reconciled.push(1);
-    expect(await resumePersistedCatalogPresentation(
-      f.pool, persisted, { workerId: "worker-a" },
-      { conversationId: CONVERSATION, channelSessionId: SESSION }, resumeDeps,
-    )).toEqual({ handled: true, disposition: "completed" });
+    expect(
+      await resumePersistedCatalogPresentation(
+        f.pool,
+        persisted,
+        { workerId: "worker-a" },
+        { conversationId: CONVERSATION, channelSessionId: SESSION },
+        resumeDeps,
+      ),
+    ).toEqual({ handled: true, disposition: "completed" });
     expect(f.sent.map((input) => input.seq)).toEqual([1, 2]);
     expect(f.reconcileMock.mock.calls.map((call) => call[1].seq)).toEqual([1, 1, 2]);
   });
 
   it("pausa antes do primeiro item nao materializa nem envia e perda de lease nao vira sucesso", async () => {
     const f = fixture({ dispositionFound: false });
-    await expect(resumePersistedCatalogPresentation(
-      f.pool, job(), { workerId: "worker-a" },
-      { conversationId: CONVERSATION, channelSessionId: SESSION },
-      deps(f, async () => false, async () => true),
-    )).rejects.toThrow("catalog_presentation_job_lease_lost");
+    await expect(
+      resumePersistedCatalogPresentation(
+        f.pool,
+        job(),
+        { workerId: "worker-a" },
+        { conversationId: CONVERSATION, channelSessionId: SESSION },
+        deps(
+          f,
+          async () => false,
+          async () => true,
+        ),
+      ),
+    ).rejects.toThrow("catalog_presentation_job_lease_lost");
     expect(f.materialize).not.toHaveBeenCalled();
     expect(f.beforeSend).not.toHaveBeenCalled();
     expect(f.sent).toEqual([]);

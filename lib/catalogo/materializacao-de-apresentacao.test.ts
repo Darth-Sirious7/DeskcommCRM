@@ -368,25 +368,25 @@ describe("materializaÃ§Ã£o de mÃ­dia do snapshot de apresentaÃ§Ã£o", (
   it.each([
     ["foto", [productWithPhotos()], ["FOTO"], `catalog-photos\u0000${FOTO_JPG}`],
     ["áudio", [productWithAudio()], ["AUDIO"], `catalog-presentation-media\u0000${AUDIO}`],
-  ] as const)("falha fechado se a origem de %s sumiu apesar do destino existente", async (
-    _kind,
-    products,
-    codes,
-    sourceKey,
-  ) => {
-    const f = storageFixture();
-    const snapshot = persisted([...products], [...codes]);
-    const first = await materializeCatalogPresentationSnapshotMedia(snapshot, input, f.storage);
-    expect(first.ok).toBe(true);
-    const copiesAfterFirstRun = f.copies.length;
-    f.objects.delete(sourceKey);
+  ] as const)(
+    "falha fechado se a origem de %s sumiu apesar do destino existente",
+    async (_kind, products, codes, sourceKey) => {
+      const f = storageFixture();
+      const snapshot = persisted([...products], [...codes]);
+      const first = await materializeCatalogPresentationSnapshotMedia(snapshot, input, f.storage);
+      expect(first.ok).toBe(true);
+      const copiesAfterFirstRun = f.copies.length;
+      f.objects.delete(sourceKey);
 
-    const replay = await materializeCatalogPresentationSnapshotMedia(snapshot, input, f.storage);
+      const replay = await materializeCatalogPresentationSnapshotMedia(snapshot, input, f.storage);
 
-    expect(replay).toMatchObject({ ok: false, error: { code: "source_unavailable" } });
-    expect(f.copies).toHaveLength(copiesAfterFirstRun);
-    expect(f.downloads.filter(([bucket]) => bucket === BUCKET_DA_MIDIA_DA_CONVERSA)).toHaveLength(0);
-  });
+      expect(replay).toMatchObject({ ok: false, error: { code: "source_unavailable" } });
+      expect(f.copies).toHaveLength(copiesAfterFirstRun);
+      expect(f.downloads.filter(([bucket]) => bucket === BUCKET_DA_MIDIA_DA_CONVERSA)).toHaveLength(
+        0,
+      );
+    },
+  );
 
   it("não aceita destino com bytes diferentes mesmo que MIME e assinatura sejam válidos", async () => {
     const f = storageFixture();

@@ -111,9 +111,16 @@ export async function resumePersistedCatalogPresentation(
   const pauseBeforeNextItem = async (): Promise<boolean> => {
     paused = deps.contracts?.agentPaused
       ? await deps.contracts.agentPaused()
-      : Boolean((await loadConversationAgentConfig(
-          pool, job.organization_id, input.conversationId, input.channelSessionId,
-        ))?.pausedAt);
+      : Boolean(
+          (
+            await loadConversationAgentConfig(
+              pool,
+              job.organization_id,
+              input.conversationId,
+              input.channelSessionId,
+            )
+          )?.pausedAt,
+        );
     return paused;
   };
   const settlePause = async (): Promise<CatalogPresentationResumeResult> => {
