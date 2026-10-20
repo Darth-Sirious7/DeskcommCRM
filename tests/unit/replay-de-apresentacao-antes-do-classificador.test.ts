@@ -33,6 +33,7 @@ vi.mock("@/lib/agent-engine/edge/llm/run-model-call", async (importOriginal) => 
 
 import {
   createInboundTurnHandler,
+  JobSettledError,
   type InboundTurnDeps,
 } from "@/lib/agent-engine/agent/inbound-turn";
 import { CHAVE_DO_SNAPSHOT_DA_APRESENTACAO } from "@/lib/catalogo/snapshot-de-apresentacao";
@@ -70,7 +71,9 @@ const deps = {
   channel: vi.fn(() => ({ send: vi.fn() })),
 } as unknown as InboundTurnDeps;
 
-function agent(overrides: { pausedAt?: string | null; operationMode?: "automatic" | "assisted" } = {}) {
+function agent(
+  overrides: { pausedAt?: string | null; operationMode?: "automatic" | "assisted" } = {},
+) {
   return {
     pausedAt: null,
     operationMode: "automatic",
@@ -109,11 +112,19 @@ describe("replay de apresentacao persistida antes da classificacao", () => {
     expect(mocks.runModel).not.toHaveBeenCalled();
   });
 
-  it.each([
-    ["pausa", { pausedAt: "2026-10-18T12:00:00.000Z", operationMode: "automatic" as const }],
-    ["modo assistido", { pausedAt: null, operationMode: "assisted" as const }],
-  ])("%s bloqueia o replay antes de qualquer classificacao", async (_state, configuredAgent) => {
-    mocks.loadConversationAgent.mockResolvedValue(configuredAgent);
+  it("pausa encaminha o snapshot para reagendamento sem classificar nem chamar o modelo", async () => {
+    mocks.loadConversationAgent.mockResolvedValue(agent({ pausedAt: "2026-10-18T12:00:00.000Z" }));
+    mocks.resume.mockResolvedValue({ handled: true, disposition: "settled" });
+
+    await expect(run()).rejects.toBeInstanceOf(JobSettledError);
+
+    expect(mocks.resume).toHaveBeenCalledOnce();
+    expect(mocks.resolveConversation).not.toHaveBeenCalled();
+    expect(mocks.runModel).not.toHaveBeenCalled();
+  });
+
+  it("modo assistido bloqueia o replay antes de qualquer classificacao", async () => {
+    mocks.loadConversationAgent.mockResolvedValue(agent({ operationMode: "assisted" }));
 
     await run();
 
