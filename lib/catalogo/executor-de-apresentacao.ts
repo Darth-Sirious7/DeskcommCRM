@@ -43,6 +43,8 @@ export interface CatalogPresentationExecutionArgs {
     next_product_id: string;
     next_product_code: string;
   }) => Promise<boolean>;
+  /** Pausa antes de cada nova mensagem física, inclusive dentro do mesmo item. */
+  pausedBeforeSend?: () => Promise<boolean>;
   /** Seams de teste; produção usa os contratos canônicos. */
   contracts?: {
     beforeSend?: typeof runBeforeSend;
@@ -115,7 +117,7 @@ function validCount(value: number): boolean {
  * O preflight do teto acontece antes de qualquer leitura/escrita ou cópia de
  * mídia. Cada seq é derivado da posição física, portanto replay usa a mesma
  * identidade no send_ledger. Entre itens há um ponto explícito de interrupção;
- * dentro de um item, falha, veto ou queued encerram imediatamente a sequência.
+ * a pausa é consultada antes de cada mensagem física ainda não iniciada.
  */
 export async function executeCatalogPresentationSerial(
   plan: CatalogPresentationPlan,
@@ -173,6 +175,16 @@ export async function executeCatalogPresentationSerial(
       }
     }
     previousItemIndex = payload.item_index;
+
+    if (await args.pausedBeforeSend?.()) {
+      return {
+        status: "stopped",
+        reason: "interrupted",
+        next_item_index: payload.item_index,
+        steps,
+        next_seq: nextSeqAtStart + payloadIndex,
+      };
+    }
 
     const seq = nextSeqAtStart + payloadIndex;
     const accepted = await reconcile(args.beforeSend.pool, {

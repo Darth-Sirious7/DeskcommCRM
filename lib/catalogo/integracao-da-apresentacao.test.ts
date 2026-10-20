@@ -141,6 +141,7 @@ function fixture(outcomes: Array<"sent" | "queued"> = ["sent", "sent"]) {
           materialize: materialize as never,
           interruptedBeforeFirstItem: async () => false,
           interruptedBetweenItems: async () => false,
+          agentPaused: async () => false,
         },
       },
     );

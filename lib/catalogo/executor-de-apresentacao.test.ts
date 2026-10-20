@@ -139,6 +139,21 @@ function fixture(
 }
 
 describe("executor serial da apresentação do catálogo", () => {
+  it("pausa entre mensagens do mesmo produto sem iniciar a mídia seguinte", async () => {
+    const f = fixture();
+    let checks = 0;
+    const result = await executeCatalogPresentationSerial(
+      plan(["A"], [audioProduct("A")]),
+      { ...f.args, pausedBeforeSend: async () => ++checks > 1 },
+    );
+    expect(result).toMatchObject({
+      status: "stopped", reason: "interrupted", next_item_index: 0, next_seq: 2,
+    });
+    expect(f.sent.map((input) => input.seq)).toEqual([1]);
+    expect(f.materializeMedia).not.toHaveBeenCalled();
+    expect(f.events).toEqual(["ledger:1", "guard:Apartamento A", "channel:1:text"]);
+  });
+
   it("preserva ordem, reconcilia ledger antes do guardrail e mantém áudio como áudio", async () => {
     const center = product("CENTRO");
     const gardens = audioProduct("JARDINS");

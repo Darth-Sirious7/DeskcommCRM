@@ -6,6 +6,7 @@ import type { reconcileAcceptedSend } from "@/lib/agent-engine/edge/crm/send-led
 import type { runBeforeSend } from "@/lib/agent-engine/guardrails/before-send";
 import { deriveLgpdFromContact } from "@/lib/agent-engine/guardrails/lgpd/legal-basis";
 import { isLeadInHandoff } from "@/lib/agent-engine/agent/human-handoff";
+import { loadConversationAgentConfig } from "@/lib/agent-engine/agent/agent-config";
 import { respostaFicouObsoleta } from "@/lib/agent-engine/agent/turno-ja-respondido";
 import type { Logger } from "@/lib/agent-engine/obs/logger";
 import { claimOfJob } from "@/lib/agent-engine/queue/claim";
@@ -44,6 +45,7 @@ export interface CatalogPresentationResumeDeps {
     materialize?: typeof materializeCatalogPresentationSnapshotMedia;
     interruptedBeforeFirstItem?: () => Promise<boolean>;
     interruptedBetweenItems?: () => Promise<boolean>;
+    agentPaused?: () => Promise<boolean>;
   };
 }
 
@@ -105,6 +107,26 @@ export async function resumePersistedCatalogPresentation(
   const claim = claimOfJob(job);
   if (!claim) throw new CatalogPresentationResumeError("catalog_presentation_claim_missing");
 
+  let paused = false;
+  const pauseBeforeNextItem = async (): Promise<boolean> => {
+    paused = deps.contracts?.agentPaused
+      ? await deps.contracts.agentPaused()
+      : Boolean((await loadConversationAgentConfig(
+          pool, job.organization_id, input.conversationId, input.channelSessionId,
+        ))?.pausedAt);
+    return paused;
+  };
+  const settlePause = async (): Promise<CatalogPresentationResumeResult> => {
+    const rescheduled = await rescheduleJob(pool, job.id, ctx.workerId, {
+      acquiredAt: claim.acquired_at,
+      delayMs: deps.queuedRetryDelayMs,
+      reason: "apresentacao do catalogo aguardando agente despausado",
+    });
+    if (rescheduled === null) {
+      throw new CatalogPresentationResumeError("catalog_presentation_job_lease_lost");
+    }
+    return { handled: true, disposition: "settled" };
+  };
   const interrupted = async (): Promise<boolean> => {
     if (await isLeadInHandoff(pool, job.organization_id, job.contact_id!)) return true;
     return respostaFicouObsoleta(
@@ -118,10 +140,12 @@ export async function resumePersistedCatalogPresentation(
     );
   };
   if (
+    (await pauseBeforeNextItem()) ||
     (deps.contracts?.interruptedBeforeFirstItem
       ? await deps.contracts.interruptedBeforeFirstItem()
       : await interrupted()) === true
   ) {
+    if (paused) return settlePause();
     return { handled: true, disposition: "interrupted" };
   }
 
@@ -170,6 +194,7 @@ export async function resumePersistedCatalogPresentation(
       }
       return interrupted();
     },
+    pausedBeforeSend: pauseBeforeNextItem,
     beforeSend: {
       pool,
       log: deps.log,
@@ -198,7 +223,10 @@ export async function resumePersistedCatalogPresentation(
   if (result.status === "completed") return { handled: true, disposition: "completed" };
   if (result.status === "not_started")
     throw new CatalogPresentationResumeError(failureCode(result));
-  if (result.reason === "interrupted") return { handled: true, disposition: "interrupted" };
+  if (result.reason === "interrupted") {
+    if (paused) return settlePause();
+    return { handled: true, disposition: "interrupted" };
+  }
 
   if (result.reason === "queued" || result.reason === "blocked") {
     if (result.outcome.kind !== result.reason) {

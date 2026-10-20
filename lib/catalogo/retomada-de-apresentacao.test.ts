@@ -141,7 +141,11 @@ function fixture(
   return { pool, sql, sent, channel, beforeSend, reconcile, reconcileMock, materialize };
 }
 
-function deps(f: ReturnType<typeof fixture>, interruptedBetweenItems = async () => false) {
+function deps(
+  f: ReturnType<typeof fixture>,
+  interruptedBetweenItems = async () => false,
+  agentPaused = async () => false,
+) {
   return {
     channel: f.channel,
     log: {} as never,
@@ -154,6 +158,7 @@ function deps(f: ReturnType<typeof fixture>, interruptedBetweenItems = async () 
       materialize: f.materialize as never,
       interruptedBeforeFirstItem: async () => false,
       interruptedBetweenItems,
+      agentPaused,
     },
   };
 }
@@ -268,6 +273,49 @@ describe("retomada da apresentacao persistida pelo worker", () => {
     expect(f.sent.map((input) => input.body)).toEqual(["Produto A\n\nTexto A"]);
   });
 
+  it("pausa apos o primeiro produto: reagenda o mesmo job e retoma sem duplicar a seq", async () => {
+    const reconciled: number[] = [];
+    const f = fixture({ reconciled });
+    let paused = false;
+    const originalSend = f.channel.send.bind(f.channel);
+    f.channel.send = async (input) => {
+      const outcome = await originalSend(input);
+      paused = true;
+      return outcome;
+    };
+    const resumeDeps = deps(f, async () => false, async () => paused);
+    const persisted = job();
+
+    expect(await resumePersistedCatalogPresentation(
+      f.pool, persisted, { workerId: "worker-a" },
+      { conversationId: CONVERSATION, channelSessionId: SESSION }, resumeDeps,
+    )).toEqual({ handled: true, disposition: "settled" });
+    expect(f.sent.map((input) => input.seq)).toEqual([1]);
+    expect(f.sql.some((text) => text.includes("attempts = greatest(attempts - 1, 0)"))).toBe(true);
+    expect(persisted.payload).toHaveProperty(CHAVE_DO_SNAPSHOT_DA_APRESENTACAO);
+
+    paused = false;
+    reconciled.push(1);
+    expect(await resumePersistedCatalogPresentation(
+      f.pool, persisted, { workerId: "worker-a" },
+      { conversationId: CONVERSATION, channelSessionId: SESSION }, resumeDeps,
+    )).toEqual({ handled: true, disposition: "completed" });
+    expect(f.sent.map((input) => input.seq)).toEqual([1, 2]);
+    expect(f.reconcileMock.mock.calls.map((call) => call[1].seq)).toEqual([1, 1, 2]);
+  });
+
+  it("pausa antes do primeiro item nao materializa nem envia e perda de lease nao vira sucesso", async () => {
+    const f = fixture({ dispositionFound: false });
+    await expect(resumePersistedCatalogPresentation(
+      f.pool, job(), { workerId: "worker-a" },
+      { conversationId: CONVERSATION, channelSessionId: SESSION },
+      deps(f, async () => false, async () => true),
+    )).rejects.toThrow("catalog_presentation_job_lease_lost");
+    expect(f.materialize).not.toHaveBeenCalled();
+    expect(f.beforeSend).not.toHaveBeenCalled();
+    expect(f.sent).toEqual([]);
+  });
+
   it("interrompe por obsolescencia antes de materializar ou enviar o primeiro item", async () => {
     const f = fixture();
     const resumeDeps = deps(f);
@@ -308,7 +356,7 @@ describe("retomada da apresentacao persistida pelo worker", () => {
     const handler = source.slice(source.indexOf("export function createInboundTurnHandler"));
     expect(handler.indexOf("resumePersistedCatalogPresentation(")).toBeGreaterThan(-1);
     expect(handler.indexOf("resumePersistedCatalogPresentation(")).toBeGreaterThan(
-      handler.indexOf("if (presentationAgent?.pausedAt"),
+      handler.indexOf("if (presentationAgent?.operationMode === 'assisted')"),
     );
     expect(handler.indexOf("resumePersistedCatalogPresentation(")).toBeLessThan(
       handler.indexOf("const resolvedAgent = await resolveConversationTurn("),

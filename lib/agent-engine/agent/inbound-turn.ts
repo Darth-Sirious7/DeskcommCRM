@@ -5442,7 +5442,7 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
         payload.conversation_id,
         payload.channel_session_id,
       );
-      if (presentationAgent?.pausedAt || presentationAgent?.operationMode === 'assisted') return;
+      if (presentationAgent?.operationMode === 'assisted') return;
       const resumedPresentation = await resumePersistedCatalogPresentation(
         pool,
         job,
