@@ -300,6 +300,25 @@ describe("materializaÃ§Ã£o de mÃ­dia do snapshot de apresentaÃ§Ã£o", (
     });
   });
 
+  it("recusa 409 com MIME igual e bytes diferentes", async () => {
+    const f = storageFixture();
+    const snapshot = persisted([productWithPhotos()], ["FOTO"]);
+    const first = await materializeCatalogPresentationSnapshotMedia(snapshot, input, f.storage);
+    expect(first.ok).toBe(true);
+    const destination = f.copies[0]!.destination_path;
+    f.objects.set(
+      `${BUCKET_DA_MIDIA_DA_CONVERSA}\u0000${destination}`,
+      blob(new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 9, 8, 7]), "image/jpeg"),
+    );
+
+    const retry = await materializeCatalogPresentationSnapshotMedia(snapshot, input, f.storage);
+
+    expect(retry).toMatchObject({
+      ok: false,
+      error: { code: "copy_conflict_not_idempotent", destination_path: destination },
+    });
+  });
+
   it("nÃ£o chama conflito com MIME diferente de idempotente mesmo se os bytes forem iguais", async () => {
     const f = storageFixture();
     const snapshot = persisted([productWithPhotos()], ["FOTO"]);
@@ -344,5 +363,69 @@ describe("materializaÃ§Ã£o de mÃ­dia do snapshot de apresentaÃ§Ã£o", (
 
     expect(failed).toMatchObject({ ok: false, error: { code: "copy_failed" } });
     expect(retried.ok).toBe(true);
+  });
+
+  it.each([
+    ["foto", [productWithPhotos()], ["FOTO"], `catalog-photos\u0000${FOTO_JPG}`],
+    ["áudio", [productWithAudio()], ["AUDIO"], `catalog-presentation-media\u0000${AUDIO}`],
+  ] as const)("falha fechado se a origem de %s sumiu apesar do destino existente", async (
+    _kind,
+    products,
+    codes,
+    sourceKey,
+  ) => {
+    const f = storageFixture();
+    const snapshot = persisted([...products], [...codes]);
+    const first = await materializeCatalogPresentationSnapshotMedia(snapshot, input, f.storage);
+    expect(first.ok).toBe(true);
+    const copiesAfterFirstRun = f.copies.length;
+    f.objects.delete(sourceKey);
+
+    const replay = await materializeCatalogPresentationSnapshotMedia(snapshot, input, f.storage);
+
+    expect(replay).toMatchObject({ ok: false, error: { code: "source_unavailable" } });
+    expect(f.copies).toHaveLength(copiesAfterFirstRun);
+    expect(f.downloads.filter(([bucket]) => bucket === BUCKET_DA_MIDIA_DA_CONVERSA)).toHaveLength(0);
+  });
+
+  it("não aceita destino com bytes diferentes mesmo que MIME e assinatura sejam válidos", async () => {
+    const f = storageFixture();
+    const snapshot = persisted([productWithPhotos()], ["FOTO"]);
+    const first = await materializeCatalogPresentationSnapshotMedia(snapshot, input, f.storage);
+    expect(first.ok).toBe(true);
+    const destination = f.copies[0]!.destination_path;
+    f.objects.delete(`catalog-photos\u0000${FOTO_JPG}`);
+    f.objects.set(
+      `${BUCKET_DA_MIDIA_DA_CONVERSA}\u0000${destination}`,
+      blob(new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 9, 8, 7]), "image/jpeg"),
+    );
+
+    const replay = await materializeCatalogPresentationSnapshotMedia(snapshot, input, f.storage);
+
+    expect(replay).toMatchObject({
+      ok: false,
+      error: { code: "source_unavailable" },
+    });
+    expect(f.copies).toHaveLength(2);
+  });
+
+  it("não reutiliza objeto materializado no caminho de outro tenant", async () => {
+    const f = storageFixture();
+    const snapshot = persisted([productWithPhotos()], ["FOTO"]);
+    const first = await materializeCatalogPresentationSnapshotMedia(snapshot, input, f.storage);
+    expect(first.ok).toBe(true);
+    const destination = f.copies[0]!.destination_path;
+    const object = f.objects.get(`${BUCKET_DA_MIDIA_DA_CONVERSA}\u0000${destination}`)!;
+    f.objects.delete(`catalog-photos\u0000${FOTO_JPG}`);
+    f.objects.delete(`${BUCKET_DA_MIDIA_DA_CONVERSA}\u0000${destination}`);
+    f.objects.set(
+      `${BUCKET_DA_MIDIA_DA_CONVERSA}\u0000${destination.replace(ORG, OUTRA_ORG)}`,
+      object,
+    );
+
+    const replay = await materializeCatalogPresentationSnapshotMedia(snapshot, input, f.storage);
+
+    expect(replay).toMatchObject({ ok: false, error: { code: "source_unavailable" } });
+    expect(f.copies).toHaveLength(2);
   });
 });
