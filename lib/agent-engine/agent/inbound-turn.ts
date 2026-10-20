@@ -4360,6 +4360,7 @@ async function executarTurnoDoAgente(
             jobId: current.id,
             claim,
             sendsAlreadyCounted: seq,
+            maxSendsPerTurn,
             orderedProductCodes: product_codes,
           });
           if (!snapshot.ok) throw new Error(`catalog_presentation_${snapshot.error.code}`);

@@ -82,10 +82,26 @@ const input = {
   jobId: JOB,
   claim: CLAIM,
   sendsAlreadyCounted: 2,
+  maxSendsPerTurn: 6,
   orderedProductCodes: ["APTO-A"],
 };
 
 describe("snapshot durável da apresentação do catálogo", () => {
+  it("não congela um plano que já excede o teto físico do turno", async () => {
+    const f = fixture();
+    const result = await resolveAndSnapshotCatalogPresentation(f.pool, {
+      ...input,
+      maxSendsPerTurn: 4,
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error: { code: "max_sends_per_turn", required: 3, remaining: 2 },
+    });
+    expect(f.calls.some((call) => call.sql.includes("update public.job_queue"))).toBe(false);
+    expect(f.calls.at(-1)?.sql).toBe("rollback");
+  });
+
   it("resolve pelo tenant e grava sem substituir o restante do payload", async () => {
     const f = fixture();
     const result = await resolveAndSnapshotCatalogPresentation(f.pool, input);

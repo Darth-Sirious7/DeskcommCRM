@@ -89,6 +89,7 @@ interface LockedJobRow extends QueryResultRow {
 
 export type CatalogPresentationResolutionFailure =
   | CatalogPresentationPlanFailure
+  | { code: "max_sends_per_turn"; required: number; remaining: number }
   | { code: "unsafe_media_reference"; product_code: string; media_kind: "audio" | "image" }
   | { code: "invalid_catalog_row"; product_code: string };
 
@@ -287,6 +288,7 @@ export async function resolveAndSnapshotCatalogPresentation(
     jobId: string;
     claim: JobClaim;
     sendsAlreadyCounted: number;
+    maxSendsPerTurn: number;
     orderedProductCodes: readonly string[];
   },
 ): Promise<CatalogPresentationSnapshotResult> {
@@ -343,6 +345,19 @@ export async function resolveAndSnapshotCatalogPresentation(
     if (!planned.ok) {
       await client.query("rollback");
       return planned;
+    }
+
+    const remaining = Math.max(0, input.maxSendsPerTurn - input.sendsAlreadyCounted);
+    if (planned.plan.physical_message_count > remaining) {
+      await client.query("rollback");
+      return {
+        ok: false,
+        error: {
+          code: "max_sends_per_turn",
+          required: planned.plan.physical_message_count,
+          remaining,
+        },
+      };
     }
 
     const snapshot: CatalogPresentationSnapshot = {

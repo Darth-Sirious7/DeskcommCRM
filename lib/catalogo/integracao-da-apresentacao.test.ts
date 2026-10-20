@@ -164,6 +164,7 @@ async function snapshot(f: ReturnType<typeof fixture>, sendsAlreadyCounted = 0) 
     jobId: JOB,
     claim: CLAIM,
     sendsAlreadyCounted,
+    maxSendsPerTurn: 10,
     orderedProductCodes: ["A", "B"],
   });
   if (!result.ok) throw new Error(result.error.code);
