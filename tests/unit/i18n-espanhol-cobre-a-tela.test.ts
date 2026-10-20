@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
 import ts from "typescript";
@@ -472,17 +472,23 @@ describe("a chave é o texto em português, e o português não muda", () => {
     expect(mudaram).toEqual([]);
   });
 
-  it("todo idioma servido, exceto o padrão, tem coluna no dicionário", () => {
+  it("todo idioma servido, exceto o padrão, tem coluna no dicionário ou catálogo próprio", () => {
     // Guarda contra o defeito que originou esta feature: o seletor oferecia
-    // `en-US` e nenhuma tradução existia — escolher não mudava uma letra.
+    // `en-US` e nenhuma tradução existia — escolher não mudava uma letra. Um
+    // idioma pode morar numa coluna do dicionário (o espanhol) ou no catálogo
+    // `lib/i18n/traducoes/<codigo>.json` (o turco); o que reprova é nenhum dos dois.
     const outros = IDIOMAS.filter((i) => i !== "pt-BR");
     for (const idioma of outros) {
       const comEsse = Object.values(DICIONARIO).filter((v) =>
         Object.prototype.hasOwnProperty.call(v, idioma),
       );
+      const arquivo = join(RAIZ, "lib", "i18n", "traducoes", `${idioma}.json`);
+      const noCatalogo = existsSync(arquivo)
+        ? Object.keys(JSON.parse(readFileSync(arquivo, "utf8")) as Record<string, string>).length
+        : 0;
       expect(
-        comEsse.length,
-        `o idioma "${idioma}" é oferecido mas não tem NENHUMA tradução no dicionário`,
+        comEsse.length + noCatalogo,
+        `o idioma "${idioma}" é oferecido mas não tem NENHUMA tradução, nem no dicionário nem em lib/i18n/traducoes/${idioma}.json`,
       ).toBeGreaterThan(0);
     }
   });

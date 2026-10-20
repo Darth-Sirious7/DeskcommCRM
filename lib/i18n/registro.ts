@@ -74,6 +74,17 @@ export const REGISTRO_DE_IDIOMAS = [
     mantenedor: "mantenedores do projeto",
   },
   {
+    codigo: "tr",
+    nomeNativo: "Türkçe",
+    rotuloCurto: "TR",
+    tagBcp47: "tr",
+    subtagsDoNavegador: ["tr"],
+    // O primeiro idioma servido pelo CATÁLOGO, e não por coluna do dicionário:
+    // as frases moram em `lib/i18n/traducoes/tr.json`, lidas por `catalogos.ts`.
+    nivel: "completo",
+    mantenedor: "Agenterix (@nusretbayindir-stack)",
+  },
+  {
     codigo: "zh-CN",
     nomeNativo: "简体中文",
     rotuloCurto: "中",
