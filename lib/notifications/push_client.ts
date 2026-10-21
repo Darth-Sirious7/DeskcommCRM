@@ -1,4 +1,5 @@
 import { areAlertsEnabled, getPermission } from "./permission";
+import { canalLigado } from "./prefs";
 import { ensureNotifyServiceWorker } from "./service_worker";
 
 function urlBase64ToUint8Array(base64: string): Uint8Array {
@@ -13,7 +14,8 @@ function urlBase64ToUint8Array(base64: string): Uint8Array {
 /** Liga a inscrição Web Push depois da permissão. Sem VAPID no servidor, no-op. */
 export async function syncPushSubscription(): Promise<void> {
   if (typeof window === "undefined") return;
-  if (getPermission() !== "granted" || !areAlertsEnabled()) return;
+  // A preferência é a fonte: `alerts.enabled` é espelho que `request()` regrava.
+  if (getPermission() !== "granted" || !areAlertsEnabled() || !canalLigado("message", "push")) return;
   const reg = await ensureNotifyServiceWorker();
   if (!reg?.pushManager) return;
 
@@ -40,4 +42,40 @@ export async function syncPushSubscription(): Promise<void> {
       keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
     }),
   });
+}
+
+/**
+ * Encerra o push DESTE aparelho: o servidor esquece a inscrição e o navegador
+ * cancela a dele. Chamado ao desligar os alertas de mensagem e ao sair — antes
+ * da action de saída, porque o DELETE precisa do cookie que ela apaga.
+ *
+ * Nunca lança, e as duas etapas são independentes: a saída não pode depender
+ * da rede, e o cancelamento sozinho já faz o próximo envio limpar a linha no
+ * servidor (404/410). Não registra service worker: sair não deve instalar nada.
+ */
+export async function encerrarPushDesteAparelho(): Promise<void> {
+  if (typeof navigator === "undefined" || !navigator.serviceWorker) return;
+  let sub: PushSubscription | null = null;
+  try {
+    const reg = await navigator.serviceWorker.getRegistration("/");
+    sub = (await reg?.pushManager?.getSubscription()) ?? null;
+  } catch {
+    return; // service worker inacessível: não há inscrição a encerrar
+  }
+  if (!sub) return;
+  try {
+    await fetch("/api/v1/notifications/push", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ endpoint: sub.endpoint }),
+      signal: AbortSignal.timeout(3000),
+    });
+  } catch {
+    // sem rede: o cancelamento abaixo basta para a faxina do próximo envio
+  }
+  try {
+    await sub.unsubscribe();
+  } catch {
+    // inscrição já inválida no navegador
+  }
 }

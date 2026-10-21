@@ -11,6 +11,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { apiClient } from "@/lib/api/client";
 import { useT } from "@/hooks/i18n/useT";
+import { rodapeDeSaida } from "@/lib/prospecting/rodape-de-saida";
 import {
   RAZAO_NAO_SELECIONADA,
   safePublicLink,
@@ -43,6 +44,9 @@ type Candidate = {
   message_status: string | null;
   error: string | null;
   conversation_id: string | null;
+  automatic_sends?: number;
+  exit_offered_at?: string | null;
+  is_blocked?: boolean | null;
 };
 type State = {
   configured: boolean;
@@ -56,6 +60,7 @@ type State = {
     status: string;
   }[];
   stages: { id: string; name: string; pipeline_id: string; pipeline_name: string }[];
+  organization_locale?: string | null;
 };
 const labels: Record<string, string> = {
   draft: "Preparar campanha",
@@ -88,6 +93,9 @@ const emptyConfig: CampaignConfig = {
   legal_basis_ref: "",
   // Campanha nova nasce no modo recomendado; a configuração já gravada manda no que existe.
   funnel_entry: "on_send",
+  // A saída é oferecida na primeira mensagem por padrão; config gravada antes desta chave
+  // segue igual.
+  exit_offer: "first_message",
 };
 export function ProspectingClient() {
   const t = useT();
@@ -487,7 +495,7 @@ export function ProspectingClient() {
           )}
           {campaign && (
             <>
-              <Card className="p-5">
+              <Card className="@container p-5">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <h2 className="text-xl font-semibold">{campaign.name}</h2>
@@ -505,11 +513,15 @@ export function ProspectingClient() {
                     {campaign.error}
                   </p>
                 )}
-                <div className="mt-5 grid grid-cols-2 gap-4 md:grid-cols-4">
+                {/* A grade mede o CARD, não a janela: em 1024px o card divide a tela com a
+                    lista de campanhas e 5 colunas espremiam o rótulo. 5 contadores só
+                    cabem sem órfão em 3 colunas ([3,2]) ou 5 ([5]); 2 deixa um sozinho. */}
+                <div className="mt-5 grid grid-cols-3 gap-4 @xl:grid-cols-5">
                   {[
                     [t("Encontrados"), candidates.length],
                     [t("Na fila"), count(["queued", "sending"])],
                     [t("Responderam"), count(["replied", "qualified"])],
+                    [t("Pediram para parar"), candidates.filter((c) => c.is_blocked).length],
                     [t("Qualificados"), count(["qualified"])],
                   ].map(([label, value]) => (
                     <div key={label}>
@@ -953,6 +965,52 @@ export function ProspectingClient() {
                               </span>
                             </label>
                           </fieldset>
+                          <fieldset className="space-y-2">
+                            <legend className="text-sm font-medium">
+                              {t("Quando oferecer a opção de parar de receber")}
+                            </legend>
+                            <label className="flex items-start gap-2 text-sm">
+                              <input
+                                type="radio"
+                                name="prospecting-exit-offer"
+                                checked={(config.exit_offer ?? "first_message") === "first_message"}
+                                onChange={() => update("exit_offer", "first_message")}
+                                className="mt-1"
+                              />
+                              <span>
+                                {t("Na primeira mensagem (recomendado)")}
+                                <span className="block text-xs text-muted-foreground">
+                                  {/* A frase é a ENVIADA: idioma da organização, não da interface. */}
+                                  {t("A abertura já diz como parar:")}{" "}
+                                  {rodapeDeSaida(data?.organization_locale)}
+                                </span>
+                              </span>
+                            </label>
+                            <label className="flex items-start gap-2 text-sm">
+                              <input
+                                type="radio"
+                                name="prospecting-exit-offer"
+                                checked={(config.exit_offer ?? "first_message") === "second_message"}
+                                onChange={() => update("exit_offer", "second_message")}
+                                className="mt-1"
+                              />
+                              <span>
+                                {t("Atrasar para a 2ª mensagem")}
+                                <span className="block text-xs text-muted-foreground">
+                                  {t(
+                                    "A abertura só cumprimenta e confirma se é a empresa certa, sem oferta. A instrução para parar vai na mensagem seguinte.",
+                                  )}
+                                </span>
+                              </span>
+                            </label>
+                            {config.exit_offer === "second_message" && (
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {t(
+                                  "Exemplo de instrução para os atrasados: na primeira mensagem, só cumprimente e pergunte se é da empresa. Quando a pessoa responder, apresente-se e peça permissão para mostrar o serviço.",
+                                )}
+                              </p>
+                            )}
+                          </fieldset>
                           <div>
                             <Label htmlFor="prospecting-basis">
                               {t("Referência da avaliação de legítimo interesse")}
@@ -1188,6 +1246,15 @@ export function ProspectingClient() {
                               {c.message_status && (
                                 <p className="mt-1 text-xs text-muted-foreground">
                                   {t("Mensagem:")} {c.message_status}
+                                </p>
+                              )}
+                              {/* Só quem já recebeu a 1ª mensagem: o worker grava automatic_sends=1 quando ela sai. */}
+                              {campaign?.config?.exit_offer === "second_message" &&
+                                (c.automatic_sends ?? 0) > 0 && (
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  {c.exit_offered_at
+                                    ? t("Saída oferecida")
+                                    : t("Saída ainda não oferecida")}
                                 </p>
                               )}
                             </td>

@@ -448,8 +448,9 @@ valor_compose() { printf '"%s"' "$(printf '%s' "${1-}" | sed 's/[\\"$]/\\&/g')";
 # O compose oficial aponta o GoTrue para `supabase-mail`, que não existe em
 # produção: "esqueci a senha" e a confirmação de cadastro não chegariam. O SMTP
 # do CRM (#1176) é a fonte, na MESMA precedência de lib/email/config.ts: a
-# linha da tela /admin/email, se existe; senão o .env. Sai 1 (e não toca em
-# nada) quando o CRM não tem SMTP — quem chama avisa o dono.
+# linha da tela /admin/email, se existe; senão o .env. Sem SMTP, a Resend do
+# CRM (resend_da_instalacao), que é o que o app usa nesse caso. Sai 1 (e não
+# toca em nada) quando o CRM não tem nenhum dos dois — quem chama avisa o dono.
 sincronizar_smtp_do_gotrue() {
   local env_sb sep=$'\x1f' linha="" host porta usuario senha remetente nome
   env_sb="$(dir_do_supabase)/.env"
@@ -465,13 +466,50 @@ sincronizar_smtp_do_gotrue() {
     host="${SMTP_HOST:-}"; porta="${SMTP_PORT:-587}"; usuario="${SMTP_USERNAME:-}"
     senha="${SMTP_PASSWORD:-}"; remetente="${SMTP_FROM_EMAIL:-}"; nome="${SMTP_FROM_NAME:-}"
   fi
-  [ -n "$host" ] && [ -n "$remetente" ] || return 1
+  if [ -z "$host" ] || [ -z "$remetente" ]; then
+    # Sem SMTP o app envia pela Resend (lib/email/roteador.ts) — e o GoTrue também pode.
+    linha="$(resend_da_instalacao)" || return 1
+    IFS="$sep" read -r senha remetente <<<"$linha"
+    host=smtp.resend.com; porta=465; usuario=resend
+  fi
   set_env_var "$env_sb" SMTP_HOST "$(valor_compose "$host")"
   set_env_var "$env_sb" SMTP_PORT "${porta:-587}"
   set_env_var "$env_sb" SMTP_USER "$(valor_compose "$usuario")"
   set_env_var "$env_sb" SMTP_PASS "$(valor_compose "$senha")"
   set_env_var "$env_sb" SMTP_ADMIN_EMAIL "$(valor_compose "$remetente")"
   set_env_var "$env_sb" SMTP_SENDER_NAME "$(valor_compose "${nome:-${APP_NAME:-DeskcommCRM}}")"
+}
+
+# A Resend também fala SMTP (smtp.resend.com:465, usuário `resend`, senha = a
+# chave). Sem isto, a instalação com e-mail SÓ pela Resend deixava o GoTrue no
+# `supabase-mail` de mentira, e o cadastro por convite morria em 500 "Error
+# sending confirmation email" (medido numa VPS v1.85.0).
+#
+# Mesma precedência de valorDaInstalacao (lib/instalacao/config.ts), chave a
+# chave: a linha de `platform_config` manda, inclusive vazia; sem linha, o
+# .env; banco que não respondeu, o .env. O segredo da tela é AES-256-GCM com a
+# AI_CRED_AES_KEY, que mora no app e não no banco: quem abre o envelope é o Node
+# do contêiner do app, e a chave de cifra nunca sai dele. Envelope que não abre
+# vale vazio, como no app. Imprime "chave<US>remetente"; sai 1 sem os dois.
+resend_da_instalacao() {
+  local sep=$'\x1f' linhas chave eh valor ct iv tag
+  local api="${RESEND_API_KEY:-}" de="${RESEND_FROM_EMAIL:-}"
+  linhas="$(psql_run -tA -F "$sep" -c "select chave, eh_segredo, coalesce(valor,''),
+      coalesce(encode(ciphertext,'hex'),''), coalesce(encode(iv,'hex'),''), coalesce(encode(tag,'hex'),'')
+    from public.platform_config where chave in ('RESEND_API_KEY','RESEND_FROM_EMAIL')" 2>/dev/null)" || linhas=""
+  while IFS="$sep" read -r chave eh valor ct iv tag; do
+    if [ "$eh" = t ]; then
+      valor="$(printf '%s %s %s' "$ct" "$iv" "$tag" | (cd "${PROJECT_DIR:-$PWD}" && dc exec -T app node -e \
+        "const [c,i,t]=require('fs').readFileSync(0,'utf8').trim().split(' ').map(h=>Buffer.from(h,'hex'));const d=require('crypto').createDecipheriv('aes-256-gcm',Buffer.from(process.env.AI_CRED_AES_KEY||'','base64'),i);d.setAuthTag(t);process.stdout.write(Buffer.concat([d.update(c),d.final()]).toString('utf8'))") 2>/dev/null)" || valor=""
+    fi
+    case "$chave" in
+      RESEND_API_KEY) api="$valor" ;;
+      RESEND_FROM_EMAIL) de="$valor" ;;
+    esac
+  done <<<"$linhas"
+  api="$(printf '%s' "$api" | tr -d '[:space:]')"; de="$(printf '%s' "$de" | tr -d '[:space:]')"
+  [ -n "$api" ] && [ -n "$de" ] || return 1
+  printf '%s%s%s' "$api" "$sep" "$de"
 }
 
 # ── `so_convite` fecha o caminho DIRETO do GoTrue (#1653) ────────────────────
@@ -688,6 +726,15 @@ atualizar_supabase_single_server() {
   # aviso, não saída 1: o CRM segue atualizável.
   if sincronizar_signup_mode_do_gotrue; then
     dc_supabase up -d --no-deps auth >/dev/null 2>&1 || c_ylw "⚠ Não consegui reiniciar o auth do Supabase com o modo de cadastro (#1653)."
+  fi
+  # Pelo mesmo motivo, o SMTP do GoTrue também é sincronizado aqui: a chamada do
+  # update.sh roda com o kit ANTIGO, que não conhece a Resend como SMTP. O auth
+  # só reinicia quando um VALOR do .env do Supabase mudou (ordenado: o
+  # set_env_var move a chave regravada para o fim, e ordem não é mudança).
+  local antes
+  antes="$(sort "$dir/.env" | cksum)"
+  if sincronizar_smtp_do_gotrue && [ "$(sort "$dir/.env" | cksum)" != "$antes" ]; then
+    dc_supabase up -d --no-deps auth >/dev/null 2>&1 || c_ylw "⚠ Não consegui reiniciar o auth do Supabase com o SMTP do CRM."
   fi
   return 0
 }
@@ -1331,6 +1378,62 @@ EOF
     case "$rodando" in *" $svc "*) ;; *) fora="${fora}${fora:+ }${svc}" ;; esac
   done
   printf '%s' "$fora"
+}
+
+# ── O proxy só é recriado com uma configuração que o Caddy aceitou (#2724) ──
+#
+# `caddy-sites/` é do operador. Um arquivo errado ali, um domínio dele que uma
+# versão nossa passou a usar, ou uma imagem nova do Caddy que recusa o que a
+# antiga aceitava: nos três casos o Caddy RECRIADO não sobe, e o CRM sai do ar
+# junto. O Caddy que já está rodando não sente nada, porque leu a configuração
+# ao subir. Então a atualização confere ANTES de recriar, num contêiner
+# descartável com a imagem já puxada, o Caddyfile desta versão e a pasta do
+# operador. Recusou: o proxy antigo fica no ar e a saída diz o motivo.
+#
+# Falha fechada de propósito: se a conferência nem roda, o proxy também não é
+# recriado. Trocar um proxy que funciona por um que ninguém conferiu é a troca
+# que esta guarda existe para recusar. O `</dev/null` impede o `run` de comer
+# o stdin de quem roda o update.sh por pipe. O motivo fica em PROXY_RECUSA
+# (vazio = aprovado).
+conferir_config_do_proxy() {
+  local saida
+  if saida="$(dc run --rm --no-deps -T caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile </dev/null 2>&1)"; then
+    PROXY_RECUSA=""
+    return 0
+  fi
+  PROXY_RECUSA="${saida:-(a conferência do Caddy não devolveu mensagem)}"
+  return 1
+}
+
+# O `up -d` do parque. Com a configuração do proxy recusada, sobe todo serviço
+# menos o caddy: um `up -d` sem nome recria o Caddy quando a imagem dele muda,
+# e é justamente esse o caso em que a imagem nova recusa o arquivo do operador.
+# A lista vem do `config --services`, que só lista serviço de profile ativo
+# (nomear à mão ligaria profile desligado).
+subir_o_parque() {
+  [ -n "${PROXY_RECUSA:-}" ] || { dc up -d; return; }
+  local servicos
+  servicos="$(dc config --services | grep -vx caddy)" || return 1
+  # shellcheck disable=SC2086  # um nome de serviço por palavra
+  dc up -d $servicos
+}
+
+# Recria o Caddy, que lê o Caddyfile por bind mount de arquivo e por isso não
+# vê a versão nova sem ser recriado (ver o comentário no update.sh) — só se a
+# conferência aprovou.
+recriar_o_proxy() {
+  if [ -n "${PROXY_RECUSA:-}" ]; then
+    c_ylw "⚠ O proxy NÃO foi recriado: a configuração nova não passou na conferência do Caddy."
+    c_ylw "  O proxy anterior segue no ar e o CRM continua respondendo. A causa mais comum"
+    c_ylw "  é um arquivo seu em caddy-sites/. O que o Caddy disse:"
+    printf '%s\n' "$PROXY_RECUSA" | tail -n 6 | sed 's/^/    /'
+    c_ylw "  Depois de corrigir, confira: docker compose $(dc_files) run --rm --no-deps caddy caddy validate --config /etc/caddy/Caddyfile"
+    c_ylw "  e só com a conferência limpa aplique: docker compose $(dc_files) up -d --force-recreate caddy"
+    return 1
+  fi
+  dc up -d --force-recreate --no-deps caddy >/dev/null 2>&1 \
+    && c_grn "✓ proxy recarregado com a configuração desta versão" \
+    || c_ylw "⚠ não consegui recriar o proxy — rode: docker compose $(dc_files) up -d --force-recreate caddy"
 }
 
 # ── O rollback dos pins de versão (#1955, critério 4) ───────────────────────

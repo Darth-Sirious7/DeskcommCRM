@@ -27,6 +27,14 @@ export const campaignConfigSchema = z
     // vez de ser abordada. O padrão é `on_start` — configuração gravada antes desta chave
     // existir segue funcionando igual, sem ninguém editar nada.
     funnel_entry: z.enum(["on_start", "on_send"]).default("on_start"),
+    // QUANDO a saída ("responda PARAR") é oferecida — depende da estratégia de abordagem.
+    // `first_message`: na abertura (o padrão, o de sempre). `second_message`: a abertura
+    // não faz oferta e a saída vai na mensagem seguinte. Não há modo da 3ª (doc 170): só
+    // UMA mensagem sem saída, e é a única que a instrução ao modelo segura sem trava. Em
+    // TODOS os modos a palavra continua bloqueando (lib/channels/pos-entrada.ts).
+    // O padrão é `first_message`: configuração gravada antes desta chave existir segue
+    // igual, sem ninguém editar nada.
+    exit_offer: z.enum(["first_message", "second_message"]).default("first_message"),
   })
   .strict();
 export const searchSchema = z

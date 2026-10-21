@@ -56,6 +56,8 @@ const vapidPronto = vi.hoisted(() => vi.fn<() => boolean>());
 // árvore do servidor sem o QueryClientProvider que o app tem no layout. O que
 // este arquivo mede é o texto sobre Push; a seção de sons tem teste próprio.
 vi.mock("@/app/app/settings/notifications/_sons", () => ({ SonsDosAvisos: () => null }));
+// A seção da tela bloqueada lê a organização no servidor; tem teste próprio.
+vi.mock("@/app/app/settings/notifications/_tela-bloqueada", () => ({ ConteudoNaTelaBloqueada: () => null }));
 vi.mock("@/lib/notifications/vapid", () => ({ vapidPronto }));
 vi.mock("@/lib/auth/server", () => ({ requireAuth: vi.fn().mockResolvedValue({}) }));
 vi.mock("@/app/app/settings/notifications/_client", () => ({

@@ -86,7 +86,10 @@ describe("o caminho de envio usa o rodapé — e não o texto cru do modelo", ()
     // Sem esta asserção, o módulo poderia estar perfeito e desligado: o defeito
     // original era exatamente um caminho de envio que mandava o texto cru.
     const worker = fs.readFileSync(path.join(RAIZ, "lib/prospecting/worker.ts"), "utf8");
-    expect(worker).toMatch(/body:\s*comSaida\(/);
+    expect(
+      worker,
+      "o envio precisa mandar comSaida(...) na primeira mensagem e o texto cru nos atrasados",
+    ).toMatch(/body:\s*cfg\.exit_offer\s*===\s*"first_message"\s*\?\s*comSaida\(/);
     expect(
       worker.includes("body: generated.texto"),
       "o envio voltou a mandar o texto do modelo sem a saída",

@@ -11,7 +11,7 @@ import {
   setAlertsEnabled,
   type NotificationPermissionState,
 } from "@/lib/notifications/permission";
-import { syncPushSubscription } from "@/lib/notifications/push_client";
+import { encerrarPushDesteAparelho, syncPushSubscription } from "@/lib/notifications/push_client";
 import { ensureNotifyServiceWorker } from "@/lib/notifications/service_worker";
 import { resumeAudio } from "@/lib/notifications/sounds";
 
@@ -85,6 +85,8 @@ export function useNotificationPermission(): {
     if (on) {
       void resumeAudio();
       void ensureNotifyServiceWorker().then(() => syncPushSubscription());
+    } else {
+      void encerrarPushDesteAparelho();
     }
     confirmOnOs(on);
   }, []);

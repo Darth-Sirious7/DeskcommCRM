@@ -45,8 +45,17 @@ function DescricaoDoMover({ config }: { config: Record<string, unknown> }) {
 function DescricaoDoAtendente({ config }: { config: Record<string, unknown> }) {
   const t = useT();
   const { data: membros } = useAssignableMembers(true);
-  const membro = membros?.find((m) => m.user_id === config.user_id);
-  return <>{membro ? (membro.full_name ?? membro.user_id.slice(0, 8)) : t("Escolha o atendente")}</>;
+  const nomeDe = (userId: unknown) => {
+    const membro = membros?.find((m) => m.user_id === userId);
+    return membro ? (membro.full_name ?? membro.user_id.slice(0, 8)) : null;
+  };
+  // #2041 — no rodízio, a caixa mostra a fila na ordem em vez de uma pessoa só.
+  if (config.modo === "rodizio") {
+    const fila = Array.isArray(config.fila) ? (config.fila as Array<{ user_id?: unknown }>) : [];
+    const nomes = fila.map((p) => nomeDe(p.user_id)).filter((n): n is string => n !== null);
+    return <>{nomes.length ? `${t("Rodízio")}: ${nomes.join(", ")}` : t("Escolha quem entra no rodízio")}</>;
+  }
+  return <>{nomeDe(config.user_id) ?? t("Escolha o atendente")}</>;
 }
 
 function DescricaoDaMensagemPelaIa({ config }: { config: Record<string, unknown> }) {
@@ -99,6 +108,11 @@ function DescricaoDaAcao({ tipo, config }: { tipo: string; config: Record<string
     case "send_whatsapp_message": {
       const texto = cfg(config, "template").trim();
       return <>{texto ? `“${texto}”` : t("Escreva a mensagem")}</>;
+    }
+    // O e-mail de saída não tinha caso: o cartão caía no `tipo` cru e dizia « send_email » em todo idioma.
+    case "send_email": {
+      const assunto = cfg(config, "assunto").trim();
+      return <>{assunto ? `“${assunto}”` : t("Escreva o e-mail")}</>;
     }
     case "add_tag": {
       const tags = Array.isArray(config.tags) ? (config.tags as unknown[]).map(String) : [];

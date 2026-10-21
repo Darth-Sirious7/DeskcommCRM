@@ -114,6 +114,34 @@
       "col": 5,
       "type": "component",
       "label": "ElevenLabs Agents privado e teste no navegador"
+    },
+    {
+      "id": "inbound-turn",
+      "lane": "app",
+      "col": 4,
+      "type": "component",
+      "label": "Turno de resposta (inbound-turn)"
+    },
+    {
+      "id": "followup-turn",
+      "lane": "app",
+      "col": 4,
+      "type": "component",
+      "label": "Turno de follow-up (followup-turn)"
+    },
+    {
+      "id": "saida-configuravel",
+      "lane": "app",
+      "col": 5,
+      "type": "component",
+      "label": "Contagem e reserva da saída"
+    },
+    {
+      "id": "saida-volta-com-a-mensagem",
+      "lane": "db",
+      "col": 6,
+      "type": "component",
+      "label": "Gatilho: mensagem da saída falhou, a reserva volta"
     }
   ],
   "edges": [
@@ -216,6 +244,31 @@
       "from": "candidates",
       "to": "inbox",
       "label": "crm-summary autorizado: contexto comercial e fontes no painel lateral"
+    },
+    {
+      "from": "inbound-turn",
+      "to": "saida-configuravel",
+      "label": "conta e reserva a saída antes de enviar"
+    },
+    {
+      "from": "followup-turn",
+      "to": "saida-configuravel",
+      "label": "conta e reserva a saída antes de enviar"
+    },
+    {
+      "from": "saida-configuravel",
+      "to": "candidates",
+      "label": "grava exit_offered_at uma vez e amarra exit_offer_message_id à mensagem com o rodapé"
+    },
+    {
+      "from": "saida-volta-com-a-mensagem",
+      "to": "candidates",
+      "label": "mensagem amarrada virou failed (handler, watchdog, webhook): desfaz contagem e reserva"
+    },
+    {
+      "from": "saida-volta-com-a-mensagem",
+      "to": "operator",
+      "label": "audita prospecting.exit_offer_withdrawn; a tela volta a 'Saída ainda não oferecida'"
     }
   ]
 }

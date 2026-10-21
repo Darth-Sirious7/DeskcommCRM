@@ -3,7 +3,9 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { Card } from "@/components/ui/card";
 import { vapidPronto } from "@/lib/notifications/vapid";
 import { NotificationPrefsClient } from "./_client";
+import { TaskReminderPrefs } from "./_tarefas";
 import { SonsDosAvisos } from "./_sons";
+import { ConteudoNaTelaBloqueada } from "./_tela-bloqueada";
 
 export const dynamic = "force-dynamic";
 
@@ -93,7 +95,16 @@ export default async function NotificationsPage() {
         </Card>
       )}
 
+      <ConteudoNaTelaBloqueada />
+
       <NotificationPrefsClient />
+
+      {/* O card PRÓPRIO dos lembretes de tarefa (#2529), e não mais linhas na
+          tabela acima: a tabela decide o que a aba ABERTA faz, e este aviso
+          nasce num cron com o site fechado — a escolha mora no servidor, por
+          pessoa, e misturar os dois na mesma tabela prometeria o que não
+          cumpriria. */}
+      <TaskReminderPrefs />
 
       <SonsDosAvisos />
     </div>

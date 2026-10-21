@@ -260,6 +260,56 @@ describe("gradual outreach", () => {
       db.query.mock.calls.some(([q]) => q.startsWith("update messages set status='failed'")),
     ).toBe(true);
   });
+
+  it("envio não confirmado não marca contagem nem reserva", async () => {
+    mocks.send.mockResolvedValue({ status: "failed" });
+    const db = database();
+    await sendNextCandidate({} as never, db as never, {} as never, campaign);
+    const updates = db.query.mock.calls
+      .map(([q]) => q)
+      .filter((q) => q.includes("automatic_sends = case when"));
+    expect(updates.length).toBe(1);
+    // O status enviado é 'failed' (não 'sent'), então o case when não grava 1 nem now().
+    const params = (db.query.mock.calls.find(([q]) => q.includes("automatic_sends = case when")) as [string, unknown[]] | undefined)?.[1];
+    expect(params?.[2]).toBe("failed");
+    // Sanidade: o ramo antigo (incondicional) usaria automatic_sends=1 direto.
+    expect(updates[0]!).not.toContain("automatic_sends=1");
+    expect(updates[0]!).not.toContain("exit_offered_at=now()");
+  });
+
+  it("modo first_message (padrão): corpo leva a saída", async () => {
+    const db = database();
+    await sendNextCandidate({} as never, db as never, {} as never, campaign);
+    const body = mocks.send.mock.calls[0]?.[2]?.body as string;
+    expect(body).toContain("PARAR");
+  });
+
+  it("modo second_message: corpo é o texto cru (sem PARAR) e a instrução traz a frase sem oferta", async () => {
+    const atrasada = {
+      ...campaign,
+      config: { ...campaign.config, exit_offer: "second_message" },
+    } as Campaign;
+    const db = database();
+    await sendNextCandidate({} as never, db as never, {} as never, atrasada);
+    const body = mocks.send.mock.calls[0]?.[2]?.body as string;
+    expect(body).not.toContain("PARAR");
+    const instrucao = mocks.generate.mock.calls[0]?.[2]?.instrucao as string;
+    expect(instrucao).toContain("NÃO apresenta serviço");
+  });
+
+  it("config sem exit_offer comporta-se como first_message", async () => {
+    const semChave = {
+      ...campaign,
+      config: { ...campaign.config },
+    } as Campaign;
+    delete (semChave.config as Record<string, unknown>).exit_offer;
+    const db = database();
+    await sendNextCandidate({} as never, db as never, {} as never, semChave);
+    const body = mocks.send.mock.calls[0]?.[2]?.body as string;
+    expect(body).toContain("PARAR");
+    const instrucao = mocks.generate.mock.calls[0]?.[2]?.instrucao as string;
+    expect(instrucao).not.toContain("NÃO apresenta serviço");
+  });
 });
 
 describe("tick da prospecção × organização parada", () => {

@@ -242,8 +242,22 @@ const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
   "lib/mcp/servidor-externo/chamada.ts": {
     categoria: "PROTOCOLO",
     motivo:
-      "clientInfo do handshake `initialize` do MCP que este cliente manda ao servidor REMOTO: ele registra quem conectou e é comum haver regra de acesso por identificação do cliente lá do lado. Não é texto de interface — a tela nunca mostra — e renomear muda a identidade reportada no fio do protocolo",
-    marcas: ["deskcomm-crm"],
+      "clientInfo do handshake `initialize` do MCP que este cliente manda ao servidor REMOTO: ele registra quem conectou e é comum haver regra de acesso por identificação do cliente lá do lado. Não é texto de interface — a tela nunca mostra — e renomear muda a identidade reportada no fio do protocolo. E os cabeçalhos `X-Deskcomm-Contato-*`/`X-Deskcomm-Canal` (#2147): o servidor externo FILTRA os dados do cliente da conversa por esses nomes exatos; renomear faz o servidor deixar de achar a identidade e, conforme a implementação dele, responder sem filtro",
+    marcas: ["deskcomm-crm", "x-deskcomm-canal", "x-deskcomm-contato-id", "x-deskcomm-contato-telefone"],
+  },
+  "lib/mcp/servidor-externo/externo.test.ts": {
+    categoria: "PROTOCOLO",
+    motivo:
+      "é a guarda do contrato acima (#2147): o teste de não-forjamento tenta passar os nomes `X-Deskcomm-*` por argumento de ferramenta, em caixas diferentes, e confere o que chega no fio. Trocar a string aqui desarmaria a prova de que o argumento não alcança o cabeçalho",
+    marcas: [
+      "x-deskcomm-canal",
+      "x-deskcomm-contato-id",
+      "x-deskcomm-contato-id",
+      "x-deskcomm-contato-telefone",
+      "x-deskcomm-contato-telefone",
+      "x-deskcomm-extra",
+      "x-deskcomm-extra",
+    ],
   },
   "lib/supabase/admin.ts": {
     categoria: "PROTOCOLO",
@@ -831,6 +845,17 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     categoria: "CONSOLE",
     motivo:
       "é o serviço da conta ChatGPT que o operador abre para conectar a assinatura. O produto não faz requests para este host; a consulta do catálogo e a inferência SIWC usam a API pública oficial em api.openai.com.",
+  },
+  // ── Web Push: o serviço de push do navegador, destino do envio ──
+  "fcm.googleapis.com": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "serviço de push do Chrome, Edge Android, Opera e Samsung Internet: o servidor faz POST no endpoint da inscrição (`lib/notifications/web_push.ts`), e só hosts de `lib/notifications/servicos-de-push.ts` são aceitos. O destino é do fornecedor do navegador, não da instalação.",
+  },
+  "updates.push.services.mozilla.com": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "serviço de push do Firefox: o mesmo papel do FCM para inscrições feitas no Firefox, listado em `lib/notifications/servicos-de-push.ts`. Trocar pelo domínio do revendedor faria o aviso não chegar a aparelho nenhum.",
   },
   "datamanager.googleapis.com": {
     categoria: "FORNECEDOR",

@@ -236,7 +236,7 @@ export function TemplateFormDialog({ open, onOpenChange, canShare, template }: P
               id="tpl-shortcut"
               value={shortcut}
               onChange={(e) => setShortcut(e.target.value)}
-              placeholder="oi"
+              placeholder={t("oi")}
               maxLength={40}
             />
           </div>

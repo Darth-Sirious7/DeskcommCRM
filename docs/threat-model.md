@@ -40,7 +40,6 @@ São conclusões de leitura de código.
 | `/api/v1/webhooks/nuvemshop/*` | HMAC | ❌ |
 | `/api/v1/webhooks/cobranca/:provedor` | Stripe: `Stripe-Signature` (HMAC com horário). Asaas: token estático em `asaas-access-token` (sha256 + `timingSafeEqual`); o corpo é só ponteiro e a decisão vem da releitura. Token vazado: o dono gera outro em Admin › Cobrança › Conexão, "Testar e conectar" de novo | ✅ recusas 120/min por IP; Asaas, avisos válidos de cliente desconhecido 120/min por provedor, chave global (acima, 200 sem gravar) |
 | `/api/v1/cron/*` (9 rotas) | `Bearer INTERNAL_CRON_SECRET\|INTERNAL_SECRET`, **fail-closed** | ❌ |
-| `/api/internal/*` | `x-internal-secret` ou `Bearer INTERNAL_SECRET`, comparação em tempo constante | ❌ |
 | `/api/mcp` | `Bearer tok_...` validado contra `api_tokens` (hash SHA256) | ❌ |
 | `/403`, `/404`, `/500`, `/503`, `/admin/forbidden` | — | ❌ |
 
@@ -99,8 +98,8 @@ log nem em query string.
 > front-matter diz nunca ter havido. O que esta nota faz é corrigir os **fatos** e marcar o T1
 > como devendo reauditoria — não decidir por ela.
 
-`checkRateLimit` existe (`lib/ai/dispatcher/rate-limit.ts`) e é chamado em **2** pontos
-do código: `/api/v1/webhooks/in/:token` e o dispatcher de IA. Nada mais.
+`checkRateLimit` existe (`lib/ai/dispatcher/rate-limit.ts`) e é chamado em vários pontos de
+`app/` e `lib/`, o webhook `/api/v1/webhooks/in/:token` entre eles. Reconte, não cite: `grep -rln 'checkRateLimit(' app lib --include='*.ts' | grep -v '\.test\.'`.
 
 Não há **nenhum** limite de tentativa em:
 
@@ -110,7 +109,7 @@ Não há **nenhum** limite de tentativa em:
   exaustão de recurso (e de cota de IA, se as chaves forem da instância).
 - **`/team/accept-invite/:token`** — o HMAC é forte, mas sem limite o atacante pode
   sondar indefinidamente e sem custo, e sem gerar sinal de alerta.
-- **Os 9 crons e `/api/internal/*`** — o secret é forte e a comparação é em tempo
+- **Os 9 crons** — o secret é forte e a comparação é em tempo
   constante, mas nada limita o volume de tentativas.
 - **`/api/mcp`** — enumeração de bearer token.
 
@@ -269,6 +268,18 @@ Não avaliado por falta de execução/instância:
 | T5 | 3 secrets fora do `.env.example` | 🟠 | trivial |
 | T7 | Sem scan de secret no CI + 116 PNGs de evidência sem revisão de PII | 🟡 | baixo |
 | T6 | Guard de SSRF existe; o E2E que o prova não roda no CI | 🟢 | baixo |
+
+## 4.5 Banco externo — receitas prontas (Spec 25, R1)
+
+Superfície nova, toda atrás de sessão + `requireRole("admin")` + `requireSupportWrite()`:
+
+| Path | Guard | Rate limit | O que expõe |
+|------|-------|------------|-------------|
+| `PUT /api/v1/external-db/connections/:id/recipes` | admin + requireSupportWrite | `external-db:write` (30/60s) | gravar instâncias de receita (audit: só contagens) |
+| `POST /api/v1/external-db/connections/:id/recipes/preview` | admin + requireSupportWrite | `external-db:write` (30/60s) | executar uma instância, devolve linhas (audit: só contagens) |
+| `crm_consultar_receita` (tool MCP) | agente, `modulo: "banco_externo"` | teto de token do turno | listar/executar instâncias; organização **sempre do `ctx`** |
+
+Controles: a coluna `receitas` fica FORA da view `external_db_connections_safe` (só `receitas_count` exposta); o prefixo das tabelas entra no SQL quotado com crase (nunca cru); todo valor vai por placeholder `?`; o validador `validarConsultaDeReceita` é a segunda trava (SELECT-only, sem `;`/`--`/`INTO`/`SLEEP(`/etc.); o rastro da execução resume `linhas` (nunca o conteúdo — regra de escopo da D8).
 
 **Conclusão honesta:** os *mecanismos* de segurança deste projeto são acima da média para
 um CRM open-source — HMAC em tempo constante em toda borda, fail-closed nos crons, hash de

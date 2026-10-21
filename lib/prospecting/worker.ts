@@ -233,7 +233,13 @@ export async function sendNextCandidate(
       tenantId: c.organization_id,
       agentId: cfg.agent_id,
       leadId: p.contact_id,
-      instrucao: `${cfg.instruction}\nFaça uma primeira abordagem curta e transparente. Os dados vieram de pesquisa pública, não de um formulário preenchido pela pessoa. Não invente familiaridade, resultados ou interesse. Uma pergunta por vez. Critérios a confirmar durante a conversa: ${cfg.qualification}`,
+      instrucao: `${
+        cfg.instruction
+      }\nFaça uma primeira abordagem curta e transparente. Os dados vieram de pesquisa pública, não de um formulário preenchido pela pessoa. Não invente familiaridade, resultados ou interesse. Uma pergunta por vez. Critérios a confirmar durante a conversa: ${cfg.qualification}${
+        cfg.exit_offer === "first_message"
+          ? ""
+          : "\nEsta primeira mensagem NÃO apresenta serviço, preço nem proposta: só cumprimenta e confirma se falou com a empresa certa."
+      }`,
       origem: "Pesquisa de empresas",
       // NÃO é `automacao`: a pessoa não entrou em funil nenhum. O prompt do
       // ramo frio é o único que proíbe afirmar preenchimento — ver blocoDeModo.
@@ -288,7 +294,7 @@ export async function sendNextCandidate(
         // O idioma sai de `organizations.locale`: um rodapé em português numa
         // instalação em espanhol oferece uma palavra que a pessoa não responde,
         // e o detector de opt-out só reconhece a palavra ISOLADA.
-        body: comSaida(generated.texto, locale),
+        body: cfg.exit_offer === "first_message" ? comSaida(generated.texto, locale) : generated.texto,
       },
     );
     const sent = ["sent", "delivered", "read"].includes(message.status);
@@ -299,8 +305,12 @@ export async function sendNextCandidate(
         [c.organization_id, p.message_id],
       );
     }
+    const ehPrimeira = cfg.exit_offer === "first_message";
     await db.query(
-      "update prospecting_candidates set status=$3,error=$4,updated_at=now() where organization_id=$1 and id=$2",
+      `update prospecting_candidates set status=$3,
+        automatic_sends = case when $3 = 'sent' then 1 else automatic_sends end,
+        exit_offered_at = case when $3 = 'sent' and ${ehPrimeira} then now() else exit_offered_at end,
+        error=$4, updated_at=now() where organization_id=$1 and id=$2`,
       [
         c.organization_id,
         p.id,

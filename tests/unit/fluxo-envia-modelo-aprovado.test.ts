@@ -29,7 +29,7 @@
  * Nada com Postgres real nem com a plataforma: que o canal aceita o modelo é do
  * adapter (`sendTemplate`), não deste turno.
  */
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { JobRow } from "@/lib/agent-engine/queue/queue";
 
@@ -158,6 +158,18 @@ beforeAll(async () => {
   ({ createFollowupTurnHandler: criarHandler } = await import("@/lib/agent-engine/agent/followup-turn"));
 }, 60_000);
 
+// Relógio fixo DENTRO da janela anti-ban de disparo: desde a #3108 o passo de IA
+// lê essa janela antes do turno, e com o relógio real os casos de "a IA
+// escreve" viravam adiamento depois das 22h. Só o `Date` é falso, para a
+// janela de 24 h (medida contra `Date.now()`) andar junto.
+beforeAll(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-10-20T15:00:00.000Z")); // terça, 12h em São Paulo
+});
+afterAll(() => {
+  vi.useRealTimers();
+});
+
 beforeEach(() => {
   runBeforeSend.mockClear();
   runAgentTurn.mockClear();
@@ -236,5 +248,60 @@ describe("plano B da mensagem por IA (`fallback_template_id`)", () => {
     await criarHandler(d)(job(PASSO_IA), fakePool({ texto: "oi", ultimoInboundHa: 30 }), { workerId: "w1" });
 
     expect(runAgentTurn).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * #2734 — passo de texto fixo com MÍDIA, no caminho do worker (`runFlowDrivenTurn`).
+ * O outro caminho, o atalho inline, está em `lib/followup/enviar-texto-fixo.test.ts`.
+ *
+ * Sabotagem prevista: apagar o bloco `passo.midia !== undefined && janelaFechada(...)`
+ * de `followup-turn.ts` deixa vermelho o caso da janela fechada — a mídia sai pela
+ * cadeia e o canal é chamado.
+ */
+describe("passo de texto fixo com mídia (#2734)", () => {
+  const URL_DA_MIDIA = "https://cdn.exemplo.com/oferta.png";
+
+  it("⭐ janela de 24 h FECHADA: o passo é pulado com o motivo e o canal não é chamado — nem com o texto", async () => {
+    const { d, send, completeFollowupTurn } = deps();
+    await criarHandler(d)(
+      job({ fixed_body: "Olha a oferta", fixed_media_url: URL_DA_MIDIA }),
+      fakePool({ ultimoInboundHa: 30 }),
+      { workerId: "w1" },
+    );
+
+    expect(send).not.toHaveBeenCalled();
+    expect(runBeforeSend).not.toHaveBeenCalled();
+    const r = resultado(completeFollowupTurn);
+    expect(r.kind).toBe("skipped");
+    expect(r.reason).toContain("janela de 24 horas");
+  });
+
+  it("URL de tipo que não é imagem nem PDF: o passo é RECUSADO com o motivo, sem tocar na cadeia", async () => {
+    const { d, send, completeFollowupTurn } = deps();
+    await criarHandler(d)(
+      job({ fixed_body: "Segue o contrato", fixed_media_url: "https://cdn.exemplo.com/contrato.docx" }),
+      fakePool({ ultimoInboundHa: 2 }),
+      { workerId: "w1" },
+    );
+
+    expect(send).not.toHaveBeenCalled();
+    expect(runBeforeSend).not.toHaveBeenCalled();
+    const r = resultado(completeFollowupTurn);
+    expect(r.kind).toBe("skipped");
+    expect(r.reason).toContain("imagem");
+  });
+
+  it("controle: janela ABERTA — sai como mídia, com o texto de legenda", async () => {
+    const { d, send, completeFollowupTurn } = deps();
+    await criarHandler(d)(
+      job({ fixed_body: "Olha a oferta", fixed_media_url: URL_DA_MIDIA }),
+      fakePool({ ultimoInboundHa: 2 }),
+      { workerId: "w1" },
+    );
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]![0]).toMatchObject({ body: "Olha a oferta", media: { url: URL_DA_MIDIA, mime: "image/png", type: "image" } });
+    expect(resultado(completeFollowupTurn).kind).toBe("sent");
   });
 });
