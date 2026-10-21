@@ -27,6 +27,16 @@ const estado = vi.hoisted(() => ({
   }[],
   membros: [] as { user_id: string; role: string; full_name: string | null }[],
   erro: null as Error | null,
+  /**
+   * O gate de CLIENTE do hook — `inbox.participantes.view`. É a permissão que um
+   * `viewer` NÃO tem e um `agent` (inclusive o participante convidado) tem.
+   */
+  podeVerParticipantes: true,
+}));
+
+vi.mock("@/hooks/auth/AuthProvider", () => ({
+  usePermission: (acao: string) =>
+    acao === "inbox.participantes.view" ? estado.podeVerParticipantes : false,
 }));
 
 vi.mock("@/lib/api/client", () => ({
@@ -90,6 +100,7 @@ beforeEach(() => {
   estado.participantes = [];
   estado.membros = [membro("u2", "Bruno"), membro("u3", "Carla")];
   estado.erro = null;
+  estado.podeVerParticipantes = true;
   vi.clearAllMocks();
 });
 afterEach(() => cleanup());
@@ -112,6 +123,37 @@ describe("ParticipantesDaConversa — a lista no cabeçalho", () => {
     renderTela(false);
     expect(screen.queryByTestId("participantes-do-atendimento")).toBeNull();
     expect(screen.queryByTestId("convidar-participante")).toBeNull();
+  });
+
+  /**
+   * O CASO DE CLIENTE (a tela não pede a lista a quem a rota recusa): um `viewer`
+   * não tem `inbox.participantes.view`, então a consulta nem sai — o mesmo padrão
+   * dos hooks irmãos (`useConversationNotes`, `usePassagensDaConversa`). Sem isto,
+   * ele pedia `GET /participants` em TODA abertura de conversa.
+   */
+  it("um viewer (sem inbox.participantes.view) NÃO pede a lista à rota", async () => {
+    estado.podeVerParticipantes = false;
+    renderTela(false);
+
+    // Deixa o ciclo de efeitos rodar: se a query estivesse habilitada, o `get` já
+    // teria saído. Nada é buscado — nem a lista, nem o diretório.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(vi.mocked(apiClient.get)).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("participantes-do-atendimento")).toBeNull();
+  });
+
+  /**
+   * A prova de que o gate NÃO é `podeConvidar`: o participante convidado não pode
+   * convidar, mas é `agent`+ e CONTINUA lendo a lista.
+   */
+  it("o convidado (podeConvidar=false) CONTINUA pedindo a lista — o gate é a permissão", async () => {
+    estado.participantes = [participar("u2")];
+    renderTela(false);
+
+    await screen.findByTestId("participantes-do-atendimento");
+    expect(vi.mocked(apiClient.get)).toHaveBeenCalledWith(
+      "/api/v1/conversations/conv-1/participants",
+    );
   });
 });
 
