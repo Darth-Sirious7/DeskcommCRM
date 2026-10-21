@@ -17,6 +17,22 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * repo compara rank na mão (anti-padrão "matriz advisória"), e a segunda
  * chamada só acontece quando o chamador NÃO é o dono.
  *
+ * ─── Quem pode LER a lista: a RLS, não uma porta auditada ──────────────────
+ *
+ * No GET NÃO há `requireRole`. Ele audita a negação (`authz.denied` em
+ * `lib/auth/require-role.ts`) e a leitura da lista não é decisão de papel: quem
+ * decide quem vê a conversa é a RLS de `conversations` — `fn_can_view_conversation`
+ * MAIS o ramo do participante (migration 0661). Ler a conversa pelo cliente de
+ * SESSÃO (o mesmo `getConversationHandler` do `GET /conversations/[id]`) faz a
+ * régua da lista ser exatamente a régua da conversa: "quem vê a conversa vê quem
+ * participa". Sem isto, quem LEGITIMAMENTE enxerga a conversa mas não é dono,
+ * participante nem gestor — o `agent` da fila sem dono (visibility_mode default
+ * `own_and_unassigned`) e o `viewer` (leitura org-wide) — gravava um
+ * `authz.denied` FALSO a cada abertura. É a mesma classe de ruído que foi tirada
+ * do GET em 15/10; aqui sai a porta inteira. Convite/remoção (POST/DELETE)
+ * continuam no `requireRole("manager")`: lá a negação É de verdade e merece
+ * auditoria.
+ *
  * O convite é INTERNO do começo ao fim: nada sai para o canal do cliente —
  * a mesma régua das notas internas. A escrita vai pelo service role porque a
  * tabela é SERVER-ONLY (RLS sem policy de INSERT): um vínculo forjado pela
@@ -28,7 +44,8 @@ import { type NextRequest } from "next/server";
 import { audit, isServiceRoleConfigured } from "@/lib/audit";
 import { ok, fail } from "@/lib/api/wrappers";
 import { ApiError } from "@/lib/api/types";
-import { requireRole } from "@/lib/auth/require-role";
+import { requireRole, orgAtivaDaApi } from "@/lib/auth/require-role";
+import { loadAuthUser } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import {
   convidarParticipanteSchema,
@@ -36,6 +53,7 @@ import {
   validateRequest,
 } from "@/lib/schemas";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -58,18 +76,31 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
-  const authz = await requireRole("agent", { requestId, resource: "conversations" });
-  if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const user = authz.user;
-  const orgId = authz.org.orgId;
+  // SEM `requireRole` aqui: ele audita a negação, e a leitura da lista não é
+  // decisão de papel — quem decide é a RLS de `conversations` (cabeçalho).
+  const user = await loadAuthUser();
+  if (!user) {
+    return fail("unauthenticated", "Auth required.", 401, { requestId });
+  }
+  const t = (texto: string) => traduzir(texto, user.idioma);
+  const ativa = await orgAtivaDaApi(user, requestId);
+  if (!ativa.ok) return ativa.response;
+  const orgId = ativa.org?.orgId;
+  if (!orgId) {
+    return fail("no_active_org", t("No active organization."), 403, { requestId });
+  }
 
   if (!isServiceRoleConfigured()) {
     return fail("internal_error", t("Serviço indisponível no momento."), 503, { requestId });
   }
   const admin = createAdminClient();
 
-  const { data: conv, error: convErr } = await admin
+  // "Quem vê a conversa vê quem participa": a conversa é lida pelo cliente de
+  // SESSÃO — a MESMA RLS do `GET /conversations/[id]` (`fn_can_view_conversation`
+  // + o ramo do participante da migration 0661). Sem visibilidade a RLS devolve
+  // nada e a resposta é o mesmo 404 do inexistente: não revela que ela existe.
+  const supabase = await createClient();
+  const { data: conv, error: convErr } = await supabase
     .from("conversations")
     .select(COLUNAS_DA_CONVERSA)
     .eq("id", id)
@@ -77,27 +108,6 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     .maybeSingle();
   if (convErr) return fail("internal_error", convErr.message, 500, { requestId });
   if (!conv) return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
-
-  // Quem vê a lista: o dono, quem JÁ participa, ou um gestor. A participação é
-  // consultada ANTES do `requireRole("manager")` porque ele audita a negação:
-  // na ordem inversa, todo GET legítimo de um participante gravava um
-  // `authz.denied` falso no api_audit_log.
-  const souDono = conv.assigned_to_user_id === user.id;
-  const { data: minha } = await admin
-    .from("conversation_participants")
-    .select("id")
-    .eq("organization_id", orgId)
-    .eq("conversation_id", id)
-    .eq("user_id", user.id)
-    .is("left_at", null)
-    .maybeSingle();
-  const gestor =
-    souDono || minha
-      ? { ok: true as const }
-      : await requireRole("manager", { requestId, resource: "conversations" });
-  if (!gestor.ok) {
-    return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
-  }
 
   const { data: participantes, error } = await admin
     .from("conversation_participants")

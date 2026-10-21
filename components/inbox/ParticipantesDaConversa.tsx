@@ -85,7 +85,10 @@ export function ParticipantesDaConversa({ conversationId, podeConvidar }: Props)
   const [erro, setErro] = useState<string | null>(null);
 
   // A lista é lida sempre: quem participa interessa a quem vê a conversa, tenha
-  // ele o poder de convidar ou não (o dono tem; o próprio convidado também).
+  // ele o poder de convidar ou não (o dono tem; o próprio convidado também). O
+  // gate de QUEM pode pedir a lista mora no hook (`inbox.participantes.view`),
+  // não aqui — `podeConvidar` é a régua do BOTÃO, e usá-la aqui tiraria a lista
+  // do convidado.
   const participantes = useParticipantesDaConversa(conversationId, true);
   const convidar = useConvidarParticipante(conversationId);
   const lista = participantes.data ?? [];

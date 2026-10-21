@@ -2,6 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "@/lib/api/client";
+import { usePermission } from "@/hooks/auth/AuthProvider";
 
 /**
  * O ATENDIMENTO CONJUNTO (issue #2542) — a tela lê e escreve pela rota
@@ -36,15 +37,26 @@ export function chaveDosParticipantes(conversationId: string) {
   return ["conversation", conversationId, "participants"] as const;
 }
 
-/** Quem participa ativamente desta conversa (o `left_at` já vem filtrado na rota). */
+/**
+ * Quem participa ativamente desta conversa (o `left_at` já vem filtrado na rota).
+ *
+ * O `enabled` do chamador é ANDADO com `usePermission("inbox.participantes.view")`
+ * — o MESMO padrão dos hooks irmãos (`useConversationNotes`,
+ * `usePassagensDaConversa`). É decisão de CLIENTE porque é o único lado que
+ * conhece o papel: um `viewer` não precisa da lista para ler a conversa, e sem o
+ * gate ele pedia `GET /participants` em TODA abertura (a rota recusava e gravava
+ * um `authz.denied` a cada uma). Não é `podeConvidar`: o convidado, que não pode
+ * convidar, CONTINUA lendo a lista — ele é `agent`+.
+ */
 export function useParticipantesDaConversa(conversationId: string, enabled = true) {
+  const podeConsultar = usePermission("inbox.participantes.view");
   return useQuery({
     queryKey: chaveDosParticipantes(conversationId),
     queryFn: async () =>
       apiClient.get<{ data: { participantes: ParticipanteDaConversa[] } }>(
         `/api/v1/conversations/${conversationId}/participants`,
       ),
-    enabled: enabled && conversationId.length > 0,
+    enabled: enabled && podeConsultar && conversationId.length > 0,
     staleTime: 30_000,
     select: (res) => res.data.participantes,
   });
