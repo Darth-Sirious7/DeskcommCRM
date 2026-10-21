@@ -41,6 +41,7 @@ import { SnoozeButton } from "@/components/inbox/SnoozeButton";
 import { ParticipantesDaConversa } from "@/components/inbox/ParticipantesDaConversa";
 import { DialButton } from "@/components/voice/DialButton";
 import { VideoCallButton } from "@/components/inbox/VideoCallButton";
+import { ReservarServicoNaConversa } from "@/components/agenda/ReservarServicoNaConversa";
 import { motivoDoContato } from "@/lib/inbox/motivo-do-envio-bloqueado";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
@@ -354,6 +355,9 @@ export function ConversationHeader({
             outro canal. Grupos não representam uma pessoa para ligar. */}
         {!conversation.is_group && c?.id && (
           <DialButton contactId={c.id} hasPhone={!!c.phone_number} />
+        )}
+        {!conversation.is_group && c?.id && activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent && (
+          <ReservarServicoNaConversa key={`${activeOrg.orgId}:${conversation.id}`} contactId={c.id} conversationId={conversation.id} contactName={displayName}/>
         )}
         {/* Videochamada (#2440): sem JITSI_SERVER_URL este botão não renderiza,
             então ele não ocupa lugar nem na instalação que não oferece a feature.

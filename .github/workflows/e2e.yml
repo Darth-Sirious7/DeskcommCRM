@@ -663,6 +663,7 @@ jobs:
         canal-mudo-avisa-na-central.spec.ts
         qa-l12-troca-de-funil.spec.ts
         qa-l12-agente-ia.spec.ts
+        prospeccao-auditoria-do-site.spec.ts
       # ⚠️ A ORDEM DESTA LISTA NÃO DECIDE A ORDEM DE EXECUÇÃO. O Playwright
       # ordena os arquivos por CAMINHO, não pela ordem em que são passados na
       # linha de comando. Medido no run 31838253496: `marca-logo.spec.ts` estava
@@ -990,6 +991,7 @@ jobs:
         whatsapp-pareamento-por-codigo.spec.ts
         central-avisos-destino.spec.ts
         agenda-google-sync.spec.ts
+        agenda-servicos.spec.ts
         encerramento-atendimento.spec.ts
         passagem-com-contexto.spec.ts
         interface-por-vinculo.spec.ts
@@ -1262,6 +1264,7 @@ jobs:
       SPECS_PARTE_6: >-
         agenda-google-meet.spec.ts
         agenda-presenca-recuperacao.spec.ts
+        app-no-celular.spec.ts
         celular-cabe-na-tela.spec.ts
         cobranca-desligada.spec.ts
         cobranca-link-pelo-dono.spec.ts

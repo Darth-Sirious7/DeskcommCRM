@@ -73,6 +73,8 @@ vi.mock("@/components/inbox/JanelaSelo", () => ({ JanelaSelo: () => null }));
 vi.mock("@/components/inbox/ParticipantesDaConversa", () => ({
   ParticipantesDaConversa: () => null,
 }));
+// A reserva tem sua própria prova autenticada; este gate isola o botão pessoal.
+vi.mock("@/components/agenda/ReservarServicoNaConversa", () => ({ ReservarServicoNaConversa: () => null }));
 vi.mock("@/components/inbox/ChannelLogo", () => ({ ChannelLogo: () => null }));
 vi.mock("@/hooks/voice/useVoiceSessionStatus", () => ({
   useVoiceSessionStatus: () => ({ data: { configured: true, paired: true } }),
