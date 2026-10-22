@@ -3093,6 +3093,7 @@ export type Database = {
       automation_rule_runs: {
         Row: {
           actions_result: Json
+          contact_id: string | null
           created_at: string
           error: string | null
           event_id: string | null
@@ -3103,6 +3104,7 @@ export type Database = {
         }
         Insert: {
           actions_result?: Json
+          contact_id?: string | null
           created_at?: string
           error?: string | null
           event_id?: string | null
@@ -3113,6 +3115,7 @@ export type Database = {
         }
         Update: {
           actions_result?: Json
+          contact_id?: string | null
           created_at?: string
           error?: string | null
           event_id?: string | null
@@ -3122,6 +3125,13 @@ export type Database = {
           status?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "automation_rule_runs_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "automation_rule_runs_event_id_fkey"
             columns: ["event_id"]
