@@ -68,4 +68,4 @@ for (let inicio = 0; inicio < chaves.length; inicio += tamanho) {
   writeFileSync(join(saida, nome), `${JSON.stringify(lote, null, 2)}\n`, "utf8");
 }
 
-console.log(`${chaves.length} chave(s) para traduzir em "${idioma}", em ${lotes} lote(s) de até ${tamanho}, em ${saida}`);
+console.info(`${chaves.length} chave(s) para traduzir em "${idioma}", em ${lotes} lote(s) de até ${tamanho}, em ${saida}`);

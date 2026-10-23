@@ -62,6 +62,6 @@ const destino = join(__dirname, "..", "..", "lib", "i18n", "traducoes", `${idiom
 const atual = existsSync(destino) ? lerJson<Record<string, string>>(destino) : {};
 const catalogo = juntarCatalogo(atual, lotes);
 writeFileSync(destino, `${JSON.stringify(catalogo, null, 2)}\n`, "utf8");
-console.log(
+console.info(
   `${traduzidos.length} lote(s) juntado(s); ${Object.keys(catalogo).length} entrada(s) em lib/i18n/traducoes/${idioma}.json`,
 );
