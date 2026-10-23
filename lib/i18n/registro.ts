@@ -103,8 +103,8 @@ export const REGISTRO_DE_IDIOMAS = [
     // resolve pela região de quem lê (data, número), em vez de impor os EUA.
     tagBcp47: "en",
     subtagsDoNavegador: ["en"],
-    // Catálogo em `lib/i18n/traducoes/en.json`. Aparece quando o leitor do
-    // catálogo (fatia 4 do PROG-022) existir e o nível for promovido.
+    // Catálogo em `lib/i18n/traducoes/en.json`, lido por `catalogos.ts` (fatia 4
+    // do PROG-022). Aparece quando o nível for promovido.
     nivel: "em_construcao",
     mantenedor: null,
   },
