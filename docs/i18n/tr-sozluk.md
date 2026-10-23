@@ -24,7 +24,9 @@ Bunlar ekranı bozar. Birleştirme aracı ve testler bu tür hataları reddeder.
 - **Kullanıcıya "siz" ile hitap edilir:** "Bir plan seçin", "Bağlantınızı kontrol edin". "Sen" kullanılmaz.
 - **Kısa ve sade yazılır.** Ekran metnidir. Portekizcedeki uzun cümle Türkçede daha kısa söylenebiliyorsa kısa olan seçilir.
 - **Büyük harf kullanımı Portekizceyi izler.** Cümle başı büyük harfle başlar. Başlıkta her kelime büyük yazılmaz.
-- **Sayıdan sonra çoğul eki gelmez:** "3 mesaj" yazılır, "3 mesajlar" yazılmaz.
+- **Sayıdan sonra çoğul eki gelmez:** "3 mesaj" yazılır, "3 mesajlar" yazılmaz. Ekran sayıyı ayrı bir parçanın önüne koyuyorsa (`incidentes`, `solicitações`, `conexões`), o parça tekil çevrilir: "olay", "talep", "bağlantı".
+- **Arama kutusu "Ara" ile başlar:** "Ara: ad, telefon, son mesaj…". Dar kutu metni keser. "Ada göre ara…" kesilince "Ada" (ada, yani deniz adası) kalır.
+- **Brezilya'ya özgü yasa, belge ve para birimi Türkçe ekranda geçmez.** Okuyan, Belçika'da veya Türkiye'de çalışan bir şirkettir. Karşılıklar aşağıdaki terim tablosundadır.
 - **Yer tutucuya hal eki bağlanmaz.** `{nome}'e` gibi bir yazım, ekin ünlü uyumu ada göre değiştiği için çoğu zaman yanlış çıkar. Cümle yeniden kurulur: "{nome} adlı kişiye", "Kişi: {nome}".
 - **Cümle parçaları parça olarak çevrilir.** Bazı anahtarlar ekranda bir sayının veya başka bir metnin önüne ya da arkasına eklenir ("no máximo 1× a cada", "(publicada como v"). Anlam korunur. Gerekirse daha nötr bir kalıp seçilir.
 - **"IA" her zaman "AI" olur.** "Agente de IA" "AI asistanı" olarak çevrilir.
@@ -33,7 +35,7 @@ Bunlar ekranı bozar. Birleştirme aracı ve testler bu tür hataları reddeder.
 
 Bu adlar olduğu gibi yazılır:
 
-WhatsApp, Instagram, Meta, API, CSV, PIX, Stripe, Asaas, OpenAI, Anthropic, Claude, Supabase, Google, Gmail, LGPD, SMTP, JSON, PDF, URL, Webhook
+WhatsApp, Instagram, Meta, API, CSV, PIX, Stripe, Asaas, OpenAI, Anthropic, Claude, Supabase, Google, Gmail, GDPR, SMTP, JSON, PDF, URL, Webhook
 
 Ürün adı (marka) da çevrilmez.
 
@@ -68,6 +70,13 @@ Emin olunmayan bir terimde bu tablo esas alınır. Aynı Portekizce terim her ye
 | atendimento | görüşme (isim). Fiil olarak "atender" bağlama göre "yanıt vermek" veya "ilgilenmek" olur: "o assistente vai atender" → "asistan yanıt verir". |
 | atendente | temsilci (insan). İspanyolcası "Agente" ise kastedilen AI asistanıdır: "asistan". |
 | RGPD | GDPR |
+| LGPD | GDPR (karar: 2026-10-21) |
+| CNPJ | vergi numarası |
+| CPF ou CNPJ | kimlik veya vergi numarası |
+| tenant | şirket ("Tenants" menüsü: "Şirketler") |
+| cross-tenant | tüm şirketler |
+| duplicado (kayıt) | mükerrer kayıt |
+| Moeda (alan türü) | para tutarı |
 | agente de IA | AI asistanı |
 | follow-up | takip mesajı |
 | etiqueta / tag | etiket |
