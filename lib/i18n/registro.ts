@@ -79,9 +79,10 @@ export const REGISTRO_DE_IDIOMAS = [
     rotuloCurto: "TR",
     tagBcp47: "tr",
     subtagsDoNavegador: ["tr"],
-    // O primeiro idioma servido pelo CATÁLOGO, e não por coluna do dicionário:
-    // as frases moram em `lib/i18n/traducoes/tr.json`, lidas por `catalogos.ts`.
-    nivel: "completo",
+    // O primeiro idioma com catálogo completo (`lib/i18n/traducoes/tr.json`).
+    // Entra em construção, como o chinês (doc de decisão 198): aparece quando
+    // houver a carga por idioma e a régua de telas principais (fatia 5).
+    nivel: "em_construcao",
     mantenedor: "Agenterix (@nusretbayindir-stack)",
   },
   {

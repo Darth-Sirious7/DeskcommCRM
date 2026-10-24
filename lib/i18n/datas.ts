@@ -1,4 +1,4 @@
-import { es, ptBR, tr } from "date-fns/locale";
+import { es, ptBR } from "date-fns/locale";
 import type { Locale } from "date-fns";
 
 import { IDIOMA_PADRAO, type Idioma } from "./idiomas";
@@ -35,7 +35,6 @@ import { idiomaVisivelPorCodigo } from "./registro";
 const LOCALE_DE_DATA: Record<Idioma, Locale> = {
   "pt-BR": ptBR,
   es,
-  tr,
 };
 
 /** O `Locale` do date-fns para quem está lendo. */

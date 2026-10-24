@@ -31,15 +31,4 @@ describe("importar fluxo: os problemas saem no idioma de quem lê", () => {
       expect(problemas.filter((linha) => PALAVRA_EM_INGLES.test(linha))).toEqual([]);
     }
   });
-
-  it("tr, com o caminho até o campo", () => {
-    const r = arquivoDeFluxoSchema.safeParse(ARQUIVO_DE_OUTRO_FORMATO, zodNoIdioma("tr"));
-    expect(r.success).toBe(false);
-    if (!r.success)
-      expect(problemasDoArquivo(r.error)).toEqual([
-        'format: Geçersiz değer: beklenen "followup_flow"',
-        "flow.name: Geçersiz değer: beklenen string, alınan undefined",
-        "flow.graph: Geçersiz değer: beklenen object, alınan undefined",
-      ]);
-  });
 });

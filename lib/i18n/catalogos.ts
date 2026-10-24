@@ -16,9 +16,10 @@
  * no navegador — nada de carga assíncrona por idioma nesta fatia.
  */
 import type { Idioma } from "./idiomas";
-import tr from "./traducoes/tr.json";
 
-const CATALOGOS: Partial<Record<Idioma, Readonly<Record<string, string>>>> = { tr };
+// ponytail: vazio enquanto nenhum idioma de catálogo é visível (turco, chinês e
+// inglês estão em construção); a promoção importa o JSON aqui.
+const CATALOGOS: Partial<Record<Idioma, Readonly<Record<string, string>>>> = {};
 
 /** Os idiomas cujo texto vem de um catálogo, e não de coluna do dicionário. */
 export const IDIOMAS_COM_CATALOGO = Object.keys(CATALOGOS) as Idioma[];
