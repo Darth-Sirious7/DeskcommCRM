@@ -254,13 +254,32 @@ async function voltarAoEstadoDeFabrica(org: string, saida: string) {
 
 async function main(): Promise<Contexto> {
   // ---------- organização ----------
-  // a da instalação é a primeira; outras são de sementes de módulo (o Admin cria empresas de exemplo)
-  // e somem aqui — senão apareceriam no seletor de empresa de todas as fotos
-  const orgs = exigir(await db.from("organizations").select("id").order("created_at"), "organizations") as Array<{ id: string }>;
-  if (orgs.length === 0) throw new Error("nenhuma organização — rode scripts/bootstrap-owner.ts antes");
-  const org = orgs[0]!.id;
-  const extras = orgs.slice(1).map((o) => o.id);
-  if (extras.length) semErro(await db.from("organizations").delete().in("id", extras), "apagar organizações extras");
+  // A da instalação é a do dono (a Helena), NUNCA "a mais antiga": sementes do Admin criam empresas
+  // e admins de exemplo com datas no passado, e por created_at a base chegou a escolher uma delas e
+  // tentar apagar a Clínica. O dono é achado pelo e-mail que a própria base grava; na primeira rodada
+  // de uma instalação fresca (antes da troca de e-mail) ele é o único admin da plataforma.
+  const helena = (await todosOsUsuarios()).find((u) => u.email === EMAIL.helena);
+  const donoId = helena?.id ?? (exigir(
+    await db.from("platform_admins").select("user_id").order("granted_at").limit(1).single(),
+    "dono da instalação",
+  ) as { user_id: string }).user_id;
+  const vinculos = exigir(
+    await db.from("user_organizations").select("organization_id").eq("user_id", donoId).eq("role", "admin"),
+    "organização do dono",
+  ) as Array<{ organization_id: string }>;
+  if (vinculos.length !== 1) throw new Error(`o dono devia ser admin de UMA organização, é de ${vinculos.length} — semente de módulo pôs a Helena noutra empresa?`);
+  const org = vinculos[0]!.organization_id;
+  // as outras são de sementes de módulo e somem aqui — senão apareceriam no seletor de empresa de
+  // todas as fotos. Saem pelo caminho do produto (fn_excluir_organizacao desarma as armadilhas da
+  // cascata), depois de tirar a assinatura de exemplo que trava a exclusão.
+  const extras = exigir(await db.from("organizations").select("id, slug").neq("id", org), "organizações extras") as Array<{ id: string; slug: string }>;
+  for (const x of extras) {
+    semErro(await db.from("cobranca_assinaturas").delete().eq("organization_id", x.id), `assinatura de ${x.slug}`);
+    semErro(await db.from("organizations").update({ status: "suspended", suspended_kind: "administrativa", suspended_at: new Date().toISOString() }).eq("id", x.id), `suspender ${x.slug}`);
+    semErro(await db.rpc("fn_excluir_organizacao", {
+      p_org: x.id, p_actor: donoId, p_confirmacao: x.slug, p_motivo: "curso: empresa de exemplo de outro módulo",
+    }), `excluir ${x.slug}`);
+  }
   const saida = path.join(path.dirname(new URL(import.meta.url).pathname), "saida");
   await voltarAoEstadoDeFabrica(org, saida);
   semErro(await db.from("organizations").update({
