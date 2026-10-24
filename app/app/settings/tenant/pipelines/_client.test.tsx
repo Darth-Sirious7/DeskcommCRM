@@ -204,6 +204,52 @@ describe("rótulos dos tipos de campo (#3037)", () => {
   });
 });
 
+/**
+ * A COLUNA DO TIPO NÃO PODE CORTAR O RÓTULO (issue #3099).
+ *
+ * Com `md:grid-cols-[1fr_1fr_8rem_auto]`, o gatilho ficava com ~91 px de texto:
+ * "Lista de várias escolhas" (152 px) e "Lista de varias opciones" (154 px)
+ * apareciam cortados, sem reticências. A coluna agora tem 13rem (208 px, ~172 px
+ * de texto) — 18 px de folga sobre o maior rótulo em espanhol.
+ *
+ * O jsdom não mede layout, então este teste guarda o que o código DECLARA (a
+ * largura da coluna e o `title` com o rótulo inteiro). A medida real por
+ * `getBoundingClientRect`, em pt e es, é a prova pela tela.
+ */
+describe("a coluna do tipo não corta o rótulo (#3099)", () => {
+  it("declara 13rem para a coluna, e não os 8rem que cortavam", () => {
+    render(<PipelinesClient pipelines={[FUNIL]} podeEditarConfig />);
+    abrirEditores();
+
+    const linha = screen.getByLabelText(/Tipo do campo 1/i).closest("div");
+    expect(linha?.className).toContain("lg:grid-cols-[1fr_1fr_13rem_auto]");
+    expect(linha?.className).not.toContain("8rem");
+  });
+
+  it("só divide a linha em colunas a partir de lg — em md, Chave e Rótulo ficavam com 46 px", () => {
+    // Medido pela tela a 768 px com a barra lateral aberta: com `md:`, a coluna de
+    // 13rem sobrava ~46 px para cada input. Abaixo de 1024 px os campos empilham.
+    render(<PipelinesClient pipelines={[FUNIL]} podeEditarConfig />);
+    abrirEditores();
+
+    const linha = screen.getByLabelText(/Tipo do campo 1/i).closest("div");
+    expect(linha?.className).not.toMatch(/(^|\s)md:grid-cols-/);
+    // Um bloco com `md:col-span-4` cria 4 colunas implícitas em md e espreme a linha
+    // do mesmo jeito — medido: 43 px a 768 só com o template trocado.
+    expect(linha?.querySelector('[class*="md:col-span"]')).toBeNull();
+    expect(linha?.querySelector('[class*="lg:col-span-4"]')).not.toBeNull();
+  });
+
+  it("o gatilho carrega o rótulo INTEIRO no title", () => {
+    render(<PipelinesClient pipelines={[FUNIL]} podeEditarConfig />);
+    abrirEditores();
+
+    expect(screen.getByLabelText(/Tipo do campo 1/i).getAttribute("title")).toBe(
+      "Lista de várias escolhas",
+    );
+  });
+});
+
 describe("um campo multiselect já gravado", () => {
   it("abre com o tipo à mostra, e não com o seletor em branco", () => {
     render(<PipelinesClient pipelines={[FUNIL]} podeEditarConfig />);
@@ -621,6 +667,79 @@ describe("'Este campo pertence a' só no funil padrão (#2791)", () => {
   });
 });
 
+/**
+ * A LISTA PESQUISÁVEL COM MÚLTIPLA ESCOLHA — O CONTROLE NO EDITOR DO FUNIL
+ * (#3182).
+ *
+ * Sem uma TELA para ligar o modo múltiplo, a chave nasceria no schema e ninguém
+ * conseguiria marcá-la — o mesmo defeito de `obrigatorio_em` no #1536. O
+ * controle é do `searchable_select`, grava pela porta única de escrita
+ * (`updatePipelineConfig`) e desmarcar APAGA a chave, para o funil intocado
+ * continuar idêntico ao de antes.
+ */
+describe("lista pesquisável: o controle de múltipla escolha no funil (#3182)", () => {
+  beforeEach(() => vi.mocked(updatePipelineConfig).mockClear());
+  const salvar = () =>
+    fireEvent.click(screen.getByRole("button", { name: /Salvar vocabulário e campos/i }));
+
+  const CAMPO_FORNECEDORES = {
+    key: "fornecedores",
+    label: "Fornecedores",
+    type: "searchable_select" as const,
+    options: [{ value: "consolidadora-a", label: "Consolidadora A" }],
+  };
+  const FUNIL_FORNECEDORES: PipelineRow = {
+    id: "55555555-5555-4555-8555-555555555555",
+    name: "Fornecedores",
+    slug: "fornecedores",
+    vocabulary: null,
+    settings: { fields: [CAMPO_FORNECEDORES] },
+  };
+
+  it("nasce desligado e ligar grava `multiple: true` no patch salvo", () => {
+    render(<PipelinesClient pipelines={[FUNIL_FORNECEDORES]} podeEditarConfig />);
+    abrirEditores();
+    const caixa = screen.getByLabelText(/Permitir várias escolhas 1/i);
+    expect(caixa).not.toBeChecked();
+
+    fireEvent.click(caixa);
+    salvar();
+
+    expect(vi.mocked(updatePipelineConfig).mock.calls.at(-1)![1].fields?.[0]?.multiple).toBe(true);
+    // O resto do campo (a lista e o `value` canônico) fica como estava.
+    expect(vi.mocked(updatePipelineConfig).mock.calls.at(-1)![1].fields?.[0]?.options).toEqual([
+      { value: "consolidadora-a", label: "Consolidadora A" },
+    ]);
+  });
+
+  it("campo JÁ múltiplo abre marcado, e desmarcar apaga a chave", () => {
+    const jaMultiplo: PipelineRow = {
+      ...FUNIL_FORNECEDORES,
+      // O campo JÁ gravado como múltiplo: é o estado de quem abre para desligar.
+      settings: { fields: [{ ...CAMPO_FORNECEDORES, multiple: true }] },
+    };
+    render(<PipelinesClient pipelines={[jaMultiplo]} podeEditarConfig />);
+    abrirEditores();
+    const caixa = screen.getByLabelText(/Permitir várias escolhas 1/i);
+    expect(caixa).toBeChecked();
+
+    fireEvent.click(caixa);
+    salvar();
+
+    expect(vi.mocked(updatePipelineConfig).mock.calls.at(-1)![1].fields?.[0]).not.toHaveProperty(
+      "multiple",
+    );
+  });
+
+  it("o controle é só do `searchable_select` — num `select` comum ele não existe", () => {
+    render(<PipelinesClient pipelines={[FUNIL_SEM_OPCOES]} podeEditarConfig />);
+    abrirEditores();
+    // controle: o editor ABRIU — sem isto o `toBeNull` abaixo passa com a tela fechada.
+    expect(screen.getByLabelText(/Escopo do campo 1/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Permitir várias escolhas 1/i)).toBeNull();
+  });
+});
+
 describe("o botão de acrescentar campo e a cota do negócio (#3111)", () => {
   function funilCom(negocio: number, contato: number): PipelineRow {
     return {
@@ -844,5 +963,96 @@ describe("organização sem nenhum funil", () => {
     const link = screen.getByTestId("link-criar-funil");
     expect(link.getAttribute("href")).toBe(funis!.href);
     expect(link.textContent).toContain(funis!.label);
+  });
+});
+
+/**
+ * O RECORTE DE ENCERRADOS ANTIGOS DO QUADRO (#2995) — o controle no editor.
+ *
+ * Este arquivo mede a PONTE da tela: o valor que já estava salvo volta marcado e
+ * com os dias relidos, e o que a pessoa salva sai no payload do
+ * `updatePipelineConfig`. Quem grava a chave no settings é a action (medida em
+ * `app/actions/settings/updatePipelineConfig.test.ts`) e quem monta o quadro é a
+ * rota (medida em `app/api/v1/pipelines/[id]/board/route.test.ts`) — sem os três,
+ * o payload poderia sair certo e não chegar a lugar nenhum.
+ */
+describe("o recorte de encerrados antigos do quadro (#2995)", () => {
+  const comRecorte = (settings: Record<string, unknown>): PipelineRow => ({
+    id: "55555555-5555-4555-8555-555555555555",
+    name: "Pedidos",
+    slug: "pedidos",
+    vocabulary: null,
+    settings,
+  });
+
+  const caixa = () =>
+    screen.getByRole("checkbox", { name: /Esconder do quadro os negócios encerrados/i });
+  const campoDeDias = () =>
+    screen.getByLabelText(/Dias de encerrado para esconder do quadro/i) as HTMLInputElement;
+  const salvar = () =>
+    fireEvent.click(screen.getByRole("button", { name: /Salvar vocabulário e campos/i }));
+
+  it("relê o que está salvo: caixa marcada e os dias do settings", () => {
+    render(
+      <PipelinesClient pipelines={[comRecorte({ ocultar_encerrados_dias: 45 })]} podeEditarConfig />,
+    );
+    abrirEditores();
+
+    expect(caixa()).toBeChecked();
+    expect(campoDeDias()).toHaveValue(45);
+  });
+
+  it("funil sem a opção nasce DESMARCADO, com a sugestão no campo", () => {
+    render(<PipelinesClient pipelines={[comRecorte({})]} podeEditarConfig />);
+    abrirEditores();
+
+    expect(caixa()).not.toBeChecked();
+    // A sugestão preenche o campo para ligar/desligar não exigir digitação — e
+    // ela NÃO é gravada enquanto a caixa estiver desmarcada (caso abaixo).
+    expect(campoDeDias()).toHaveValue(30);
+  });
+
+  it("salvar com a opção ligada manda os dias escolhidos", async () => {
+    vi.mocked(updatePipelineConfig).mockClear();
+    render(<PipelinesClient pipelines={[comRecorte({})]} podeEditarConfig />);
+    abrirEditores();
+
+    fireEvent.click(caixa());
+    fireEvent.change(campoDeDias(), { target: { value: "15" } });
+    salvar();
+
+    await vi.waitFor(() => expect(updatePipelineConfig).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(updatePipelineConfig).mock.calls[0]?.[1].ocultar_encerrados_dias).toBe(15);
+  });
+
+  it("desligar manda 0 EXPLÍCITO — a chave não pode ficar com o número antigo", async () => {
+    vi.mocked(updatePipelineConfig).mockClear();
+    render(
+      <PipelinesClient pipelines={[comRecorte({ ocultar_encerrados_dias: 45 })]} podeEditarConfig />,
+    );
+    abrirEditores();
+
+    fireEvent.click(caixa());
+    salvar();
+
+    await vi.waitFor(() => expect(updatePipelineConfig).toHaveBeenCalledTimes(1));
+    const patch = vi.mocked(updatePipelineConfig).mock.calls[0]?.[1];
+    // Um `undefined` aqui deixaria `45` no settings e os cards continuariam
+    // sumindo do quadro de quem acabou de desligar a opção.
+    expect(patch?.ocultar_encerrados_dias).toBe(0);
+  });
+
+  it("dias fora da faixa não salvam nada", () => {
+    vi.mocked(updatePipelineConfig).mockClear();
+    render(<PipelinesClient pipelines={[comRecorte({})]} podeEditarConfig />);
+    abrirEditores();
+
+    fireEvent.click(caixa());
+    fireEvent.change(campoDeDias(), { target: { value: "0" } });
+    salvar();
+
+    // O schema recusaria o save inteiro com a mensagem genérica de validação;
+    // barrar na tela é o que permite dizer QUAL campo está errado.
+    expect(updatePipelineConfig).not.toHaveBeenCalled();
   });
 });

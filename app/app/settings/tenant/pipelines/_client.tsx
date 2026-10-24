@@ -20,6 +20,12 @@ import { updatePipelineConfig } from "@/app/actions/settings/updatePipelineConfi
 import type { PipelineConfigPatch } from "@/lib/schemas/settings";
 import { camposDoFunil, escopoDoCampo } from "@/lib/leads/campos-do-funil";
 import {
+  DIAS_MAXIMO_DO_RECORTE,
+  DIAS_MINIMO_DO_RECORTE,
+  DIAS_PADRAO_DO_RECORTE,
+  diasDeRecorte,
+} from "@/lib/kanban/recorte-de-encerrados";
+import {
   buscarOpcoes,
   exportarOpcoesCsv,
   importarOpcoesCsv,
@@ -39,6 +45,7 @@ import {
   OPERADORES_DE_MOSTRA,
   type OperadorDeMostra,
 } from "@/lib/schemas/mostrar-quando";
+import { irAoDesafioDeMfa } from "@/lib/auth/ir-ao-desafio-de-mfa";
 import { CaretDown, Plus, Trash } from "@/lib/ui/icons";
 import { AgentMappingSection, ancoraDoMapeamento } from "./_mapping";
 import { StagesSection, ancoraDasEtapas } from "./_stages";
@@ -487,7 +494,7 @@ export function OpcoesDaLista({
   }
 
   return (
-    <div className="space-y-2 md:col-span-4" data-testid={`opcoes-campo-${indice + 1}`}>
+    <div className="space-y-2 lg:col-span-4" data-testid={`opcoes-campo-${indice + 1}`}>
       <div className="flex flex-wrap items-center gap-2">
         {/* O RESUMO é o que a tela mostra no lugar das opções — e a contagem é
             o número que quem configura precisa ver de relance. */}
@@ -680,6 +687,16 @@ function PipelineEditor({
   const [retomaComoNovo, setRetomaComoNovo] = useState(
     modoDeReabertura(pipeline.settings) === "novo_negocio",
   );
+  // O recorte de encerrados antigos do quadro (#2995): opção POR FUNIL em
+  // `settings.ocultar_encerrados_dias`, desligada por padrão. O número relido é
+  // o que está gravado (`null` = desligado) e é ele que preenche o campo de
+  // dias, para ligar/desligar não exigir digitação; o campo já nasce com a
+  // sugestão de 30 dias, que NÃO é gravada enquanto ninguém ligar a opção.
+  const diasRelidos = diasDeRecorte(pipeline.settings);
+  const [ocultarEncerrados, setOcultarEncerrados] = useState(diasRelidos !== null);
+  const [diasDosEncerrados, setDiasDosEncerrados] = useState(
+    diasRelidos !== null ? String(diasRelidos) : String(DIAS_PADRAO_DO_RECORTE),
+  );
   // O texto CSV de importação de opções (#2521), por chave de campo — vive só
   // enquanto a pessoa cola; "Importar" o transforma em opções e o limpa.
   const [csvDeOpcoes, setCsvDeOpcoes] = useState<Record<string, string>>({});
@@ -749,6 +766,26 @@ function PipelineEditor({
       .map((s2) => s2.trim())
       .filter((s2) => s2.length > 0);
 
+    // #2995 — o recorte de encerrados antigos do quadro: os dias vêm de um
+    // campo de texto, e um número fora da faixa faria o schema recusar o save
+    // inteiro com a mensagem genérica de validação. Barrar aqui diz o que está
+    // errado — a mesma técnica dos campos logo acima. O `0` é o DESLIGADO, e
+    // vai explícito no patch: a action faz merge com o settings do banco, então
+    // omitir a chave deixaria o número antigo e a pessoa desligaria a opção
+    // para continuar vendo os cards sumirem. (O texto repete a faixa de
+    // `DIAS_MINIMO_DO_RECORTE`/`DIAS_MAXIMO_DO_RECORTE`, como o resto da tela
+    // repete os limites dos campos: a chave de tradução é o texto renderizado.)
+    const diasDigitados = Number(diasDosEncerrados.trim());
+    if (
+      ocultarEncerrados &&
+      (!Number.isInteger(diasDigitados) ||
+        diasDigitados < DIAS_MINIMO_DO_RECORTE ||
+        diasDigitados > DIAS_MAXIMO_DO_RECORTE)
+    ) {
+      toast.error(t("Escolha de 1 a 3650 dias para esconder os negócios encerrados do quadro."));
+      return;
+    }
+
     const patch: PipelineConfigPatch = {
       vocabulary: { lead, deal, won, lost },
       fields: ok,
@@ -757,10 +794,12 @@ function PipelineEditor({
       won_reason_required: wonRequired,
       comanda_no_ganho: comandaNoGanho,
       reabertura: retomaComoNovo ? "novo_negocio" : "mesmo_registro",
+      ocultar_encerrados_dias: ocultarEncerrados ? diasDigitados : 0,
     };
     startTransition(async () => {
       const r = await updatePipelineConfig(pipeline.id, patch);
       if (r.ok) toast.success(`${pipeline.name} ${t("atualizado.")}`);
+      else if (r.error === "mfa_required") irAoDesafioDeMfa();
       else toast.error(`${t("Erro:")} ${r.error}`);
     });
   }
@@ -876,6 +915,42 @@ function PipelineEditor({
         </p>
       </div>
 
+      {/* ─── O RECORTE DE ENCERRADOS ANTIGOS (#2995) ──────────────────────
+          O quadro traz TODO negócio não arquivado — ganhos e perdas de meses
+          atrás inclusive — e num funil com histórico longo ele fica ilegível.
+          A opção é POR FUNIL e vem DESLIGADA: quem não ligar continua vendo
+          exatamente o que via. O corte é por DATA DE ENCERRAMENTO, e não por
+          status: negócio aberto nunca sai (por antigo que seja) e encerrado sem
+          data de encerramento fica — a data não existe, e inventá-la tiraria do
+          quadro um negócio que ninguém sabe quando fechou. Vale só para o que a
+          TELA mostra: nenhum negócio é apagado ou arquivado. */}
+      <div className="space-y-1">
+        <label className="flex flex-wrap items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            checked={ocultarEncerrados}
+            onChange={(e) => setOcultarEncerrados(e.target.checked)}
+          />
+          {t("Esconder do quadro os negócios encerrados há mais de")}
+          <Input
+            type="number"
+            min={DIAS_MINIMO_DO_RECORTE}
+            max={DIAS_MAXIMO_DO_RECORTE}
+            aria-label={t("Dias de encerrado para esconder do quadro")}
+            className="h-8 w-20 text-xs"
+            disabled={!ocultarEncerrados}
+            value={diasDosEncerrados}
+            onChange={(e) => setDiasDosEncerrados(e.target.value)}
+          />
+          {t("dias")}
+        </label>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Negócios abertos nunca são escondidos, e negócios encerrados sem data de encerramento ficam no quadro. Nada é apagado ou arquivado: desligar a opção traz todos de volta.",
+          )}
+        </p>
+      </div>
+
       {/* ─── A COMANDA DO GANHO (#1477) ───────────────────────────────
           Porta do consumidor de `lead.won`. Desligada por padrão, pela régua
           de `docs/doctrine/extensoes.md`: quem não ativar continua com a
@@ -906,8 +981,13 @@ function PipelineEditor({
         <p className="text-xs text-muted-foreground">
           {t("Aparecem no dossiê do negócio. No follow-up, você escolhe em qual campo gravar a resposta.")}
         </p>
+        {/* `lg:` e não `md:` (#3099): com a barra lateral aberta, a 768px sobram ~380px
+            para a linha, e a coluna de 13rem deixava Chave e Rótulo com 46px. Abaixo de
+            1024px os campos empilham, como no celular. Os `col-span-4` dos blocos de
+            dentro seguem o MESMO corte: um `md:col-span-4` sozinho cria quatro colunas
+            implícitas e devolve a linha espremida, mesmo sem o template. */}
         {fields.map((f, i) => (
-          <div key={`${f.key}-${i}`} className="grid gap-2 rounded-md border border-border p-2 md:grid-cols-[1fr_1fr_8rem_auto]">
+          <div key={`${f.key}-${i}`} className="grid gap-2 rounded-md border border-border p-2 lg:grid-cols-[1fr_1fr_13rem_auto]">
             <Input
               aria-label={`${t("Chave do campo")} ${i + 1}`}
               placeholder={t("chave (endereco)")}
@@ -936,7 +1016,10 @@ function PipelineEditor({
                 setFields(next);
               }}
             >
-              <SelectTrigger aria-label={`${t("Tipo do campo")} ${i + 1}`}>
+              <SelectTrigger
+                aria-label={`${t("Tipo do campo")} ${i + 1}`}
+                title={rotuloDoTipo(f.type, t, moeda)}
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -976,7 +1059,7 @@ function PipelineEditor({
                 recolhido: o que a tela monta antes de a pessoa pedir é o
                 resumo, nunca as opções. */}
             {f.type === "searchable_select" && (
-              <div className="space-y-1 md:col-span-4">
+              <div className="space-y-1 lg:col-span-4">
                 <label className="flex items-center gap-1 text-xs">
                   <input
                     type="checkbox"
@@ -990,6 +1073,32 @@ function PipelineEditor({
                   />
                   {t("Permitir valor novo (fora da lista)")}
                 </label>
+                {/* ── MÚLTIPLA ESCOLHA (#3182) ────────────────────────────────
+                    O modo múltiplo da lista pesquisável: o campo grava uma
+                    LISTA de valores canônicos e a ficha mostra os escolhidos
+                    como chips. Sem esta tela a chave nasceria no schema e
+                    ninguém conseguiria ligá-la (#1536 foi o mesmo defeito, com
+                    o `obrigatorio_em`). Desmarcar APAGA a chave: o funil que
+                    ninguém tocou continua idêntico ao de antes. */}
+                <label className="flex items-center gap-1 text-xs">
+                  <input
+                    type="checkbox"
+                    aria-label={`${t("Permitir várias escolhas")} ${i + 1}`}
+                    checked={f.multiple === true}
+                    onChange={(ev) => {
+                      const next = [...fields];
+                      // `false` some da definição: desmarcar não deixa uma
+                      // chave morta no settings — vale para o valor único
+                      // gravado por TODO funil que existe hoje.
+                      const { multiple: _apagado, ...semMultiplo } = f;
+                      next[i] = ev.target.checked
+                        ? { ...f, multiple: true }
+                        : (semMultiplo as CustomFieldDef);
+                      setFields(next);
+                    }}
+                  />
+                  {t("Permitir várias escolhas")}
+                </label>
               </div>
             )}
             {/* ── QUANDO ESTE CAMPO OBRIGA (issue #1536) ────────────────────
@@ -998,7 +1107,7 @@ function PipelineEditor({
                 marcas são as que `campoExigidoNoDestino` lê — etapas de
                 entrada, `ao_ganhar` e `ao_perder` — e nada mais, para a tela
                 não prometer gatilho que o servidor não pergunta. */}
-            <div className="space-y-1 md:col-span-4">
+            <div className="space-y-1 lg:col-span-4">
               <p className="text-xs font-medium">{t("Exigir o preenchimento:")}</p>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
                 {etapas.map((e) => (
@@ -1065,7 +1174,7 @@ function PipelineEditor({
                 operadores são exatamente os três que `campoVisivel` aplica —
                 a tela não promete nenhum outro. Meio montada, a condição não
                 grava (ver `normalizaMostrarQuando`), como `obrigatorio_em`. */}
-            <div className="space-y-1 md:col-span-4">
+            <div className="space-y-1 lg:col-span-4">
               <p className="text-xs font-medium">{t("Mostrar só quando:")}</p>
               <div className="flex flex-wrap items-center gap-2 text-xs">
                 <Select
@@ -1193,7 +1302,7 @@ function PipelineEditor({
             {/* Fora do funil padrão o seletor só aparece para DESFAZER uma marca
                 "Contato" que já exista (gravada quando este era o padrão). */}
             {(ehFunilPadrao || escopoDoCampo(f) === "contato") && (
-              <div className="flex flex-wrap items-center gap-3 md:col-span-4">
+              <div className="flex flex-wrap items-center gap-3 lg:col-span-4">
                 <span className="text-xs font-medium">{t("Este campo pertence a:")}</span>
                 <Select
                   value={escopoDoCampo(f)}
