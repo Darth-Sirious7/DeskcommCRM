@@ -201,6 +201,9 @@ export async function enforceHolds(harness: pg.Pool): Promise<{ held: number; re
   // do espaçamento (a fila trava por FOR UPDATE SKIP LOCKED, e a linha que esta
   // transação atualizou fica travada até o commit).
   const client = await harness.connect();
+  // #2624 — quem falhou dentro da transação volta ao pool COM o erro (o pg-pool
+  // descarta a conexão); o caminho feliz segue com release() sem argumento.
+  let erroNaTransacao: Error | undefined;
   try {
     await client.query('begin');
     const release = await client.query<JobLiberado>(
@@ -226,6 +229,7 @@ export async function enforceHolds(harness: pg.Pool): Promise<{ held: number; re
     await client.query('commit');
     return { held: hold.rowCount ?? 0, released: release.rowCount ?? 0 };
   } catch (err) {
+    erroNaTransacao = err instanceof Error ? err : new Error(String(err));
     try {
       await client.query('rollback');
     } catch (rollbackErr) {
@@ -233,7 +237,7 @@ export async function enforceHolds(harness: pg.Pool): Promise<{ held: number; re
     }
     throw err;
   } finally {
-    client.release();
+    client.release(erroNaTransacao);
   }
 }
 
