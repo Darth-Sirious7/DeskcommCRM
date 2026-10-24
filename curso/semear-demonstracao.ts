@@ -17,7 +17,7 @@
  * Recusa qualquer Supabase que não seja local. Rode com o worker PARADO: com ele
  * de pé, as mensagens semeadas acordam a IA. Horários são relativos ao seed.
  */
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { type User, createClient } from "@supabase/supabase-js";
@@ -205,11 +205,64 @@ export type Contexto = {
   funil: { id: string; etapas: string[] };
 };
 
+/**
+ * Estado de fábrica da instalação: o que um módulo pode ligar/desligar e que vale
+ * para TODAS as telas (recursos opcionais, marca, cadastro, credenciais da
+ * instalação, configurações da organização). A primeira rodada numa instalação
+ * fresca guarda; as seguintes devolvem tudo a ele antes de cada lição. Sem isto,
+ * o módulo que liga "Propostas" muda o menu nas fotos de todos os outros.
+ */
+const DA_INSTALACAO = {
+  platform_config: "chave",
+  platform_settings: "id",
+  platform_branding: "id",
+  modulos_instalados: "modulo",
+  // quem administra a plataforma (e se exige verificação em duas etapas): uma lição que tirasse a
+  // Helena daqui, ou ligasse o MFA dela, trancaria o capturador fora de todas as lições seguintes
+  platform_admins: "user_id",
+} as const;
+/** Colunas da organização que uma tela pode mudar (fuso, idioma, retenção, marca, suspensão…). */
+const DA_ORGANIZACAO = [
+  "slug", "legal_name", "display_name", "cnpj", "status", "timezone", "locale", "ai_budget_cents",
+  "media_retention_days", "settings", "dpo_email", "privacy_policy_url", "suspended_at", "redacted_at", "suspended_reason", "suspended_by",
+] as const;
+type Linha = Record<string, unknown>;
+
+async function voltarAoEstadoDeFabrica(org: string, saida: string) {
+  const arquivo = path.join(saida, ".fabrica.json");
+  if (!existsSync(arquivo)) {
+    const tabelas: Record<string, Linha[]> = {};
+    for (const t of Object.keys(DA_INSTALACAO)) tabelas[t] = exigir(await db.from(t).select("*"), `fábrica ${t}`) as Linha[];
+    // lê a linha inteira e guarda só as colunas da lista que existem: o baseline remove colunas em apêndice
+    const linha = exigir(await db.from("organizations").select("*").eq("id", org).single(), "fábrica org") as Linha;
+    const organizacao = Object.fromEntries(DA_ORGANIZACAO.filter((c) => c in linha).map((c) => [c, linha[c]]));
+    mkdirSync(saida, { recursive: true });
+    writeFileSync(arquivo, JSON.stringify({ tabelas, organizacao }, null, 2));
+    console.info("estado de fábrica guardado");
+    return;
+  }
+  const fabrica = JSON.parse(readFileSync(arquivo, "utf8")) as { tabelas: Record<string, Linha[]>; organizacao: Linha };
+  for (const [t, chave] of Object.entries(DA_INSTALACAO)) {
+    const guardadas = fabrica.tabelas[t] ?? [];
+    const agora = exigir(await db.from(t).select(chave), `estado ${t}`) as unknown as Linha[];
+    const sobrando = agora.map((l) => l[chave]).filter((k) => !guardadas.some((g) => g[chave] === k));
+    if (sobrando.length) semErro(await db.from(t).delete().in(chave, sobrando as string[]), `voltar ${t}`);
+    if (guardadas.length) semErro(await db.from(t).upsert(guardadas, { onConflict: chave }), `voltar ${t}`);
+  }
+  semErro(await db.from("organizations").update(fabrica.organizacao).eq("id", org), "voltar a organização");
+}
+
 async function main(): Promise<Contexto> {
-  // ---------- organização: a única da instalação fresca ----------
-  const orgs = exigir(await db.from("organizations").select("id"), "organizations") as Array<{ id: string }>;
-  if (orgs.length !== 1) throw new Error(`esperava 1 organização (instalação fresca), achei ${orgs.length}`);
+  // ---------- organização ----------
+  // a da instalação é a primeira; outras são de sementes de módulo (o Admin cria empresas de exemplo)
+  // e somem aqui — senão apareceriam no seletor de empresa de todas as fotos
+  const orgs = exigir(await db.from("organizations").select("id").order("created_at"), "organizations") as Array<{ id: string }>;
+  if (orgs.length === 0) throw new Error("nenhuma organização — rode scripts/bootstrap-owner.ts antes");
   const org = orgs[0]!.id;
+  const extras = orgs.slice(1).map((o) => o.id);
+  if (extras.length) semErro(await db.from("organizations").delete().in("id", extras), "apagar organizações extras");
+  const saida = path.join(path.dirname(new URL(import.meta.url).pathname), "saida");
+  await voltarAoEstadoDeFabrica(org, saida);
   semErro(await db.from("organizations").update({
     display_name: "Clínica Bem Viver", legal_name: "Clínica Bem Viver Saúde Integrada Ltda", status: "active", onboarded_at: new Date().toISOString(),
   }).eq("id", org), "organização");
@@ -364,7 +417,6 @@ async function main(): Promise<Contexto> {
     }), `lead ${titulo}`);
   }
 
-  const saida = path.join(path.dirname(new URL(import.meta.url).pathname), "saida");
   mkdirSync(saida, { recursive: true });
   writeFileSync(path.join(saida, "contas.json"), JSON.stringify({
     admin: { email: EMAIL.helena, senha: SENHA },

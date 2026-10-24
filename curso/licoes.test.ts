@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import { NAV_CATALOG } from "@/lib/navigation/catalogo";
 
 import { Modulo, chaveDoPasso } from "./licao";
+import { menuDoAdmin } from "./menu-do-admin";
 
 const PASTA = path.join(__dirname, "licoes");
 const arquivos = readdirSync(PASTA).filter((f) => f.endsWith(".json"));
@@ -19,7 +20,7 @@ describe("lições do curso ilustrado", () => {
 
   it.each(arquivos)("%s segue o contrato e ensina uma tela do menu", (arquivo) => {
     const modulo = Modulo.parse(JSON.parse(readFileSync(path.join(PASTA, arquivo), "utf8")));
-    expect(NAV_CATALOG.map((d) => d.href)).toContain(modulo.tela);
+    expect([...NAV_CATALOG.map((d) => d.href), ...menuDoAdmin().map((i) => i.href)]).toContain(modulo.tela);
     expect(`${modulo.id}.json`).toBe(arquivo);
   });
 
@@ -29,6 +30,12 @@ describe("lições do curso ilustrado", () => {
       return m.licoes.flatMap((l) => l.passos.map((p) => chaveDoPasso(m.id, l.id, p.id)));
     });
     expect(new Set(chaves).size).toBe(chaves.length);
+  });
+
+  it("o menu do Admin é lido do componente (lista vazia = formato mudou)", () => {
+    const itens = menuDoAdmin();
+    expect(itens.map((i) => i.href)).toContain("/admin/dashboard");
+    expect(itens.length).toBeGreaterThan(10);
   });
 
   it("recusa alvo com duas estratégias (seria ambíguo qual o capturador usa)", () => {
