@@ -437,3 +437,137 @@ describe("tela de atualização — recusa por falta do código leva ao desafio"
     expect(irAoDesafioDeMfa).not.toHaveBeenCalled();
   });
 });
+
+
+/**
+ * #2756 — o `--force` vira CLIQUE.
+ *
+ * A `Saida` já mostrava o comando de saída de um estado de falha; o que faltava
+ * era o botão que o executa. As quatro provas da issue, na ordem delas:
+ *
+ * 1. o botão aparece JUNTO do comando no estado de falha;
+ * 2. o clique manda `{ force: true }` — UMA chave, sem caminho nenhum do
+ *    cliente (o alvo é do SERVIDOR, e `route.test.ts` costura a outra ponta
+ *    com a MESMA frase literal);
+ * 3. os estados normais seguem com o "Atualizar agora" de sempre;
+ * 4. os dois testes do endpoint, que já existiam, continuam verdes.
+ */
+describe("tela de atualização — o botão de força (#2756)", () => {
+  function falha(overrides: Partial<NonNullable<SystemVersion["run"]>> = {}): SystemVersion {
+    return {
+      // Depois de uma falha o `git checkout` já tinha dado certo: o host
+      // reporta a versão ALVO, e ela É a mais recente — é este o estado que o
+      // 409 do caminho de atualizar barra e que só a força atravessa.
+      current_version: "1.5.0",
+      is_owner: true,
+      latest_version: "1.5.0",
+      update_available: true,
+      agent_online: true,
+      notes: null,
+      run: {
+        id: "99999999-9999-4999-9999-999999999999",
+        status: "failed",
+        last_step: "app",
+        from_version: "1.4.2",
+        to_version: "1.5.0",
+        log_tail: "",
+        finished_at: null,
+        volta_automatica: false,
+        ...overrides,
+      },
+    };
+  }
+
+  function semMfa() {
+    vi.mocked(irAoDesafioDeMfa).mockReset();
+    vi.mocked(apiClient.post).mockReset();
+  }
+
+  it("⭐ estado de falha: 'Forçar atualização' fica JUNTO do comando de copia", () => {
+    renderTela(falha());
+
+    const botao = screen.getByRole("button", { name: "Forçar atualização" });
+    const comando = screen.getByText("bash hostgator-setup-kit/update.sh --to v1.4.2 --force");
+
+    // "Junto": o botão vem ANTES do `<code>` no mesmo bloco — é o clique daquela
+    // linha, não um atalho solto em outro canto da tela.
+    expect(
+      Boolean(botao.compareDocumentPosition(comando) & Node.DOCUMENT_POSITION_FOLLOWING),
+    ).toBe(true);
+    // E o botão de ATUALIZAR continua DESLIGADO aqui: sem força ele é o falso
+    // sucesso descrito no doc de `Saida`.
+    expect(screen.queryByRole("button", { name: "Atualizar agora" })).toBeNull();
+  });
+
+  it("⭐ o clique manda SÓ { force: true } — nenhum caminho vem do cliente", async () => {
+    semMfa();
+    vi.mocked(apiClient.post).mockResolvedValue({});
+    renderTela(falha());
+
+    fireEvent.click(screen.getByRole("button", { name: "Forçar atualização" }));
+
+    await waitFor(() =>
+      expect(apiClient.post).toHaveBeenCalledWith("/api/v1/system/update", { force: true }),
+    );
+    // O `--to` não viaja: quem o deriva é o servidor, a partir do run.
+    expect(vi.mocked(apiClient.post).mock.calls[0]?.[1]).toEqual({ force: true });
+  });
+
+  it("fora de release: o comando é o `--force` puro e o botão continua — é o caso em que a volta recusa", () => {
+    // `from_version` de instalação seguindo o repositório não é versão
+    // publicada: o `#2757` some (409 no servidor) e este aqui é o ÚNICO clique
+    // de saída, executando o `--force` sem `--to` que a tela mostra.
+    renderTela(falha({ from_version: "dev-abc1234" }));
+
+    expect(screen.getByRole("button", { name: "Forçar atualização" })).toBeInTheDocument();
+    expect(screen.getByText("bash hostgator-setup-kit/update.sh --force")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Voltar para a versão anterior" })).toBeNull();
+  });
+
+  it("a volta que TERMINOU também ganha o força — ali o comando é a saída clicável", () => {
+    // #3271 escondeu o "Voltar" neste ramo, mas o COMANDO continua na tela de
+    // propósito ("inclusive o código, que já foi trocado"). O força é o clique
+    // daquela linha; o "Voltar" segue fora.
+    renderTela(falha({ status: "failed_rolled_back", volta_automatica: true }));
+
+    expect(screen.getByRole("button", { name: "Forçar atualização" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Voltar para a versão anterior" })).toBeNull();
+  });
+
+  it("CONTROLE — estado normal: nenhum 'Forçar', o 'Atualizar agora' de sempre", () => {
+    renderTela(CHANGELOG_LONGO);
+
+    expect(screen.queryByRole("button", { name: "Forçar atualização" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Atualizar agora" })).toBeInTheDocument();
+    expect(screen.queryByText("bash hostgator-setup-kit/update.sh --force")).toBeNull();
+  });
+
+  it("⭐ 'Forçar atualização' recusado por mfa_required leva ao código", async () => {
+    semMfa();
+    vi.mocked(apiClient.post).mockRejectedValue(
+      new ApiError(403, "mfa_required", undefined, "req-3", "Confirme o código."),
+    );
+    renderTela(falha());
+
+    fireEvent.click(screen.getByRole("button", { name: "Forçar atualização" }));
+
+    await waitFor(() => expect(irAoDesafioDeMfa).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText("Não consegui iniciar a atualização", { exact: false })).toBeNull();
+  });
+
+  it("outra falha mostra a frase UMA vez — o força não repete o que o 'Voltar' já diz", async () => {
+    semMfa();
+    vi.mocked(apiClient.post).mockRejectedValue(
+      new ApiError(500, "internal_error", undefined, "req-4", "boom"),
+    );
+    renderTela(falha());
+
+    fireEvent.click(screen.getByRole("button", { name: "Forçar atualização" }));
+
+    await screen.findByText("Não consegui iniciar a atualização", { exact: false });
+    expect(
+      screen.getAllByText("Não consegui iniciar a atualização", { exact: false }),
+    ).toHaveLength(1);
+    expect(irAoDesafioDeMfa).not.toHaveBeenCalled();
+  });
+});

@@ -165,6 +165,30 @@ export function UpdatePanel() {
     },
   });
 
+  // O atalho do estado de falha (#2756) — o MESMO endpoint de sempre, com um
+  // corpo de UMA chave. O cliente manda a intenção e nunca um comando: quem
+  // transforma `{ force: true }` no `--force` (e no `--to` da versão de onde a
+  // tentativa saiu) é o servidor, a partir do mesmo run que a tela leu para
+  // montar o comando visível logo abaixo do botão. O botão de ATUALIZAR segue
+  // fora deste estado de propósito: sem força ele é o falso sucesso que o doc
+  // de `Saida` descreve — este aqui não, porque o `--force` refaz backup, banco
+  // e conferência de verdade.
+  const forcar = useMutation({
+    mutationFn: async () => apiClient.post("/api/v1/system/update", { force: true }),
+    onSuccess: () => {
+      setErro(null);
+      queryClient.invalidateQueries({ queryKey: ["system-version"] });
+    },
+    onError: (err) => {
+      if (err instanceof ApiError && err.code === "mfa_required") return irAoDesafioDeMfa();
+      const mensagem =
+        err instanceof ApiError && err.status === 409
+          ? t(err.message)
+          : t("Não consegui iniciar a atualização. Tente de novo em instantes.");
+      setErro(mensagem);
+    },
+  });
+
   // O app reinicia no meio da atualização: a requisição falhar aqui é
   // ESPERADA, não é erro. Só é erro de verdade se nunca houve run em curso.
   const rodando = data?.run?.status === "dispatched";
@@ -423,6 +447,11 @@ export function UpdatePanel() {
                 }
               : undefined
           }
+          // O clique que executa o comando logo abaixo (#2756). Sem guarda de
+          // versão publicada de propósito: é o único caminho de saída numa
+          // instalação fora de release, onde o `voltar` acima recusa com 409 e
+          // o `comandoDeVolta` devolve `--force` sem `--to`.
+          forcar={{ mutate: () => forcar.mutate(), isPending: forcar.isPending }}
         />
       </Layout>
     );
@@ -471,6 +500,9 @@ export function UpdatePanel() {
                 }
               : undefined
           }
+          // Mesmo atalho do estado anterior (#2756): o comando logo abaixo é o
+          // alvo, e é o SERVIDOR que o deriva — a tela só manda `{ force: true }`.
+          forcar={{ mutate: () => forcar.mutate(), isPending: forcar.isPending }}
         />
       </Layout>
     );
@@ -789,8 +821,10 @@ function BotaoAtualizar({
  * de atualizar fica desligado nos estados de falha: o que resolve ali é
  * `--force` com alvo na versão de onde se saiu — hoje, o botão "Voltar para a
  * versão anterior" (#2757), entregue como run quando há uma versão publicada
- * para onde voltar. O comando continua sempre presente: é o plano B do botão
- * e o caminho de quem prefere terminal.
+ * para onde voltar, e o "Forçar atualização" (#2756), que é o COMANDO logo
+ * abaixo executado sem terminal, e passa também onde a volta recusa. O comando
+ * continua sempre presente: é a transparência do que o botão faz, o plano B
+ * dele e o caminho de quem prefere terminal.
  */
 function Saida({
   botao,
@@ -800,6 +834,7 @@ function Saida({
   texto,
   comando,
   voltar,
+  forcar,
 }: {
   botao: boolean;
   mutate: () => void;
@@ -814,7 +849,14 @@ function Saida({
     isPending: boolean;
     erro: string | null;
   };
+  /** O clique de força deste estado (#2756), ao lado do comando que ele executa. */
+  forcar?: { mutate: () => void; isPending: boolean } | null;
 }) {
+  // O erro aparece UMA vez, e por quem estiver na tela: `BotaoAtualizar` e
+  // `BotaoVoltar` já o renderizam dentro de si. Sem nenhum dos dois ele morreria
+  // invisível — que é exatamente o caso do força sem volta (instalação fora de
+  // release) — e com os DOIS ele viraria frase repetida.
+  const erroDoForca = botao || voltar ? null : erro;
   return (
     <div className="mt-6 border-t pt-4">
       {botao && (
@@ -828,8 +870,51 @@ function Saida({
         </div>
       )}
       <p className="text-sm text-muted-foreground">{texto}</p>
+      {forcar && (
+        <div className="mt-3">
+          <BotaoForcar mutate={forcar.mutate} isPending={forcar.isPending} erro={erroDoForca} />
+        </div>
+      )}
       <Comando comando={comando} />
     </div>
+  );
+}
+
+/**
+ * O atalho do comando que está logo abaixo (#2756).
+ *
+ * Dispara o MESMO `POST /system/update` do botão normal, com um corpo de uma
+ * chave: `{ force: true }`. O alvo (`--force` e, quando existe, `--to` da
+ * versão de onde a tentativa saiu) é resolvido no SERVIDOR, a partir do mesmo
+ * run que a tela leu — a tela não passa caminho nenhum, nem por aqui. Diferente
+ * do "Voltar para a versão anterior" (#2757), não pede versão publicada para
+ * trás: ele executa o `comandoDeVolta` que está embaixo, cuja outra metade é
+ * justamente o `--force` sem `--to` de uma instalação fora de release.
+ */
+function BotaoForcar({
+  mutate,
+  isPending,
+  erro,
+}: {
+  mutate: () => void;
+  isPending: boolean;
+  erro: string | null;
+}) {
+  const t = useT();
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button onClick={mutate} disabled={isPending}>
+          {isPending ? t("Forçando…") : t("Forçar atualização")}
+        </Button>
+        <span className="text-sm text-muted-foreground">
+          {t(
+            "Rodo o comando de baixo por você, sem precisar abrir o terminal. Faço uma cópia de segurança dos seus dados antes.",
+          )}
+        </span>
+      </div>
+      {erro && <p className="mt-3 text-sm text-error-fg">{erro}</p>}
+    </>
   );
 }
 

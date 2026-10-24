@@ -31,7 +31,7 @@ vi.mock("@/lib/auth/requirePlatformAdmin", async (importOriginal) => ({
   requirePlatformAdminEscrita: mocks.escrita,
 }));
 vi.mock("@/lib/audit", () => ({ audit: mocks.audit }));
-vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn() } }));
+vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn(), info: vi.fn() } }));
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
     from(table: string) {
@@ -60,6 +60,7 @@ vi.mock("@/lib/supabase/admin", () => ({
 }));
 
 import { POST } from "./route";
+import { logger } from "@/lib/logger";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -217,4 +218,109 @@ it("o caminho de atualizar continua registrando o pedido antigo sem corpo", asyn
       metadata: expect.objectContaining({ from_version: "1.0.0", to_version: "1.1.0", rollback: false }),
     }),
   );
+  // O caminho de SEMPRE não pode ganhar nem log nem metadado de força: são
+  // três pedidos nesta rota (`{}`, `{rollback:true}`, `{force:true}`) e os dois
+  // últimos têm de continuar distinguíveis depois, na auditoria.
+  const metadataDoDeSempre = mocks.audit.mock.calls[0]?.[0]?.metadata as Record<string, unknown>;
+  expect(metadataDoDeSempre).not.toHaveProperty("force");
+  expect(logger.info).not.toHaveBeenCalled();
+});
+
+// ── O clique de força (#2756) ──────────────────────────────────────────────
+//
+// O botão "Forçar atualização" manda `{ force: true }` — UMA chave, sem
+// caminho nenhum. O SERVIDOR deriva o comando a partir do mesmo run de falha
+// que a tela leu para montar `<Comando>`, e as duas pontas se costuram pela
+// MESMA frase literal (`comandoDeVolta`, em `UpdatePanel.test.tsx`).
+//
+// É força que atravessa o 409 "você já está na versão mais recente": depois de
+// uma falha o `git checkout` já tinha dado certo e `current` coincide com
+// `latest`. Sem `--force` o `update.sh` responderia a mesma coisa e sairia
+// com 0 — o falso sucesso que mantinha o botão desligado.
+
+function reqDeForca() {
+  return new NextRequest("http://localhost/api/v1/system/update", {
+    method: "POST",
+    body: JSON.stringify({ force: true }),
+  });
+}
+
+it("registra a força com o alvo derivado do run de falha — e loga o comando que a tela mostra", async () => {
+  comRuns({ id: "run-quebrado", status: "failed", from_version: "1.0.0" });
+  const res = await POST(reqDeForca());
+  expect(res.status).toBe(200);
+  // O alvo é o `--to` do `comandoDeVolta` da tela, não a última release (1.1.0).
+  expect((await res.json()).data.to_version).toBe("v1.0.0");
+  // A prova, sem SSH: a frase derivada é a MESMA que o painel renderiza em
+  // `<Comando>` — o teste do painel costura a outra ponta com este literal.
+  expect(logger.info).toHaveBeenCalledWith(
+    "[system/update] força pedida",
+    expect.objectContaining({
+      comando: "bash hostgator-setup-kit/update.sh --to v1.0.0 --force",
+      alvo: "v1.0.0",
+      run_anterior: "run-quebrado",
+    }),
+  );
+  expect(mocks.audit).toHaveBeenCalledWith(
+    expect.objectContaining({
+      metadata: expect.objectContaining({
+        to_version: "v1.0.0",
+        rollback: false,
+        force: true,
+        comando: "bash hostgator-setup-kit/update.sh --to v1.0.0 --force",
+      }),
+    }),
+  );
+});
+
+it("a força atravessa o 409 'você já está na versão mais recente' — é o estado que ela existe para sair", async () => {
+  // Depois da falha o host reporta a versão ALVO, e ela é a mais recente: o
+  // caminho de atualizar recusaria aqui, e é exatamente o clique que não pode
+  // ser recusado.
+  mocks.respostas.system_version = [
+    { data: { current_version: "1.1.0", latest_version: "1.1.0" }, error: null },
+  ];
+  comRuns({ id: "run-quebrado", status: "failed_rolled_back", from_version: "1.0.0" });
+  const res = await POST(reqDeForca());
+  expect(res.status).toBe(200);
+  expect((await res.json()).data.to_version).toBe("v1.0.0");
+});
+
+it("força fora de release: sem `--to` derivado, com o `--force` puro no log", async () => {
+  // `from_version` de instalação seguindo o repositório não tem imagem
+  // publicada com esse nome para puxar. O comando da tela é o `--force` puro,
+  // e o alvo do run cai no `latest` — que é o que o `update.sh` resolveria sozinho.
+  comRuns({ id: "run-dev", status: "failed", from_version: "dev-abc1234" });
+  const res = await POST(reqDeForca());
+  expect(res.status).toBe(200);
+  expect((await res.json()).data.to_version).toBe("1.1.0");
+  expect(logger.info).toHaveBeenCalledWith(
+    "[system/update] força pedida",
+    expect.objectContaining({ comando: "bash hostgator-setup-kit/update.sh --force", alvo: "1.1.0" }),
+  );
+  // E a VOLTA continua recusando este MESMO run (409 "Não sei para qual versão
+  // voltar") — é o buraco que o força fecha sem abrir a volta pra ele.
+  const volta = await POST(reqDeVolta());
+  expect(volta.status).toBe(409);
+});
+
+it("recusa a força quando o último run não é uma falha — sucesso não tem o que forçar", async () => {
+  comRuns({ id: "run-bom", status: "success", from_version: "1.0.0" });
+  const res = await POST(reqDeForca());
+  expect(res.status).toBe(409);
+  expect((await res.json()).error.message).toContain("Não há nenhuma atualização com falha");
+  expect(logger.info).not.toHaveBeenCalled();
+  expect(mocks.audit).not.toHaveBeenCalled();
+});
+
+it("a força também obedece a cerca de atualização em andamento", async () => {
+  comRuns(
+    { id: "run-quebrado", status: "failed", from_version: "1.0.0" },
+    { id: "run-em-curso", status: "dispatched", dispatched_at: new Date().toISOString() },
+  );
+  const res = await POST(reqDeForca());
+  expect(res.status).toBe(409);
+  expect((await res.json()).error.message).toContain("Já existe uma atualização em andamento.");
+  expect(logger.info).not.toHaveBeenCalled();
+  expect(mocks.audit).not.toHaveBeenCalled();
 });
