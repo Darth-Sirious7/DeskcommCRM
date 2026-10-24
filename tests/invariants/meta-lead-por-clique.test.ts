@@ -8,6 +8,7 @@ import {
   seedGov,
   sql,
 } from "./gov-helpers";
+import { motivoDoErro } from "./psql-transporte";
 
 beforeAll(seedGov);
 
@@ -279,5 +280,85 @@ describe("LeadSubmitted por clique: banco", () => {
         from public.meta_ctwa_click_dispatches where ctwa_clid='mesmo-clid-entre-tenants';
       rollback;`);
     expect(out).toContain("identidades=2:2");
+  });
+});
+
+/**
+ * Doc 199, pergunta 2 = A: o clique em anúncio é dado pessoal (`ctwa_clid` liga a
+ * pessoa ao anúncio na Meta). A anonimização não EXCLUI o contato, então o
+ * `on delete cascade` nunca dispara num pedido do titular — quem apaga é o
+ * gatilho da virada de `is_anonymized` (migration 0771). O controle negativo é o
+ * contato vizinho: um `delete` sem o filtro de contato apagaria os dele também.
+ */
+describe("LeadSubmitted por clique: anonimização (LGPD)", () => {
+  it("anonimizar o contato apaga os cliques dele e preserva os do vizinho", () => {
+    const out = sql(`begin; ${setup}
+      select public.fn_definir_meta_lead_birth('${GOV_ORG}',true);
+      ${message(1, anchor("clique-do-titular-1"))}
+      ${message(2, anchor("clique-do-titular-2"))}
+      insert into public.contacts(id,organization_id,display_name)
+        values ('${OTHER_CONTACT}','${GOV_ORG}','Vizinho do mesmo tenant');
+      insert into public.conversations(id,organization_id,contact_id,channel_session_id,status,channel)
+        values ('${OTHER_CONVERSATION}','${GOV_ORG}','${OTHER_CONTACT}',
+          '${GOV_SESSION}','open','whatsapp');
+      insert into public.messages(id,organization_id,contact_id,conversation_id,
+        channel_session_id,external_id,type,direction,status,metadata)
+        values ('${MESSAGE(3)}','${GOV_ORG}','${OTHER_CONTACT}','${OTHER_CONVERSATION}',
+          '${GOV_SESSION}','clique-vizinho','text','inbound','received',
+          '${anchor("clique-do-vizinho")}'::jsonb);
+      select 'antes=' || count(*) filter (where contact_id='${CONTACT}') || ':' ||
+        count(*) filter (where contact_id='${OTHER_CONTACT}')
+        from public.meta_ctwa_click_dispatches where organization_id='${GOV_ORG}';
+      select public.fn_lgpd_cascade_redact_contact('${GOV_ORG}','${CONTACT}',gen_random_uuid());
+      select 'anonimizado=' || is_anonymized::text from public.contacts where id='${CONTACT}';
+      select 'depois=' || count(*) filter (where contact_id='${CONTACT}') || ':' ||
+        count(*) filter (where contact_id='${OTHER_CONTACT}')
+        from public.meta_ctwa_click_dispatches where organization_id='${GOV_ORG}';
+      rollback;`);
+    // controle positivo: sem os cliques semeados, "depois=0" passaria por vazio
+    expect(out).toContain("antes=2:1");
+    expect(out).toContain("anonimizado=true");
+    expect(out).toContain("depois=0:1");
+  });
+});
+
+/**
+ * Doc 199, pergunta 1 = A: a prova COMPORTAMENTAL que `PROVA_PROPRIA` de
+ * `rls-completude-varredura.test.ts` cita. A tabela é deny-all como
+ * `ad_conversion_dispatches`: quem entra pelo navegador, logado ou não, leva
+ * `permission denied` — não "zero linhas", que é o que uma policy aberta por
+ * engano também devolveria a quem não tem dado.
+ */
+describe("meta_ctwa_click_dispatches: o navegador não lê nem escreve", () => {
+  function erroSob(papel: string, comando: string): string | null {
+    try {
+      sql(`set role ${papel};\n${comando};\nreset role;`);
+      return null;
+    } catch (err) {
+      return motivoDoErro(err);
+    }
+  }
+  const COMANDOS: ReadonlyArray<readonly [string, string]> = [
+    ["ler", "select id from public.meta_ctwa_click_dispatches"],
+    [
+      "inserir",
+      `insert into public.meta_ctwa_click_dispatches(organization_id,contact_id,first_message_id,
+         ctwa_clid,captured_at,event_id)
+         values ('${GOV_ORG}','${GOV_CONTACT_1}',gen_random_uuid(),'forjado',now(),'forjado')`,
+    ],
+    ["alterar", "update public.meta_ctwa_click_dispatches set status='sent'"],
+    ["apagar", "delete from public.meta_ctwa_click_dispatches"],
+  ];
+
+  it("service_role lê — controle positivo da sonda (a tabela existe e o papel do servidor passa)", () => {
+    expect(erroSob("service_role", COMANDOS[0]![1])).toBeNull();
+  });
+
+  it.each(
+    ["anon", "authenticated"].flatMap((papel) => COMANDOS.map(([acao, c]) => [papel, acao, c] as const)),
+  )("%s é barrado ao %s", (papel, _acao, comando) => {
+    const erro = erroSob(papel, comando);
+    expect(erro, `\`${papel}\` executou SEM erro — a tabela de cliques está exposta`).not.toBeNull();
+    expect(erro).toContain("permission denied");
   });
 });

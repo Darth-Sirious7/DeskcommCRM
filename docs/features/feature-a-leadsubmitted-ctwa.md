@@ -52,6 +52,10 @@ inbound e cria uma oportunidade de envio independente do card, preservando o pri
    A identidade não pode ser reassociada por atualização. A unicidade por organização e
    `ctwa_clid` impede um segundo registro; a linha retém o ID da primeira mensagem mesmo se a
    conversa for excluída e é removida por cascata quando contato ou organização forem excluídos.
+   Num pedido do titular o contato é **anonimizado**, não excluído: aí quem apaga as linhas dele
+   é o gatilho da virada de `is_anonymized`
+   ([migration 0771](../../supabase/migrations/20261024131639_0771_clique_ctwa_some_na_anonimizacao.sql),
+   doc de decisão 199). Se a Meta reenviar um clique antigo dessa pessoa, ele é contado de novo.
 3. A mensagem emite `message.received` pelo mecanismo do banco. O dispatcher registra
    [`conversoes.clique_meta`](../../lib/conversoes/clique-meta.handler.ts), que busca a linha na
    organização, valida a ativação, faz claim por RPC e envia pelo
