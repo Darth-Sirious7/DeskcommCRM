@@ -46,7 +46,7 @@ inbound e cria uma oportunidade de envio independente do card, preservando o pri
    nos metadados da mensagem, conforme
    [`lib/leads/prova-meta-lead-submitted.ts`](../../lib/leads/prova-meta-lead-submitted.ts).
 2. O trigger `trg_record_meta_ctwa_click`, criado pela
-   [migration 0715](../../supabase/migrations/20261022120102_0715_meta_lead_por_clique.sql),
+   [migration 0770](../../supabase/migrations/20261024131631_0770_meta_lead_por_clique.sql),
    insere `meta_ctwa_click_dispatches` **na transação da mensagem**. A linha preserva organização,
    contato, primeira mensagem, `ctwa_clid`, instante confiável, época de ativação e `event_id`.
    A identidade não pode ser reassociada por atualização. A unicidade por organização e
@@ -68,11 +68,11 @@ inbound e cria uma oportunidade de envio independente do card, preservando o pri
    isso comprova a resposta da API, não a atribuição da conversão a uma campanha. Com
    `test_event_code`, o ledger fica `skipped` (`evento_de_teste`), não `sent`.
 
-A [migration 0713](../../supabase/migrations/20261022120100_0713_meta_lead_submitted_causal.sql)
+A [migration 0768](../../supabase/migrations/20261024131618_0768_meta_lead_submitted_causal.sql)
 introduziu a prova causal de nascimento e o ledger legado. A
-[migration 0714](../../supabase/migrations/20261022120101_0714_ativacao_meta_lead_por_org.sql)
+[migration 0769](../../supabase/migrations/20261024131625_0769_ativacao_meta_lead_por_org.sql)
 introduziu a ativação por organização. O [baseline](../../supabase/baseline.sql) contém os
-apêndices idempotentes das três mudanças. A 0715 traz `-- manifest:` no próprio SQL, RLS ligada,
+apêndices idempotentes das três mudanças. A 0770 traz `-- manifest:` no próprio SQL, RLS ligada,
 grants restritos a `service_role` e filtros explícitos de organização no consumidor. O
 `supabase/migrations/MANIFEST.md` é histórico e, pela doutrina atual, **não recebe linha nova**.
 
@@ -85,7 +85,7 @@ grants restritos a `service_role` e filtros explícitos de organização no cons
 2. Um administrador da organização ativa **Enviar LeadSubmitted por clique CTWA à Meta** na
    mesma tela. A [ação](../../app/actions/settings/definirLeadSubmittedCausal.ts) usa a
    organização da sessão, RBAC, MFA quando exigida, bloqueio de suporte somente leitura,
-   [RPC com horário do banco](../../supabase/migrations/20261022120101_0714_ativacao_meta_lead_por_org.sql)
+   [RPC com horário do banco](../../supabase/migrations/20261024131625_0769_ativacao_meta_lead_por_org.sql)
    e auditoria `conversions.meta_lead_birth_updated`. Desativar essa chave não desliga a conexão
    Meta nem os demais eventos.
 3. A tela apresenta o [histórico dos cliques](../../lib/conversoes/historico-de-cliques.ts) e
@@ -151,7 +151,7 @@ integrada. O rollback de imagens não reverte migrations.
 ## Estado do porte para o upstream
 
 O porte parte da `main` oficial `4271269649cfe9fc3774138fffc33f5cf84482cc`, em
-branch isolada. As migrations **0713 → 0714 → 0715** substituem os números 0617, 0618 e 0693
+branch isolada. As migrations **0768 → 0769 → 0770** (renumeradas em 24/10 ao trazer a main; eram 0713–0715) substituem os números 0617, 0618 e 0693
 do fork nesta proposta; as três dependências e seus apêndices idempotentes ficam no
 [baseline](../../supabase/baseline.sql). O `supabase/migrations/MANIFEST.md` permanece histórico.
 Os componentes de entrada preservam o registro de anúncio e demais metadados acrescentados

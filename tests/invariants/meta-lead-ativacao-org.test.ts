@@ -9,9 +9,9 @@ beforeAll(seedGov);
 const OUTRA_ORG = "1ead6000-0000-4000-8000-000000000001";
 
 describe("ativação causal Meta por organização", () => {
-  it("migration 0714 também reaplica após o baseline", () => {
+  it("migration 0769 também reaplica após o baseline", () => {
     const migration = readFileSync(
-      "supabase/migrations/20261022120101_0714_ativacao_meta_lead_por_org.sql",
+      "supabase/migrations/20261024131625_0769_ativacao_meta_lead_por_org.sql",
       "utf8",
     );
     const out = sql(`begin; ${migration}

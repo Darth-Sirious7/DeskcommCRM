@@ -148,7 +148,7 @@ describe("cobertura do e2e no CI", () => {
   });
 
   it("o ambiente da prova causal acompanha a spec causal (rebalanceamento não os separa)", () => {
-    // A parte 7 (#3128) só difere das comuns por dois passos presos à
+    // A parte 8 (#3128; era a 7 até o doc 199) só difere das comuns por dois passos presos à
     // `meta-lead-submitted-causal`. Quem rebalancear as listas pode mover a spec;
     // se os passos ficarem no número antigo, ela roda sem HMAC nem Graph dublê
     // (vermelho) e a parte antiga roda o ambiente causal à toa.

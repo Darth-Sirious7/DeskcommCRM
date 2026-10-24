@@ -58197,7 +58197,7 @@ begin
  if changed then new.google_next_attempt_at:=now(); end if;
  return new;
 end;$$;
--- ---- nascimento CTWA causal e LeadSubmitted (migration 0713) ----
+-- ---- nascimento CTWA causal e LeadSubmitted (migration 0768) ----
 alter table public.ad_conversion_dispatches
   add column if not exists claim_token uuid,
   add column if not exists claimed_until timestamptz;
@@ -58433,7 +58433,7 @@ grant execute on function public.fn_solicitar_reenvio_conversao(uuid, uuid, text
 
 notify pgrst,'reload schema';
 
--- 0714: null desliga LeadSubmitted causal em toda organizacao.
+-- 0769: null desliga LeadSubmitted causal em toda organizacao.
 -- Coluna propria evita que um escritor antigo de settings restaure o estado.
 alter table public.organizations
   add column if not exists meta_lead_birth_enabled_at timestamptz;
@@ -58462,7 +58462,7 @@ revoke execute on function public.fn_definir_meta_lead_birth(uuid, boolean) from
 grant execute on function public.fn_definir_meta_lead_birth(uuid, boolean) to service_role;
 notify pgrst,'reload schema';
 
--- ---- LeadSubmitted por clique CTWA (migration 0715) ----
+-- ---- LeadSubmitted por clique CTWA (migration 0770) ----
 -- manifest: Registra cada clique CTWA inbound em livro proprio, atomico com a mensagem, para LeadSubmitted por clique sem mudar o ledger de Purchase e etapas.
 -- O ID da primeira mensagem sobrevive a exclusao da conversa; a exclusao LGPD
 -- do contato ou da organizacao remove a linha por cascata.
