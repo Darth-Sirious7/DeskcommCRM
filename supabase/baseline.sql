@@ -58215,25 +58215,6 @@ $$;
 revoke all on function public.fn_conversation_scope() from public, anon;
 grant execute on function public.fn_conversation_scope() to authenticated, service_role;
 
--- A policy: o mesmo resultado da 0035, sem uma chamada por linha.
-drop policy if exists "conversations_select" on public.conversations;
-create policy "conversations_select" on public.conversations
-  for select using (
-    (select public.fn_is_platform_admin())
-    or organization_id in (
-         select s.organization_id from public.fn_conversation_scope() s where s.org_wide_read
-       )
-    or (
-         assigned_to_user_id = auth.uid()
-         and organization_id in (select s.organization_id from public.fn_conversation_scope() s)
-       )
-    or (
-         assigned_to_user_id is null
-         and organization_id in (
-              select s.organization_id from public.fn_conversation_scope() s where s.sees_unassigned
-            )
-       )
-  );
 
 -- 0734 — avaliação única de permissões (#3087)
 -- manifest: Avalia papel e contexto de suporte uma vez por verificação RBAC (#3087), preservando regras, grants e limites.
@@ -60006,18 +59987,37 @@ create policy tenant_isolation_conversation_participants_select
 -- deixaria `conversations` com RLS e SEM policy de SELECT — o inbox sumiria
 -- para todos. Dentro do DO, a falha desfaz o drop e a policy anterior fica.
 do $conversations_select$ begin
+  -- O ramo de PARTICIPANTE (conversa atendida em conjunto) fica, e a forma da
+  -- main também: escopo resolvido em conjunto por fn_conversation_scope(), ANTES
+  -- do scan. A forma antiga do PR (fn_can_view_conversation por linha) fazia o
+  -- planner voltar a chamar a função por candidata — reprovado por
+  -- tests/invariants/escopo-da-conversa-avaliado-uma-vez.test.ts (#2848 sobre o
+  -- conserto #3090). A política abaixo é a da main (58213) + o ramo participante.
   drop policy if exists "conversations_select" on public.conversations;
   create policy "conversations_select" on public.conversations
     for select using (
-      public.fn_can_view_conversation(organization_id, assigned_to_user_id)
+      (select public.fn_is_platform_admin())
+      or organization_id in (
+           select s.organization_id from public.fn_conversation_scope() s where s.org_wide_read
+         )
+      or (
+           assigned_to_user_id = auth.uid()
+           and organization_id in (select s.organization_id from public.fn_conversation_scope() s)
+         )
+      or (
+           assigned_to_user_id is null
+           and organization_id in (
+                select s.organization_id from public.fn_conversation_scope() s where s.sees_unassigned
+              )
+         )
       or exists (
-        select 1
-          from public.conversation_participants cp
-         where cp.conversation_id = conversations.id
-           and cp.organization_id = conversations.organization_id
-           and cp.user_id = auth.uid()
-           and cp.left_at is null
-      )
+           select 1
+             from public.conversation_participants cp
+            where cp.conversation_id = conversations.id
+              and cp.organization_id = conversations.organization_id
+              and cp.user_id = auth.uid()
+              and cp.left_at is null
+         )
     );
 end $conversations_select$;
 
