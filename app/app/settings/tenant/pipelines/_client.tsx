@@ -494,7 +494,7 @@ export function OpcoesDaLista({
   }
 
   return (
-    <div className="space-y-2 md:col-span-4" data-testid={`opcoes-campo-${indice + 1}`}>
+    <div className="space-y-2 lg:col-span-4" data-testid={`opcoes-campo-${indice + 1}`}>
       <div className="flex flex-wrap items-center gap-2">
         {/* O RESUMO é o que a tela mostra no lugar das opções — e a contagem é
             o número que quem configura precisa ver de relance. */}
@@ -981,8 +981,13 @@ function PipelineEditor({
         <p className="text-xs text-muted-foreground">
           {t("Aparecem no dossiê do negócio. No follow-up, você escolhe em qual campo gravar a resposta.")}
         </p>
+        {/* `lg:` e não `md:` (#3099): com a barra lateral aberta, a 768px sobram ~380px
+            para a linha, e a coluna de 13rem deixava Chave e Rótulo com 46px. Abaixo de
+            1024px os campos empilham, como no celular. Os `col-span-4` dos blocos de
+            dentro seguem o MESMO corte: um `md:col-span-4` sozinho cria quatro colunas
+            implícitas e devolve a linha espremida, mesmo sem o template. */}
         {fields.map((f, i) => (
-          <div key={`${f.key}-${i}`} className="grid gap-2 rounded-md border border-border p-2 md:grid-cols-[1fr_1fr_8rem_auto]">
+          <div key={`${f.key}-${i}`} className="grid gap-2 rounded-md border border-border p-2 lg:grid-cols-[1fr_1fr_13rem_auto]">
             <Input
               aria-label={`${t("Chave do campo")} ${i + 1}`}
               placeholder={t("chave (endereco)")}
@@ -1011,7 +1016,10 @@ function PipelineEditor({
                 setFields(next);
               }}
             >
-              <SelectTrigger aria-label={`${t("Tipo do campo")} ${i + 1}`}>
+              <SelectTrigger
+                aria-label={`${t("Tipo do campo")} ${i + 1}`}
+                title={rotuloDoTipo(f.type, t, moeda)}
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1051,7 +1059,7 @@ function PipelineEditor({
                 recolhido: o que a tela monta antes de a pessoa pedir é o
                 resumo, nunca as opções. */}
             {f.type === "searchable_select" && (
-              <div className="space-y-1 md:col-span-4">
+              <div className="space-y-1 lg:col-span-4">
                 <label className="flex items-center gap-1 text-xs">
                   <input
                     type="checkbox"
@@ -1099,7 +1107,7 @@ function PipelineEditor({
                 marcas são as que `campoExigidoNoDestino` lê — etapas de
                 entrada, `ao_ganhar` e `ao_perder` — e nada mais, para a tela
                 não prometer gatilho que o servidor não pergunta. */}
-            <div className="space-y-1 md:col-span-4">
+            <div className="space-y-1 lg:col-span-4">
               <p className="text-xs font-medium">{t("Exigir o preenchimento:")}</p>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
                 {etapas.map((e) => (
@@ -1166,7 +1174,7 @@ function PipelineEditor({
                 operadores são exatamente os três que `campoVisivel` aplica —
                 a tela não promete nenhum outro. Meio montada, a condição não
                 grava (ver `normalizaMostrarQuando`), como `obrigatorio_em`. */}
-            <div className="space-y-1 md:col-span-4">
+            <div className="space-y-1 lg:col-span-4">
               <p className="text-xs font-medium">{t("Mostrar só quando:")}</p>
               <div className="flex flex-wrap items-center gap-2 text-xs">
                 <Select
@@ -1294,7 +1302,7 @@ function PipelineEditor({
             {/* Fora do funil padrão o seletor só aparece para DESFAZER uma marca
                 "Contato" que já exista (gravada quando este era o padrão). */}
             {(ehFunilPadrao || escopoDoCampo(f) === "contato") && (
-              <div className="flex flex-wrap items-center gap-3 md:col-span-4">
+              <div className="flex flex-wrap items-center gap-3 lg:col-span-4">
                 <span className="text-xs font-medium">{t("Este campo pertence a:")}</span>
                 <Select
                   value={escopoDoCampo(f)}

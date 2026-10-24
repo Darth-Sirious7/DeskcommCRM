@@ -1597,9 +1597,11 @@ export type Database = {
           agent_id: string | null
           blocker: string
           closed_at: string | null
+          cobrancas_na_espera: number
           context_snapshot: Json
           conversation_id: string
           created_at: string
+          espera_desde: string | null
           followup_attempts: number
           id: string
           lead_id: string | null
@@ -1615,9 +1617,11 @@ export type Database = {
           agent_id?: string | null
           blocker: string
           closed_at?: string | null
+          cobrancas_na_espera?: number
           context_snapshot?: Json
           conversation_id: string
           created_at?: string
+          espera_desde?: string | null
           followup_attempts?: number
           id?: string
           lead_id?: string | null
@@ -1633,9 +1637,11 @@ export type Database = {
           agent_id?: string | null
           blocker?: string
           closed_at?: string | null
+          cobrancas_na_espera?: number
           context_snapshot?: Json
           conversation_id?: string
           created_at?: string
+          espera_desde?: string | null
           followup_attempts?: number
           id?: string
           lead_id?: string | null
@@ -8214,6 +8220,9 @@ isOneToOne: false
           dpo_email: string | null
           id: string
           legal_name: string
+          lembrete_caso_intervalo_horas: number
+          lembrete_caso_ligado: boolean
+          lembrete_caso_teto: number
           locale: string
           media_retention_days: number
           media_retention_enforced: boolean
@@ -8240,6 +8249,9 @@ isOneToOne: false
           dpo_email?: string | null
           id?: string
           legal_name: string
+          lembrete_caso_intervalo_horas?: number
+          lembrete_caso_ligado?: boolean
+          lembrete_caso_teto?: number
           locale?: string
           media_retention_days?: number
           media_retention_enforced?: boolean
@@ -8266,6 +8278,9 @@ isOneToOne: false
           dpo_email?: string | null
           id?: string
           legal_name?: string
+          lembrete_caso_intervalo_horas?: number
+          lembrete_caso_ligado?: boolean
+          lembrete_caso_teto?: number
           locale?: string
           media_retention_days?: number
           media_retention_enforced?: boolean

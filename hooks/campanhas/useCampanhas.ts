@@ -60,6 +60,8 @@ export interface CampanhaDetalhada extends CampanhaDaLista {
   teto_horario: number | null;
   /** Migration 0711: `rapida` = tudo de uma vez pelo número oficial; `gradual` = uma por minuto. */
   velocidade?: "gradual" | "rapida";
+  /** Migration 0765: texto sai em balões, um por parágrafo. */
+  split_messages?: boolean;
 }
 
 export interface Destinatario {

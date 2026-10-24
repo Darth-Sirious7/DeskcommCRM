@@ -204,6 +204,52 @@ describe("rótulos dos tipos de campo (#3037)", () => {
   });
 });
 
+/**
+ * A COLUNA DO TIPO NÃO PODE CORTAR O RÓTULO (issue #3099).
+ *
+ * Com `md:grid-cols-[1fr_1fr_8rem_auto]`, o gatilho ficava com ~91 px de texto:
+ * "Lista de várias escolhas" (152 px) e "Lista de varias opciones" (154 px)
+ * apareciam cortados, sem reticências. A coluna agora tem 13rem (208 px, ~172 px
+ * de texto) — 18 px de folga sobre o maior rótulo em espanhol.
+ *
+ * O jsdom não mede layout, então este teste guarda o que o código DECLARA (a
+ * largura da coluna e o `title` com o rótulo inteiro). A medida real por
+ * `getBoundingClientRect`, em pt e es, é a prova pela tela.
+ */
+describe("a coluna do tipo não corta o rótulo (#3099)", () => {
+  it("declara 13rem para a coluna, e não os 8rem que cortavam", () => {
+    render(<PipelinesClient pipelines={[FUNIL]} podeEditarConfig />);
+    abrirEditores();
+
+    const linha = screen.getByLabelText(/Tipo do campo 1/i).closest("div");
+    expect(linha?.className).toContain("lg:grid-cols-[1fr_1fr_13rem_auto]");
+    expect(linha?.className).not.toContain("8rem");
+  });
+
+  it("só divide a linha em colunas a partir de lg — em md, Chave e Rótulo ficavam com 46 px", () => {
+    // Medido pela tela a 768 px com a barra lateral aberta: com `md:`, a coluna de
+    // 13rem sobrava ~46 px para cada input. Abaixo de 1024 px os campos empilham.
+    render(<PipelinesClient pipelines={[FUNIL]} podeEditarConfig />);
+    abrirEditores();
+
+    const linha = screen.getByLabelText(/Tipo do campo 1/i).closest("div");
+    expect(linha?.className).not.toMatch(/(^|\s)md:grid-cols-/);
+    // Um bloco com `md:col-span-4` cria 4 colunas implícitas em md e espreme a linha
+    // do mesmo jeito — medido: 43 px a 768 só com o template trocado.
+    expect(linha?.querySelector('[class*="md:col-span"]')).toBeNull();
+    expect(linha?.querySelector('[class*="lg:col-span-4"]')).not.toBeNull();
+  });
+
+  it("o gatilho carrega o rótulo INTEIRO no title", () => {
+    render(<PipelinesClient pipelines={[FUNIL]} podeEditarConfig />);
+    abrirEditores();
+
+    expect(screen.getByLabelText(/Tipo do campo 1/i).getAttribute("title")).toBe(
+      "Lista de várias escolhas",
+    );
+  });
+});
+
 describe("um campo multiselect já gravado", () => {
   it("abre com o tipo à mostra, e não com o seletor em branco", () => {
     render(<PipelinesClient pipelines={[FUNIL]} podeEditarConfig />);

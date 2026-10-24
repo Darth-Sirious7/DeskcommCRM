@@ -23,6 +23,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import {
   useAcaoDeCampanha,
   useCampanha,
@@ -446,6 +447,7 @@ function RitmoDaCampanha({ campanha }: { campanha: CampanhaDetalhada }) {
   const [inicio, setInicio] = useState(texto(campanha.janela_inicio_hora));
   const [fim, setFim] = useState(texto(campanha.janela_fim_hora));
   const [velocidade, setVelocidade] = useState<Velocidade>(campanha.velocidade === "rapida" ? "rapida" : "gradual");
+  const [emBaloes, setEmBaloes] = useState(campanha.split_messages === true);
   const ehOficial = campanha.message_mode === "template";
   const rapida = ehOficial && velocidade === "rapida";
 
@@ -499,6 +501,20 @@ function RitmoDaCampanha({ campanha }: { campanha: CampanhaDetalhada }) {
           onChange={setFim}
         />
       </div>
+      {/* Modelo aprovado sai como a plataforma aprovou: nunca se divide. */}
+      {!ehOficial && (
+        <div className="flex items-start gap-3">
+          <Switch id="r-baloes" checked={emBaloes} onCheckedChange={setEmBaloes} />
+          <div className="space-y-1">
+            <Label htmlFor="r-baloes">{t("Dividir a mensagem em balões, um por parágrafo")}</Label>
+            <p className="text-sm text-muted-foreground">
+              {t(
+                "Até 3 balões por pessoa; o que passar disso vai junto no último. Cada balão conta no limite diário do número.",
+              )}
+            </p>
+          </div>
+        </div>
+      )}
       <div className="flex items-center gap-3">
         <Button
           size="sm"
@@ -512,6 +528,7 @@ function RitmoDaCampanha({ campanha }: { campanha: CampanhaDetalhada }) {
               teto_horario: numero(tetoHora),
               janela_inicio_hora: numero(inicio),
               janela_fim_hora: numero(fim),
+              ...(ehOficial ? {} : { split_messages: emBaloes }),
             })
           }
         >

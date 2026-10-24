@@ -32,7 +32,7 @@ const COLUNAS =
   "snapshot_excluded, scheduled_at, prepared_at, started_at, paused_at, completed_at, " +
   "cancelled_at, failure_code, failure_detail, intervalo_segundos, janela_inicio_hora, janela_fim_hora, " +
   "teto_diario, teto_horario, pipeline_id, stage_id, agent_id, created_at, created_by, " +
-  "message_mode, provider_template_name, provider_template_language, provider_template_variables, velocidade";
+  "message_mode, provider_template_name, provider_template_language, provider_template_variables, velocidade, split_messages";
 
 export async function GET(
   _req: NextRequest,
@@ -109,6 +109,7 @@ export async function PATCH(
     "teto_diario",
     "teto_horario",
     "velocidade",
+    "split_messages",
   ] as const;
   const mexeEmConteudo = Object.entries(entrada).some(
     ([campo, valor]) =>
@@ -154,6 +155,7 @@ export async function PATCH(
     "janela_fim_hora",
     "teto_diario",
     "teto_horario",
+    "split_messages",
     "channel_session_id",
     "pipeline_id",
     "stage_id",
