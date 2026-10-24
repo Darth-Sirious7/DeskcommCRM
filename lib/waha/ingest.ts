@@ -543,12 +543,12 @@ export function resolveMessageType(p: WahaPayload): string {
   return "text";
 }
 
-function notifyNameOf(p: WahaPayload): string | null {
+export function notifyNameOf(p: WahaPayload): string | null {
   return p._data?.notifyName ?? p._data?.pushName ?? null;
 }
 
 /** Corpo textual: WAHA nem sempre preenche `body` em cartões de contato NOWEB. */
-function bodyOf(p: WahaPayload): string | null {
+export function bodyOf(p: WahaPayload): string | null {
   if (p.body) return p.body;
   const msg = p._data?.message;
   if (!msg || typeof msg !== "object") return null;
@@ -901,7 +901,7 @@ function textoNaoVazio(v: unknown): string | null {
  * linhas para uma reação) e ainda carimbaria a conversa. A linha certa é a do
  * ramo `message.reaction`, ligada ao alvo.
  */
-function ehReacao(p: WahaPayload): boolean {
+export function ehReacao(p: WahaPayload): boolean {
   return p.type === "reaction" || objetoSimples(p.reaction) !== null;
 }
 
@@ -1011,6 +1011,24 @@ async function resolverMensagemCitada(
   return (porSufixo as { id: string } | null)?.id ?? null;
 }
 
+/**
+ * A forma em que a ENTRADA grava `messages.external_id`: o id completo do webhook
+ * (`false_<chat>_<id>`). Fonte única, usada por `handleInbound` e pelo importador
+ * de histórico: as duas trilhas gravam a MESMA string, senão a unique não recusa
+ * a segunda linha e a mensagem duplica.
+ */
+export function externalIdDeEntrada(p: WahaPayload): string | null {
+  return p.id ?? null;
+}
+
+/**
+ * A forma em que a SAÍDA (eco do celular) grava `messages.external_id`: o bare id
+ * (#196, #1855). Fonte única, ver `externalIdDeEntrada`.
+ */
+export function externalIdDeSaida(p: WahaPayload): string | null {
+  return p.id ? bareWaMessageId(p.id) : null;
+}
+
 async function handleInbound(
   admin: Admin,
   session: Session,
@@ -1105,7 +1123,7 @@ async function handleInbound(
       conversation_id: conversationId,
       channel_session_id: session.id,
       contact_id: contactId,
-      external_id: p.id,
+      external_id: externalIdDeEntrada(p),
       type: resolveMessageType(p),
       direction: "inbound",
       status: "delivered",
@@ -1486,7 +1504,7 @@ async function handleOutboundFromUserPhone(
   //
   // Mesmo par de candidatos que o `handleAck` usa — cobre NOWEB (bare) e WEBJS
   // (full) sem depender do engine.
-  const bare = bareWaMessageId(p.id);
+  const bare = externalIdDeSaida(p);
   const idCandidates = bare === p.id ? [p.id] : [p.id, bare];
   const { data: jaRegistrada } = await admin
     .from("messages")
@@ -1926,14 +1944,23 @@ async function handleMessageEdited(
  *
  * A linha NÃO é removida: sumir com ela apagaria o contexto das vizinhas — uma
  * resposta passaria a responder ao nada — e o histórico de quem atendeu. O
- * corpo também não é limpo aqui: quem decide o que mostrar é a tela, e apagar o
- * texto no banco impediria o próprio atendente de entender, depois, o que tinha
- * sido combinado antes do arrependimento.
+ * corpo também não é limpo aqui: quem decide o que MOSTRAR é a régua da tela
+ * (`lib/messaging/apagada.ts`), e apagar o texto no banco destruiria o registro
+ * do que foi combinado — que é justamente o que o pedido de LGPD precisa
+ * alcançar.
+ *
+ * A revogação que chega por AQUI é a que ninguém mais registra: quem apaga no
+ * aplicativo não passa por tela nenhuma, então sem esta trilha um pedido de
+ * LGPD/RGPD pergunta "quando e como esta mensagem foi apagada" e não há
+ * resposta. Vai para a auditoria o EVENTO (ids, direção e o fato de o conteúdo
+ * estar preservado) — nunca o corpo, que `api_audit_log` guardaria por 5 anos
+ * fora do alcance da cascata de anonimização.
  */
 async function handleMessageRevoked(
   admin: Admin,
   session: Session,
   p: WahaPayload,
+  requestId: string,
 ): Promise<void> {
   if (!p.revokedMessageId) return;
 
@@ -1952,11 +1979,50 @@ async function handleMessageRevoked(
         ? depois.fromMe
         : undefined;
 
-  await admin
+  const { data: apagadas, error: erroDoCarimbo } = await admin
     .from("messages")
     .update({ revoked_at: new Date().toISOString() })
     .eq("organization_id", session.organization_id)
-    .in("external_id", formasDaMensagemOriginal(p.revokedMessageId, chat, fromMe));
+    .in("external_id", formasDaMensagemOriginal(p.revokedMessageId, chat, fromMe))
+    // Só a linha que AINDA não estava apagada. O WAHA ecoa o que o próprio
+    // número faz: apagar pela tela do CRM carimba a linha na rota (e audita
+    // `message.revoked`, com o ator) e, depois, o eco `message.revoked` chega
+    // aqui. Sem este filtro o eco recarimbava a hora e gravava uma segunda
+    // trilha dizendo que alguém apagou pelo celular — numa tabela append-only.
+    // Pelo mesmo filtro, a reentrega do mesmo evento não duplica a trilha.
+    .is("revoked_at", null)
+    .select("id, conversation_id, direction, external_id");
+  if (erroDoCarimbo) {
+    // Sem este ramo o evento "some" em silêncio e a mensagem apagada segue
+    // legível como se ninguém tivesse apagado — o modo de falha que este arquivo
+    // já pagou caro em outros lugares.
+    logger.warn("[waha] message.revoked não carimbou a linha", {
+      request_id: requestId,
+      error: erroDoCarimbo.message,
+    });
+    return;
+  }
+  // Uma trilha por linha carimbada AGORA: `direction` diz quem apagou (recebida
+  // é o contato; enviada é o próprio número, apagando pelo aplicativo do
+  // WhatsApp). O eco de um apagar feito pela tela não chega até aqui, porque a
+  // rota já carimbou a linha. Limite conhecido: se o eco chegar ANTES de a rota
+  // carimbar (a rota carimba logo depois de o WAHA responder), sai uma trilha
+  // aqui além da `message.revoked` da rota — a do ator vem dela.
+  for (const linha of apagadas ?? []) {
+    await audit({
+      action: "message.revoked_in_channel",
+      organizationId: session.organization_id,
+      resourceType: "message",
+      resourceId: linha.id,
+      requestId,
+      metadata: {
+        conversation_id: linha.conversation_id,
+        direction: linha.direction,
+        external_id: linha.external_id,
+        conteudo_preservado: true,
+      },
+    });
+  }
 }
 
 /**
@@ -2060,7 +2126,7 @@ export async function dispatchWahaEvent(
   } else if (eventType === "message.edited") {
     await handleMessageEdited(admin, session, payload);
   } else if (eventType === "message.revoked") {
-    await handleMessageRevoked(admin, session, payload);
+    await handleMessageRevoked(admin, session, payload, requestId);
   } else if (eventType === "message.reaction") {
     await handleReaction(admin, session, payload);
   } else if (eventType === "session.status" || eventType === "state.change") {

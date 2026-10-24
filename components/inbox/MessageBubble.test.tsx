@@ -146,14 +146,23 @@ describe("MessageBubble — ações sobre mensagem própria", () => {
     expect(screen.queryByRole("menuitem", { name: "Apagar para todos" })).not.toBeInTheDocument();
   });
 
-  it("mantém o texto apagado dentro da bolha do CRM sem mostrar o texto revogado pelo cliente", () => {
-    const { rerender } = render(<MessageBubble message={msg({ revoked_at: "2026-09-24T11:00:00Z", body: "valor combinado" })} />);
-    expect(screen.getByText("Esta mensagem foi apagada")).toBeInTheDocument();
+  it("apagada pelo ATENDENTE: cinza, diz quem apagou e mantém o texto visível só no CRM", () => {
+    render(<MessageBubble message={msg({ revoked_at: "2026-09-24T11:00:00Z", body: "valor combinado" })} />);
+    expect(screen.getByText("Esta mensagem foi apagada pelo atendente")).toBeInTheDocument();
     expect(screen.getByText("valor combinado")).toBeInTheDocument();
     expect(screen.getByText("Visível só aqui no CRM")).toBeInTheDocument();
-    expect(screen.getByTestId("message-bubble").className).toContain("opacity-70");
-    rerender(<MessageBubble message={msg({ direction: "inbound", revoked_at: "2026-09-24T11:00:00Z", body: "texto do cliente" })} />);
+    const classes = screen.getByTestId("message-bubble").className;
+    // Cinza: a apagada sai das cores da direção — `bg-primary` é o envio vivo.
+    expect(classes).toContain("bg-muted/60");
+    expect(classes).not.toContain("bg-primary");
+  });
+
+  it("apagada pelo CONTATO: cinza, diz quem apagou e NÃO mostra o texto", () => {
+    render(<MessageBubble message={msg({ direction: "inbound", revoked_at: "2026-09-24T11:00:00Z", body: "texto do cliente" })} />);
+    expect(screen.getByText("Esta mensagem foi apagada pelo contato")).toBeInTheDocument();
     expect(screen.queryByText("texto do cliente")).not.toBeInTheDocument();
+    expect(screen.queryByText("Visível só aqui no CRM")).not.toBeInTheDocument();
+    expect(screen.getByTestId("message-bubble").className).toContain("bg-muted/60");
   });
 
   it("põe o menu dentro da bolha sem ocupar uma coluna ao lado", () => {
@@ -402,6 +411,37 @@ describe("MessageBubble — remetente de grupo", () => {
   });
 });
 
+/**
+ * A edição segue a mesma lei do composer no celular (F2): a tecla de retorno
+ * do teclado virtual quebra linha, e quem salva é o botão. Ctrl/Cmd+Enter
+ * salva sempre.
+ */
+describe("MessageBubble — editar pelo toque (F2)", () => {
+  it("ponteiro grosso: Enter quebra linha; Ctrl+Enter salva", async () => {
+    vi.stubGlobal(
+      "matchMedia",
+      (q: string) => ({ matches: q.includes("coarse"), media: q }) as MediaQueryList,
+    );
+    try {
+      const user = userEvent.setup();
+      const onEditar = vi.fn(async () => undefined);
+      render(<MessageBubble message={msg({ external_id: "ABC", sent_at: new Date().toISOString() })}
+        onEditar={onEditar} />);
+      await user.click(screen.getByRole("button", { name: "Opções da mensagem" }));
+      await user.click(await screen.findByRole("menuitem", { name: "Editar mensagem" }));
+      const campo = screen.getByRole("textbox", { name: "Editar mensagem" });
+      expect(campo.className).toContain("text-base");
+      fireEvent.change(campo, { target: { value: "linha" } });
+      expect(fireEvent.keyDown(campo, { key: "Enter" })).toBe(true);
+      expect(onEditar).not.toHaveBeenCalled();
+      fireEvent.keyDown(campo, { key: "Enter", ctrlKey: true });
+      await waitFor(() => expect(onEditar).toHaveBeenCalledOnce());
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
 describe("MessageBubble — mensagem que falhou", () => {
   const agora = () => new Date().toISOString();
 
@@ -422,6 +462,46 @@ describe("MessageBubble — mensagem que falhou", () => {
     })} viewerUserId="eu" />);
     expect(screen.getByTestId("motivo-da-falha")).not.toHaveTextContent("http");
     expect(document.body.textContent).not.toContain("http://servico-interno");
+  });
+
+  // O tooltip do selo "Falhou" conta a MESMA frase da linha visível — antes
+  // ele mostrava o `error_message` cru. Sabotagem: pôr o `error_message` do
+  // transporte à frente da frase do código deixa este caso VERMELHO.
+  it("o tooltip do 'Falhou' diz a mesma frase da linha, sem o texto cru", async () => {
+    render(<MessageBubble message={msg({
+      status: "failed", error_code: "channel_session_not_working",
+      error_message: "fetch failed http://servico-interno:3000/api/sendText",
+    })} />);
+    fireEvent.focus(screen.getByText("Falhou"));
+    const dica = await screen.findByRole("tooltip");
+    const frase = "O número escolhido não está conectado no momento.";
+    expect(dica).toHaveTextContent(frase);
+    expect(screen.getByTestId("motivo-da-falha")).toHaveTextContent(frase);
+    expect(document.body.textContent).not.toContain("servico-interno");
+  });
+
+  it("código sem frase + texto cru: a genérica no tooltip e na linha, sem o endereço", async () => {
+    render(<MessageBubble message={msg({
+      status: "failed", error_code: "canal_x_error",
+      error_message: "fetch failed http://servico-interno:3000/api/sendText",
+    })} />);
+    fireEvent.focus(screen.getByText("Falhou"));
+    const dica = await screen.findByRole("tooltip");
+    expect(dica).toHaveTextContent("Não foi possível enviar esta mensagem.");
+    expect(screen.getByTestId("motivo-da-falha")).toHaveTextContent("Não foi possível enviar esta mensagem.");
+    expect(document.body.textContent).not.toContain("servico-interno");
+  });
+
+  it.each([
+    ["pre_go_live", "Envio automático bloqueado pelo modo de teste do canal."],
+    ["org_suspensa", "Envio automático bloqueado: a organização está suspensa."],
+    ["channel_archived", "Este número foi excluído da Central de Conexões."],
+  ])("frase nossa gravada no envio (%s) aparece no tooltip e na linha", async (error_code, frase) => {
+    render(<MessageBubble message={msg({ status: "failed", error_code, error_message: frase })} />);
+    fireEvent.focus(screen.getByText("Falhou"));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(frase);
+    expect(screen.getByTestId("motivo-da-falha")).toHaveTextContent(frase);
+    expect(document.body.textContent).not.toContain("automação");
   });
 
   it("código sem frase cai na frase genérica", () => {
