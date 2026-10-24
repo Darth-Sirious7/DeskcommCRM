@@ -1,7 +1,7 @@
 -- manifest: **A atualização solta sozinha a trava de número novo do número que já está formado (PR #2327, de @Sandersono; decisão do dono, doc 109, opção A).** O #2327 faz a trava de go-live segurar de verdade os retornos automáticos (`followup_turn`), que até então ela nunca retinha. Sem esta transição, quem atualizasse teria TODO número com o item de go-live aberto parado, inclusive os que operam há meses. `fn_go_live_solta_numero_formado` solta a trava (`health_released_at`) — ou, no número que ainda não tem linha de saúde (ela só nasce no primeiro aviso de conexão), cria a linha já liberada —, fecha o item da Central (`kind 'other'`, `ref_kind 'number_health'`) e grava `channel.go_live_liberado_na_atualizacao` com o motivo, para o número em que (a) o controle de ritmo já não põe limite de aquecimento — a mesma régua de `lib/agent-engine/pacing/engine.ts` sobre `channel_knobs` (idade ≥ 31 dias, "pular o aquecimento" ou degraus próprios que terminam em "sem limite") — ou (b) a primeira mensagem de saída que saiu de verdade tem ≥ 31 dias. Nunca toca trava de saúde (`block_rate`/`response_rate`, que só existe com `health_released_at` preenchido). Roda UMA vez por instalação: a marca é a linha `channel.go_live_transicao_da_atualizacao` no audit log, com a contagem. Apêndice igual no `baseline.sql`, antes da VARREDURA anon.
 
 -- ============================================================================
--- 0574 — A TRAVA DE NÚMERO NOVO SAI SOZINHA DO NÚMERO JÁ FORMADO (#2327, doc 109)
+-- 0767 — A TRAVA DE NÚMERO NOVO SAI SOZINHA DO NÚMERO JÁ FORMADO (#2327, doc 109)
 --
 -- Todo número nasce com a trava de go-live (`lib/agent-engine/health/circuit.ts`),
 -- que só sai quando alguém resolve o item na Central. Até o #2327 ela não

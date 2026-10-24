@@ -4,7 +4,7 @@ import pg from "pg";
 import { channelHealthTick } from "@/lib/agent-engine/health/circuit";
 
 /**
- * A transição da 0574 alcança também o número SEM linha de saúde.
+ * A transição da 0767 alcança também o número SEM linha de saúde.
  *
  * A linha de `channel_session_health` só nasce no primeiro aviso de conexão
  * (`gravarEpisodio`, em `lib/channels/health.ts`). Sem ela o número não está

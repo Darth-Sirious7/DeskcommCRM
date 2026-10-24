@@ -60006,8 +60006,8 @@ end$$;
 revoke execute on function public.decrypt_cpf(uuid) from public, anon;
 grant  execute on function public.decrypt_cpf(uuid) to authenticated, service_role;
 
--- ---- #2327: a trava de número novo sai sozinha do número já formado (migration 0574) ----
--- Ver o cabeçalho da migration 0574 (doc 109, opção A). Cria função, então fica
+-- ---- #2327: a trava de número novo sai sozinha do número já formado (migration 0767) ----
+-- Ver o cabeçalho da migration 0767 (doc 109, opção A). Cria função, então fica
 -- ANTES da VARREDURA anon. Idempotente: `create or replace`; a transição roda
 -- uma vez por instalação (marca no audit log), e repetir a função não muda nada.
 create or replace function public.fn_go_live_solta_numero_formado()

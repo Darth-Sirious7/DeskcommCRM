@@ -1186,7 +1186,7 @@ export const AUDIT_ACTIONS = [
   "contact.unmarked_personal",
 
   // A trava de número novo (go-live) solta na atualização do número que o
-  // controle de ritmo já considera formado (migration 0574, PR #2327, doc 109).
+  // controle de ritmo já considera formado (migration 0767, PR #2327, doc 109).
   // Uma linha por número, com o motivo; e uma por instalação marcando a rodada.
   "channel.go_live_liberado_na_atualizacao",
   "channel.go_live_transicao_da_atualizacao",
