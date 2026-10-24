@@ -9,6 +9,7 @@ import type { NextRequest } from "next/server";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { loadAuthUser } from "@/lib/auth/server";
+import { semSmtpNaInstalacao } from "@/lib/email/estado";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { extractChangelogRange } from "@/lib/system/changelog";
@@ -64,7 +65,7 @@ export async function GET(_req: NextRequest): Promise<Response> {
   const { data: run, error: runError } = await db
     .from("system_update_runs")
     .select(
-      "id, status, last_step, dispatched_at, finished_at, from_version, to_version, log_tail, disputa_de_banco, retentativas_do_banco, passada_do_banco",
+      "id, status, last_step, dispatched_at, finished_at, from_version, to_version, log_tail, disputa_de_banco, retentativas_do_banco, passada_do_banco, requested_by",
     )
     .order("dispatched_at", { ascending: false })
     .limit(1)
@@ -179,9 +180,23 @@ export async function GET(_req: NextRequest): Promise<Response> {
   // para quem mais precisa lê-la.
   const faixa = latest ? extractChangelogRange(version?.changelog_raw ?? "", latest, running) : null;
 
+  // #2755 (item 3) — quem administra a instalação precisa VER que ela não envia
+  // e-mail. Até aqui esse estado só existia no log do `update.sh`, e a tela de
+  // atualização exibia só o log: o dono descobria o problema quando alguém
+  // reclamava de não receber a recuperação de senha. Vem na resposta do DONO
+  // (`is_platform_admin`) porque é ele quem configura o SMTP — para quem não
+  // pode agir, aviso sem ação é só ansiedade.
+  //
+  // A leitura é a que já existe (`lerSmtp`, a mesma tela de /admin/email usa) e
+  // a régua é a MESMA da ação que sofre com isso (`semSmtpNaInstalacao`): fora
+  // do single-server o login tem e-mail próprio, e `true` ali é a resposta
+  // honesta — não há o que avisar.
+  const smtpConfigurado = !(await semSmtpNaInstalacao());
+
   return ok({
     current_version: running,
     is_owner: true,
+    smtp_configured: smtpConfigurado,
     latest_version: latest,
     update_available:
       // `!acabouDeInstalar` é o degrau histórico: na janela logo após um
@@ -247,6 +262,22 @@ export async function GET(_req: NextRequest): Promise<Response> {
           last_step: (run.last_step as RunStep | null) ?? null,
           from_version: run.from_version ?? "",
           to_version: run.to_version ?? "",
+          // Quando o run fechou — é a hora que o aviso da volta automática
+          // mostra ("às 14h10"). Nulo enquanto o run ainda está em curso.
+          finished_at: run.finished_at ?? null,
+          // "Ninguém pediu isto": o run da volta automática nasce sem autor
+          // (o `agent.sh` manda o fato, não um pedido). A tela usa isso para
+          // dizer "voltou sozinho" em vez de "voltei" — a diferença importa
+          // para quem lê, porque um houve clique e o outro não.
+          // `requested_by` sozinho não basta: a FK é `on delete set null`, e
+          // um run pedido por alguém que depois saiu também fica nulo. O run
+          // da volta automática nasce já fechado (`dispatched_at` = `finished_at`,
+          // gravados juntos pela rota do agente); um run pedido pela tela
+          // nunca fecha no mesmo instante em que foi pedido.
+          volta_automatica:
+            run.requested_by === null &&
+            run.finished_at != null &&
+            run.finished_at === run.dispatched_at,
           log_tail: run.log_tail ?? "",
           superseded: falhaSuperada,
           // O que a rodada contou sobre o banco — disputa, retentativas e em

@@ -87,7 +87,15 @@ function banco(preexistentes: Array<Partial<Linha>> = []) {
     let org: string | null = null;
     let externos: string[] = [];
     const filtros: Array<[string, unknown]> = [];
+    // `.neq()` aplicado: a re-checagem pós-insert exclui a linha recém-inserida.
+    const diferentes: Array<[string, unknown]> = [];
+    const filtrosDeTempo: Array<[string, string]> = [];
+    const noTempo = (m: Linha) => filtrosDeTempo.every(([c, v]) => String(m[c] ?? "") >= v);
     const q: Record<string, unknown> = {
+      neq(coluna: string, valor: unknown) {
+        diferentes.push([coluna, valor]);
+        return q;
+      },
       eq(coluna: string, valor: unknown) {
         if (coluna === "organization_id") org = valor as string;
         else filtros.push([coluna, valor]);
@@ -105,7 +113,12 @@ function banco(preexistentes: Array<Partial<Linha>> = []) {
         filtros.push([coluna, valor]);
         return q;
       },
-      gte: () => q,
+      gte(coluna: string, valor: string) {
+        // Aplicado: a janela de tempo do eco é parte da prova, e um dublê que a
+        // ignorasse deixaria verde uma consulta que olha a coluna errada.
+        filtrosDeTempo.push([coluna, valor]);
+        return q;
+      },
       order: () => q,
       limit: () => q,
       async maybeSingle() {
@@ -114,7 +127,8 @@ function banco(preexistentes: Array<Partial<Linha>> = []) {
             m.organization_id === org &&
             m.external_id !== null &&
             externos.includes(m.external_id) &&
-            filtros.every(([c, v]) => (Array.isArray(v) ? v.includes(m[c]) : m[c] === v)),
+            filtros.every(([c, v]) => (Array.isArray(v) ? v.includes(m[c]) : m[c] === v)) &&
+            diferentes.every(([c, v]) => m[c] !== v),
         );
         return { data: achou ? { id: achou.id } : null, error: null };
       },
@@ -123,7 +137,9 @@ function banco(preexistentes: Array<Partial<Linha>> = []) {
           (m) =>
             (org === null || m.organization_id === org) &&
             filtros.every(([c, v]) => (Array.isArray(v) ? v.includes(m[c]) : m[c] === v)) &&
-            (externos.length === 0 || (m.external_id !== null && externos.includes(m.external_id))),
+            (externos.length === 0 || (m.external_id !== null && externos.includes(m.external_id))) &&
+            diferentes.every(([c, v]) => m[c] !== v) &&
+            noTempo(m),
         );
         return Promise.resolve(ok({ data: casadas, error: null }));
       },
@@ -209,6 +225,8 @@ const emVoo = (over: Partial<Linha> = {}): Partial<Linha> => ({
   body: TEXTO,
   type: "chat",
   sent_at: new Date().toISOString(),
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
   ...over,
 });
 
@@ -431,6 +449,43 @@ describe("eco do envio assinado — a linha do nome não esconde o eco (#2066)",
       envelope(eco("*Carlos Gaban*\noi, respondi pelo celular")),
       "req-2066-4",
     );
+
+    expect(conversa.bot_silenced_until).not.toBeNull();
+  });
+});
+
+
+/**
+ * O ECO DO REENVIO (`POST /api/v1/messages/{id}/retry`).
+ *
+ * O reenvio põe de volta na fila uma linha que nasceu antes da falha — o
+ * `created_at` dela tem minutos ou horas. A janela do eco medida pelo
+ * `created_at` não a enxergava, e o eco do próprio reenvio era lido como
+ * resposta digitada no celular. A janela é medida pelo `updated_at`, que a
+ * trava do reenvio adianta.
+ */
+describe("eco do reenvio — linha antiga posta de novo na fila", () => {
+  const duasHorasAtras = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+
+  it("⭐ linha criada há 2h e reenviada agora: o eco NÃO pausa a IA", async () => {
+    const { admin, conversa } = banco([
+      emVoo({ sent_via: "user", created_at: duasHorasAtras, sent_at: duasHorasAtras }),
+    ]);
+
+    await dispatchWahaEvent(admin as never, SESSION as never, envelope(eco(TEXTO)), "req-reenvio-1");
+
+    expect(
+      conversa.bot_silenced_until,
+      "o eco do próprio reenvio foi lido como resposta pelo celular e pausou a IA",
+    ).toBeNull();
+  });
+
+  it("CONTROLE: linha parada há 2h, sem ninguém mexer nela, não serve de álibi", async () => {
+    const { admin, conversa } = banco([
+      emVoo({ sent_via: "user", created_at: duasHorasAtras, updated_at: duasHorasAtras }),
+    ]);
+
+    await dispatchWahaEvent(admin as never, SESSION as never, envelope(eco(TEXTO)), "req-reenvio-2");
 
     expect(conversa.bot_silenced_until).not.toBeNull();
   });

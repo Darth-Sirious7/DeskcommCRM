@@ -36,7 +36,7 @@ import { useT } from "@/hooks/i18n/useT";
 import Link from "next/link";
 
 import { TETO_TOOLS_POR_AGENTE } from "@/lib/mcp/tools/selecao-por-pacote";
-import { PROVEDORES } from "@/lib/ai/pontos/provedores";
+import { PROVEDOR_POR_ASSINATURA, PROVEDORES } from "@/lib/ai/pontos/provedores";
 
 import { ModelPicker, useModelMeta } from "./ModelPicker";
 import { CHAVE_DA_INSTALACAO, CredentialPicker, STATUS_LABEL, findCredential } from "./CredentialPicker";
@@ -58,6 +58,7 @@ import { BasesDoAgente, type MaterialDoAcervo } from "./BasesDoAgente";
 import { FunisDoAgente, type CoberturaPorFunil } from "./FunisDoAgente";
 import { PublishConfirmDialog } from "./PublishConfirmDialog";
 import { ComandosDoCelular } from "./ComandosDoCelular";
+import { ServidorExternoNoAtendimento } from "./ServidorExternoNoAtendimento";
 import {
   saveAgentDraftAction,
   publishAgentAction,
@@ -115,8 +116,14 @@ interface BaseProps {
    * página server component, do mesmo jeito que as credenciais.
    */
   provedorPadrao?: string;
+  /**
+   * Os provedores que ESTA instalação oferece — o servidor filtra por
+   * `idsDosProvedoresOferecidos` (a assinatura do ChatGPT só com o módulo
+   * `login_codex` ligado). Ausente = sem a assinatura (falha fechada).
+   */
+  provedoresOferecidos?: readonly string[];
   channelSessions: ChannelSessionLite[];
-  routerMembership?: { routerId: string; routerName: string } | null;
+  routerMembership?: { routerId: string; routerName: string; channelSessionId: string; channelStatus: string | null } | null;
   readOnly?: boolean;
   organizationTimezone?: string;
 }
@@ -181,6 +188,12 @@ interface FormState {
   history_token_window: number;
   handoff_keywords: string[];
   handoff_tool_enabled: boolean;
+  /**
+   * A chave por ASSUNTO JURÍDICO (#2097, #2156) — irmã da de cima, só que ela
+   * não remove a ferramenta: troca a descrição que manda passar em "questão
+   * jurídica". Padrão LIGADO (`?? true` abaixo), como a coluna na versão.
+   */
+  handoff_legal_enabled: boolean;
   proposal_ai_draft_enabled: boolean;
   cases_enabled: boolean;
   split_messages: boolean;
@@ -223,6 +236,10 @@ const DEFAULT_TRIGGER: TriggerValue = {
   concurrency: "one_per_conversation",
 };
 
+const SEM_A_ASSINATURA: readonly string[] = PROVEDORES.map((p) => p.id).filter(
+  (id) => id !== PROVEDOR_POR_ASSINATURA,
+);
+
 /**
  * O provedor inicial de um agente que ainda não tem versão.
  *
@@ -232,8 +249,11 @@ const DEFAULT_TRIGGER: TriggerValue = {
  * formulário pedindo para escolher de novo. Fora da lista, `anthropic` (o que
  * o seed da instalação sempre teve).
  */
-export function provedorInicial(provedorPadrao?: string): Provider {
-  if (provedorPadrao && PROVEDORES.some((p) => p.id === provedorPadrao)) {
+export function provedorInicial(
+  provedorPadrao?: string,
+  oferecidos: readonly string[] = SEM_A_ASSINATURA,
+): Provider {
+  if (provedorPadrao && oferecidos.includes(provedorPadrao)) {
     return provedorPadrao as Provider;
   }
   return "anthropic";
@@ -252,13 +272,14 @@ export function buildState(args: {
    * continua sendo o último degrau, para instalação que ainda não escolheu nada.
    */
   provedorPadrao?: string;
+  provedoresOferecidos?: readonly string[];
 }): FormState {
-  const { agent, version, t, provedorPadrao } = args;
+  const { agent, version, t, provedorPadrao, provedoresOferecidos } = args;
   return {
     name: agent?.name ?? "",
     description: agent?.description ?? "",
     priority: agent?.priority ?? 0,
-    provider: (version?.provider as Provider) ?? provedorInicial(provedorPadrao),
+    provider: (version?.provider as Provider) ?? provedorInicial(provedorPadrao, provedoresOferecidos),
     model: version?.model ?? "",
     // `null` gravado = a versão usa a chave da instalação. Sem esta tradução,
     // reabrir o agente mostraria o campo em branco e pediria para escolher de novo.
@@ -283,6 +304,7 @@ export function buildState(args: {
       "pessoa real",
     ],
     handoff_tool_enabled: version?.handoff_tool_enabled ?? true,
+    handoff_legal_enabled: version?.handoff_legal_enabled ?? true,
     proposal_ai_draft_enabled: version?.proposal_ai_draft_enabled ?? true,
     cases_enabled: version?.cases_enabled ?? false,
     split_messages: version?.split_messages ?? false,
@@ -347,6 +369,7 @@ function toVersionPayload(s: FormState) {
     history_token_window: s.history_token_window,
     handoff_keywords: s.handoff_keywords,
     handoff_tool_enabled: s.handoff_tool_enabled,
+    handoff_legal_enabled: s.handoff_legal_enabled,
     proposal_ai_draft_enabled: s.proposal_ai_draft_enabled,
     cases_enabled: s.cases_enabled,
     split_messages: s.split_messages,
@@ -379,7 +402,12 @@ export function AgentForm(props: Props) {
       const ref = props.base ?? props.draft ?? props.published;
       return buildState({ agent: props.agent, version: ref, t });
     }
-    return buildState({ version: null, t, provedorPadrao: props.provedorPadrao });
+    return buildState({
+      version: null,
+      t,
+      provedorPadrao: props.provedorPadrao,
+      provedoresOferecidos: props.provedoresOferecidos,
+    });
   }, [isEdit, props, t]);
 
   const [form, setForm] = React.useState<FormState>(baseline);
@@ -497,7 +525,7 @@ export function AgentForm(props: Props) {
    * chave que tinha acabado de escolher.
    */
   const publishBlockReason = React.useMemo(() => {
-    if (!isEdit) return t("Salve o agent antes de publicar.");
+    if (!isEdit) return t("Salve o agente antes de publicar.");
     const motivo = bloqueioDePublicacao({
       temRascunhoVigente: !!props.draft,
       formularioValido: isValid,
@@ -511,6 +539,9 @@ export function AgentForm(props: Props) {
         estadoDaCredencialDaOrg: credSt,
       },
       numero: { estado: channelSession?.status ?? null },
+      roteador: props.routerMembership
+        ? { estadoDoCanal: props.routerMembership.channelStatus }
+        : null,
     });
     if (!motivo) return null;
     switch (motivo.codigo) {
@@ -586,7 +617,7 @@ export function AgentForm(props: Props) {
           toast.error(res.message ?? `${t("Erro")}: ${res.error}`);
           return;
         }
-        toast.success(t("Agent criado."));
+        toast.success(t("Agente criado."));
         router.push(`/app/ai/agents/${res.data!.agent_id}`);
       }
     } finally {
@@ -878,7 +909,16 @@ export function AgentForm(props: Props) {
                     nenhum item casava com o valor, e o primeiro save silencioso
                     trocava o provedor do dono por outro.
                   */}
-                  {PROVEDORES.map((p) => (
+                  {/*
+                    Só o que a instalação oferece — mais o provedor já gravado,
+                    para o campo não abrir em branco (o mesmo defeito acima); a
+                    gravação é que recusa um desligado.
+                  */}
+                  {PROVEDORES.filter(
+                    (p) =>
+                      (props.provedoresOferecidos ?? SEM_A_ASSINATURA).includes(p.id) ||
+                      p.id === form.provider,
+                  ).map((p) => (
                     <SelectItem key={p.id} value={p.id}>
                       {p.rotulo}
                     </SelectItem>
@@ -932,7 +972,7 @@ export function AgentForm(props: Props) {
                   >
                     «{props.routerMembership.routerName}»
                   </Link>{" "}
-                  {t("— o campo de número abaixo não se aplica.")}
+                  {t("— a publicação usa o canal do roteador, sem número próprio neste especialista.")}
                 </p>
               </div>
             )}
@@ -974,7 +1014,7 @@ export function AgentForm(props: Props) {
                 travava o botão de salvar — o dono de uma instalação nova escrevia
                 o prompt inteiro e não conseguia guardar nada.
               */}
-              {!form.channel_session_id ? (
+              {!form.channel_session_id && !props.routerMembership ? (
                 <p className="text-xs text-muted-foreground">
                   {props.channelSessions.length === 0 ? (
                     <>
@@ -1251,6 +1291,34 @@ export function AgentForm(props: Props) {
                 {t("Deixar o agente chamar uma pessoa quando perceber que não é caso dele")}
               </Label>
             </div>
+            {/* A chave por ASSUNTO JURÍDICO (#2097, #2156): irmã da de cima,
+                mas com efeito diferente — ela NÃO remove a ferramenta, só troca
+                a descrição que mandava passar em "questão jurídica". Por isso
+                ela fica DESABILITADA quando a de cima está desligada: sem a
+                ferramenta não há descrição nenhuma para trocar. Só admin mexe
+                (toda escrita de versão exige admin), e o pedido explícito de
+                pessoa continua passando dos dois lados. */}
+            <div className="flex items-center gap-2">
+              <Switch
+                id="handoff_legal_enabled"
+                checked={form.handoff_legal_enabled}
+                onCheckedChange={(v) => patch({ handoff_legal_enabled: v })}
+                disabled={disabled || !form.handoff_tool_enabled}
+              />
+              <Label
+                htmlFor="handoff_legal_enabled"
+                className={form.handoff_tool_enabled ? undefined : "text-muted-foreground"}
+              >
+                {t(
+                  "Passar para uma pessoa quando o cliente falar de assunto jurídico (Procon, advogado, processo)",
+                )}
+              </Label>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Desligue se assunto jurídico é o trabalho normal deste agente. Quem pede para falar com uma pessoa continua sendo passado.",
+              )}
+            </p>
             <HandoffKeywordsInput
               value={form.handoff_keywords}
               onChange={(v) => patch({ handoff_keywords: v })}
@@ -1374,6 +1442,16 @@ export function AgentForm(props: Props) {
             <ComandosDoCelular
               agentId={props.agent.id}
               inicial={(props.agent.config ?? {}).aceita_comandos_celular}
+              disabled={disabled}
+            />
+          )}
+
+          {/* Servidor MCP externo no atendimento (#2147). Só admin vê e
+              grava; salva em `ai_agents.config.mcp_externo_no_atendimento`. */}
+          {isEdit && !readOnly && (
+            <ServidorExternoNoAtendimento
+              agentId={props.agent.id}
+              inicial={(props.agent.config ?? {}).mcp_externo_no_atendimento}
               disabled={disabled}
             />
           )}

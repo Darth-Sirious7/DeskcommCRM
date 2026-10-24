@@ -243,6 +243,9 @@ async function evaluateSession(
 ): Promise<{ held: number; released: number; alerts: number }> {
   const delta = { held: 0, released: 0, alerts: 0 };
   const client = await harness.connect();
+  // #2624 — mesma marcação do #2621: o finally só libera COM erro quem falhou
+  // dentro da transação (release(err) → _remove no pg-pool, cliente descartado).
+  let erroNaTransacao: Error | undefined;
   try {
     await client.query('begin');
     const { rows } = await client.query<HealthRow>(
@@ -378,6 +381,9 @@ async function evaluateSession(
     await client.query('commit');
     return delta;
   } catch (err) {
+    // #2624 — marcado ANTES do rollback: se o rollback estourar e virar
+    // AggregateError, o cliente ainda sai COM erro e o pg-pool o descarta.
+    erroNaTransacao = err instanceof Error ? err : new Error(String(err));
     try {
       await client.query('rollback');
     } catch (rollbackErr) {
@@ -385,7 +391,7 @@ async function evaluateSession(
     }
     throw err;
   } finally {
-    client.release();
+    client.release(erroNaTransacao);
   }
 }
 

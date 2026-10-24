@@ -63,6 +63,17 @@ export interface Conversation {
    * por resposta no celular (`comandoDaConversa` escolhe o motivo da tela).
    */
   last_handoff_reason?: string | null;
+  /**
+   * A conversa está marcada como EXEMPLO para o agente aprender (#3006) — o
+   * opt-in de LGPD (L-08) que a rota `POST .../usable-for-rag` liga e que o
+   * cron `kb-conversations-batch` consome.
+   *
+   * Opcional de propósito, como `comando_da_conversa`: uma resposta em cache de
+   * antes deste campo entrar no `SELECT_COLS` da lista não o tem. AUSENTE é
+   * "não afirmo que está marcada", nunca "não está" — e o selo da lista só
+   * aparece com `true`, porque afirmar o contrário seria pior.
+   */
+  usable_for_rag?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -127,6 +138,13 @@ export interface Message {
   /** A mensagem que esta responde (citação). `null` = envio solto. */
   reply_to_message_id: string | null;
   created_at: string;
+  /**
+   * Última escrita na linha (trigger `trg_messages_updated_at`). É o relógio do
+   * reenvio (`lib/messaging/reenvio.ts`): linha `queued` parada há muito pode
+   * ter perdido o processo que a enviava. Opcional porque linhas montadas fora
+   * do `MSG_COLS` (otimistas antigas, fixtures) não o trazem.
+   */
+  updated_at?: string;
 }
 
 /** Nota interna de conversa (Onda 5.2) — nunca vai ao cliente, tabela separada de messages. */

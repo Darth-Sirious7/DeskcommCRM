@@ -69,6 +69,25 @@ export interface LeadRow {
    */
   stage_changed_at?: string | null;
   created_at?: string;
+  /**
+   * #2995 — as três colunas do RECORTE DE ENCERRADOS ANTIGOS do quadro, que a
+   * rota do board lê de uma vez com o `select("*")`: `status` e `closed_at`
+   * decidem o recorte e `position_in_stage` é a ordem da leitura. Opcionais
+   * porque a maioria dos testes não fala de negócio encerrado — e declaradas
+   * aqui, e não num `as` no arquivo de teste, para o caso que monta um ganho
+   * velho continuar medindo o handler em vez do dublê.
+   */
+  status?: "open" | "won" | "lost" | "archived";
+  closed_at?: string | null;
+  position_in_stage?: number;
+  /**
+   * #2995 — as duas colunas de ATIVIDADE, que o recorte NÃO pode usar: o corte é
+   * por data de encerramento. O caso do ganho de dois dias com atividade de
+   * meses atrás só mede o corte certo se as duas existirem para serem
+   * ignoradas — por isso moram aqui, e não num `as` no teste.
+   */
+  last_activity_at?: string | null;
+  updated_at?: string | null;
 }
 
 export function negocio(id: string, stageId: string, over: Partial<LeadRow> = {}): LeadRow {
@@ -91,6 +110,12 @@ export interface PipelineRow {
   description: string | null;
   position: number;
   is_default: boolean;
+  /**
+   * Marca de funil de clientes (migration 0262). Opcional: sem ela a linha é
+   * "não marcado", que é o estado de fábrica — e é o que a #2559 usa para provar
+   * que ARQUIVAR o funil marcado é recusado.
+   */
+  is_client_pipeline?: boolean;
   is_archived: boolean;
   organization_id: string;
 }
@@ -134,12 +159,19 @@ export interface DbOpts {
   contacts?: Array<Record<string, unknown>>;
   /** Erro do banco na n-ésima escrita (1-based), como o PostgREST devolveria. */
   writeError?: (n: number, table: string) => { code: string; message: string } | null;
+  /** Erro do banco numa LEITURA, decidido pela tabela e pelos filtros `eq` dela. */
+  readError?: (table: string, filtros: Array<[string, unknown]>) => { code: string; message: string } | null;
   /**
    * O `max_rows` do PostgREST (1000 em `supabase/config.toml`): corta TODA
    * leitura nesse tamanho, sem erro, por maior que seja o `.limit`/`.range`.
    * Ausente = sem corte, que é o que os testes que não falam de volume querem.
    */
   maxRows?: number;
+  /**
+   * A sessão do cookie (#2995). Ausente = a sessão de sempre (`USER_ID`);
+   * `null` = sem sessão, que é o 401 do quadro.
+   */
+  user?: { id: string } | null;
 }
 
 type Linha = Record<string, unknown>;
@@ -154,7 +186,16 @@ export interface Registro {
    * dublê — e dois dublês da mesma tabela divergem no primeiro ajuste, que é
    * exatamente o defeito que a extração da regra existe para evitar.
    */
-  client: { from: (table: string) => unknown; rpc: (nome: string, args: unknown) => Promise<unknown> };
+  client: {
+    from: (table: string) => unknown;
+    rpc: (nome: string, args: unknown) => Promise<unknown>;
+    /**
+     * Sessão do cookie (#2995): a rota do QUADRO confere `supabase.auth.getUser()`
+     * antes de ler qualquer coisa. Sem este ramo, o teste do quadro morreria num
+     * TypeError do dublê (`auth` não existe) e mediria o dublê, não o handler.
+     */
+    auth: { getUser: () => Promise<{ data: { user: { id: string } | null }; error: null }> };
+  };
   escritas: Escrita[];
   eventos: string[];
   rpcs: Array<{ nome: string; args: unknown }>;
@@ -256,9 +297,12 @@ export function makeDb(opts: DbOpts = {}): Registro {
     let teto: number | null = null;
     let desde = 0;
 
+    // `a->b->>c` é caminho jsonb do PostgREST: desce o objeto como o banco desceria.
+    const valorDaColuna = (r: Linha, c: string): unknown =>
+      c.split(/->>?/).reduce<unknown>((v, k) => (v && typeof v === "object" ? (v as Linha)[k] : undefined), r);
     const casam = () =>
       (tables[table] ?? [])
-        .filter((r) => filtros.every(([c, v]) => r[c] === v))
+        .filter((r) => filtros.every(([c, v]) => valorDaColuna(r, c) === v))
         .filter((r) => pertinencias.every(([c, vs]) => vs.includes(r[c])))
         // `neq` em SQL exclui NULL (`NULL <> v` nao e verdadeiro) — o duble
         // segue o banco, nao o JavaScript.
@@ -356,6 +400,8 @@ export function makeDb(opts: DbOpts = {}): Registro {
       // é assim que o PostgREST responde, e a diferença não é acadêmica: o dublê
       // devolvendo `data: null` para `select(..., { count })` fez a emissão de
       // atividades do arquivamento sumir com a suíte verde.
+      const erroDeLeitura = opts.readError?.(table, filtros) ?? null;
+      if (erroDeLeitura) return { data: null, error: erroDeLeitura, count: null };
       if (head) return { data: null, error: null, count: casam().length };
       if (contar) return { data: lidos(), error: null, count: casam().length };
       return { data: lidos(), error: null, count: null };
@@ -463,7 +509,14 @@ export function makeDb(opts: DbOpts = {}): Registro {
     return { data: null, error: null };
   };
 
-  registro.client = { from: builder, rpc } as unknown as Registro["client"];
+  // A sessão do cookie (#2995): `getUser()` é a primeira coisa que a rota do
+  // quadro faz, e o dublê responde a sessão declarada — ou nenhuma.
+  const sessao = opts.user === undefined ? { id: USER_ID } : opts.user;
+  const auth = {
+    getUser: async () => ({ data: { user: sessao }, error: null }),
+  };
+
+  registro.client = { from: builder, rpc, auth } as unknown as Registro["client"];
   vi.mocked(createClient).mockResolvedValue(registro.client as never);
   return registro;
 }

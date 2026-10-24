@@ -321,12 +321,13 @@ export const crmCreateLead: McpToolDefinition<typeof createInputShape> = {
         actor: ctx.actor,
         requestId: ctx.requestId,
       },
-      // `custom_fields` entra POR FORA do `createLeadSchema.parse`, que é o
-      // mesmo lugar de onde ele sairia: o schema de criação não declara a chave
-      // (server-managed no REST) e o `parse` descarta o que não declara. É a
-      // interseção que o webhook de captação também monta. Sem isto o argumento
-      // do agente morria aqui dentro, antes da régua que ele precisa satisfazer
-      // (#2297, caminho 2).
+      // `custom_fields` entra POR FORA do `createLeadSchema.parse`, de
+      // propósito: o schema de criação aceita a chave desde #3038, mas o parse
+      // acima não a repassa, porque o valor que vale é o que sai de
+      // `conferirCamposPersonalizados` (sem os campos recusados). É a interseção
+      // que o webhook de captação também monta. Sem isto o argumento do agente
+      // morria aqui dentro, antes da régua que ele precisa satisfazer (#2297,
+      // caminho 2).
       {
         ...parsed,
         ...(custom_fields === undefined ? {} : { custom_fields }),
@@ -439,12 +440,22 @@ const moveInputShape = {
    * cliente ou passa para o humano — nunca move calado.
    */
   won_reason: z.string().max(500).optional(),
+  /**
+   * O motivo da perda, quando o destino é etapa de perda (issue #917). O banco
+   * confere contra o vocabulário do funil (canônico + `settings.lost_reasons`) e
+   * recusa a perda sem ele. O `moveLeadHandler` já aceitava; a tool descartava.
+   * Sem `.min(1)`: motivo em branco é tratado em lib/leads/motivo-da-perda.ts como
+   * ausente — a mesma régua do moveLeadSchema e do won_reason; string vazia
+   * morrendo no zod daria uma mensagem diferente da recusa de negócio.
+   */
+  lost_reason: z.string().max(500).optional(),
 };
 
 export const crmMoveLeadStage: McpToolDefinition<typeof moveInputShape> = {
   name: "crm_move_lead_stage",
   description:
     "Move um lead para outro stage dentro do MESMO pipeline. Audit registra from/to stage e reason. " +
+    "Mover para uma etapa de perda exige lost_reason, com um motivo do vocabulário do funil. " +
     // "use clone" apontava para uma porta que o agente NÃO tem: não existe tool
     // de clone em lib/mcp/tools/, e ele não faz HTTP autenticado por cookie de
     // sessão. Instrução que não pode ser cumprida faz o modelo prometer ao
@@ -470,6 +481,7 @@ export const crmMoveLeadStage: McpToolDefinition<typeof moveInputShape> = {
         position_in_stage: input.position_in_stage,
         reason: input.reason,
         won_reason: input.won_reason,
+        lost_reason: input.lost_reason,
       },
     );
     return { lead };

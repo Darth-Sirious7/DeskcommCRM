@@ -9,6 +9,7 @@ import { format, isToday, isYesterday } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MessageBubble } from "./MessageBubble";
+import { separarReacoes } from "@/lib/inbox/reacoes-no-fio";
 import { NoteCard } from "./NoteCard";
 import { PassagemCard } from "./PassagemCard";
 import { useMessagesRealtime } from "@/hooks/inbox/useMessagesRealtime";
@@ -30,6 +31,8 @@ interface Props {
   provider?: string | null;
   /** Escolher uma mensagem para responder. Sobe até o composer. */
   onResponder?: (m: Message) => void;
+  /** Escolher uma mensagem para encaminhar a outra conversa (#2835). */
+  onEncaminhar?: (m: Message) => void;
   /**
    * Quem é o dono da conversa HOJE, e quem é o contato.
    *
@@ -85,6 +88,7 @@ export function ChatThread({
   conversationId,
   provider,
   onResponder,
+  onEncaminhar,
   dono,
   contatoId,
   searchTerm = "",
@@ -109,8 +113,10 @@ export function ChatThread({
   const activeOrg = useActiveOrg();
   const currentUser = useUser();
   const deleteNote = useDeleteNote(conversationId ?? "");
-  const { editar, apagar, ocultar, restaurar } = useAlterarMensagem(conversationId);
+  const { editar, apagar, ocultar, restaurar, reenviar } = useAlterarMensagem(conversationId);
   const canManage = activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
+  // Reenviar é envio: a rota exige `agent`, e quem só lê não ganha um botão que ela recusa.
+  const podeEnviar = activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent;
   const canalAlteraEnviada = transportaMensagem(provider)
     && capabilitiesOf(provider as ChannelProvider).alteraMensagemEnviada;
   const { enabled: debugCitations } = useDebugToggle(activeOrg?.role ?? null);
@@ -170,9 +176,11 @@ export function ChatThread({
     [passagens, currentUser.id, dono?.userId, dono?.nome],
   );
 
+  const { falas, reacoesPorAlvo } = useMemo(() => separarReacoes(messages), [messages]);
+
   const items: ThreadItem[] = useMemo(
-    () => mergeThreadItems(messages, notes, cartoes),
-    [messages, notes, cartoes],
+    () => mergeThreadItems(falas, notes, cartoes),
+    [falas, notes, cartoes],
   );
 
   const paginas = q.data?.pages.length ?? 0;
@@ -231,15 +239,62 @@ export function ChatThread({
       const sc = scrollerRef.current;
       if (sc && sc.scrollHeight - sc.scrollTop - sc.clientHeight > 120) return;
     }
-    // Fio ainda vazio não ancora nada: marcar aqui faria a guarda valer a partir
-    // da pintura em branco, que é exatamente o defeito acima.
-    if (items.length > 0) jaAncorou.current = true;
+    /**
+     * O CARTÃO PODE CHEGAR COM O ESQUELETO AINDA NA TELA (#2515).
+     *
+     * As passagens vêm de `usePassagensDaConversa`, uma consulta própria, e
+     * podem resolver ANTES da de mensagens. Aí `items.length` já é 1 enquanto
+     * `q.isLoading` ainda é verdadeiro — e o ramo do esqueleto NÃO monta
+     * `scrollerRef` nem `bottomRef`. Marcar `jaAncorou` nesse instante consumia
+     * a abertura sobre um `scrollIntoView` que roda em cima de um ref nulo:
+     * nada rolava, mas quando as mensagens chegassem a guarda de distância via
+     * 308px até o fim e devolvia sem rolar, deixando "Assumir e responder"
+     * abaixo da dobra (medido na run 37660047994: `base=1028`, `janela=720`).
+     *
+     * Por isso a marca só vale com o destino montado: enquanto o fio de
+     * verdade não existe, a abertura continua pendente.
+     */
+    if (items.length > 0 && bottomRef.current) jaAncorou.current = true;
 
     bottomRef.current?.scrollIntoView({
       behavior: primeiraAncoragem ? "auto" : "smooth",
       block: "end",
     });
   }, [items.length, conversationId, paginas]);
+
+  /**
+   * QUANDO A ALTURA DO FIO MUDA, QUEM ESTAVA NO FIM CONTINUA NO FIM (F2 da ADR-0006).
+   *
+   * O efeito acima só reancora quando o CONTEÚDO muda. No celular o fio também
+   * encolhe sem conteúdo novo — o teclado abre, a faixa de citação aparece — e
+   * aí o último balão sumia atrás do composer.
+   *
+   * A distância até o fim é a de ANTES da mudança, guardada no `scroll`: dentro
+   * do callback do `ResizeObserver` o `clientHeight` já encolheu, e medir ali
+   * daria a distância nova, maior que a régua de 120px — "está lendo o
+   * histórico" para quem não rolou nada. Encolher o fio não dispara `scroll`,
+   * então o valor guardado é o certo. A régua é a mesma do efeito acima.
+   */
+  const fioMontado = !!conversationId && !q.isLoading && !q.isError && items.length > 0;
+  const distanciaDoFim = useRef(0);
+  useEffect(() => {
+    const sc = scrollerRef.current;
+    if (!fioMontado || !sc || typeof ResizeObserver === "undefined") return;
+    const medir = () => {
+      distanciaDoFim.current = sc.scrollHeight - sc.scrollTop - sc.clientHeight;
+    };
+    medir();
+    sc.addEventListener("scroll", medir, { passive: true });
+    const observador = new ResizeObserver(() => {
+      if (distanciaDoFim.current <= 120) sc.scrollTop = sc.scrollHeight;
+      medir();
+    });
+    observador.observe(sc);
+    return () => {
+      sc.removeEventListener("scroll", medir);
+      observador.disconnect();
+    };
+  }, [fioMontado, conversationId]);
 
   /**
    * O ESTADO DO CANAL DESTE THREAD, PUBLICADO SEMPRE — inclusive quando não há
@@ -388,11 +443,13 @@ export function ChatThread({
                   searchMatch={resultados.has(item.data.id)}
                   debugCitations={debugCitations}
                   onResponder={onResponder}
+                  onEncaminhar={onEncaminhar}
                   // A citada sai da MESMA lista já carregada: buscar no servidor
                   // por cada citação faria uma consulta por bolha. Quando a
                   // citada é antiga demais e ficou fora da página, o fio some —
                   // que é melhor que segurar a conversa esperando.
                   citada={porId.get(item.data.reply_to_message_id ?? "") ?? null}
+                  reacoes={reacoesPorAlvo.get(item.data.id)}
                   // Sem isto o balão diz "Você" em toda mensagem digitada no
                   // CRM — inclusive nas do colega, porque `sent_via='user'` só
                   // registra que um humano digitou, nunca qual.
@@ -409,6 +466,10 @@ export function ChatThread({
                   onRestaurar={canManage && item.data.direction === "inbound"
                     ? () => restaurar.mutateAsync(item.data.id).then(() => undefined)
                     : undefined}
+                  onReenviar={podeEnviar && item.data.direction === "outbound"
+                    ? (confirmado) => reenviar.mutateAsync({ id: item.data.id, confirmado }).then(() => undefined)
+                    : undefined}
+                  podeReenviarDeOutros={canManage}
                 />
               ),
             )}
