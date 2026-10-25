@@ -65,3 +65,5 @@ ARM64 installation, or clean fresh-baseline E2E is claimed from this evidence.
 No Docker socket, extra privilege, new host service, parallel ledger or business
 configuration is introduced. Older heartbeat schemas remain accepted, explicitly
 unconfirmed, and invalidate rather than refresh earlier modern evidence.
+
+The collector fixture clears inherited local Git variables before creating its temporary repository. The native shell-identity guard passed all three checks; the fixture collector passed again after this test-only hardening. Runtime code and built/deployed artifacts were unchanged.
