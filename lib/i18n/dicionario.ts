@@ -17980,6 +17980,24 @@ export const DICIONARIO: Traducoes = {
   "Parâmetro inválido.": {
     es: "Parámetro no válido.",
   },
+  // Installed runtime identity, distinct from an available release.
+  "Versão ainda não confirmada": { es: "Versión aún no confirmada" },
+  "Execução não confirmada": { es: "Ejecución no confirmada" },
+  "Versão instalada": { es: "Versión instalada" },
+  "Ainda não confirmada": { es: "Aún no confirmada" },
+  "Última confirmação": { es: "Última confirmación" },
+  "Instalação personalizada": { es: "Instalación personalizada" },
+  "Esta instalação preserva alterações próprias sobre a base oficial.": { es: "Esta instalación conserva cambios propios sobre la base oficial." },
+  "Concilie as alterações antes de trocar as imagens. A versão publicada não substitui automaticamente esta instalação.": { es: "Concilie los cambios antes de cambiar las imágenes. La versión publicada no sustituye automáticamente esta instalación." },
+  "A execução dos serviços ainda não foi confirmada. Aguarde a próxima verificação do servidor.": { es: "La ejecución de los servicios aún no se ha confirmado. Espere la próxima verificación del servidor." },
+  "Esta instalação é personalizada. Concilie as alterações antes de trocar as imagens.": { es: "Esta instalación está personalizada. Concilie los cambios antes de cambiar las imágenes." },
+  "Não há atualização posterior confirmada para esta instalação.": { es: "No hay una actualización posterior confirmada para esta instalación." },
+  "A última tentativa falhou. O estado instalado aparece na confirmação dos serviços acima.": { es: "El último intento falló. El estado instalado aparece en la confirmación de los servicios de arriba." },
+  "Confira a execução e preserve as alterações próprias antes de trocar as imagens.": { es: "Compruebe la ejecución y conserve los cambios propios antes de cambiar las imágenes." },
+  "Os serviços executam revisões diferentes": { es: "Los servicios ejecutan revisiones diferentes" },
+  "A confirmação do servidor venceu": { es: "La confirmación del servidor ha caducado" },
+  "Não confirmado": { es: "No confirmado" },
+  "Última release oficial": { es: "Última versión oficial publicada" },
 };
 
 /**

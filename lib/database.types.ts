@@ -9330,6 +9330,7 @@ isOneToOne: false
       }
       system_version: {
         Row: {
+          runtime_confirmation: Json | null
           agent_last_seen_at: string | null
           changelog_raw: string
           compare_failed: boolean
@@ -9344,6 +9345,7 @@ isOneToOne: false
           updated_at: string
         }
         Insert: {
+          runtime_confirmation?: Json | null
           agent_last_seen_at?: string | null
           changelog_raw?: string
           compare_failed?: boolean
@@ -9358,6 +9360,7 @@ isOneToOne: false
           updated_at?: string
         }
         Update: {
+          runtime_confirmation?: Json | null
           agent_last_seen_at?: string | null
           changelog_raw?: string
           compare_failed?: boolean

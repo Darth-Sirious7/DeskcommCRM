@@ -307,7 +307,10 @@ export function UpdatePanel() {
   if (data.just_updated) {
     const pedida = semV(data.run?.to_version);
     return (
-      <Layout semSmtp={semSmtp} titulo={`${t("A atualização para a versão")} ${pedida} ${t("terminou")}`}>
+      <Layout
+        semSmtp={semSmtp}
+        titulo={`${t("A atualização para a versão")} ${pedida} ${t("terminou")}`}
+      >
         <p className="text-sm">
           {t(
             "O servidor ainda não me confirmou em que versão ele voltou ao ar — a última versão que ele confirmou é a",
@@ -348,9 +351,47 @@ export function UpdatePanel() {
   // mostrar o aviso dela (sem botão) travaria a próxima atualização pela tela.
   const falhaVigente = !data.run?.superseded;
 
+  if (
+    falhaVigente &&
+    data.identity &&
+    data.identity.status !== "legacy" &&
+    ["failed", "failed_rolled_back"].includes(data.run?.status ?? "")
+  ) {
+    return (
+      <Layout
+        semSmtp={semSmtp}
+        titulo={`${t("A atualização para a versão")} ${alvo} ${t("não deu certo")}`}
+      >
+        <p className="text-sm">
+          {t(
+            "A última tentativa falhou. O estado instalado aparece na confirmação dos serviços acima.",
+          )}
+        </p>
+        <DetalhesTecnicos texto={data.run?.log_tail} />
+        {data.identity.status === "confirmed" &&
+        !data.manual_reconciliation_required &&
+        ehVersaoPublicada(data.run?.from_version) ? (
+          <BotaoVoltar
+            destino={anterior}
+            mutate={() => voltar.mutate()}
+            isPending={voltar.isPending}
+            erro={erro}
+          />
+        ) : (
+          <p className="mt-3 text-sm">
+            {t("Confira a execução e preserve as alterações próprias antes de trocar as imagens.")}
+          </p>
+        )}
+      </Layout>
+    );
+  }
+
   if (falhaVigente && data.run?.status === "failed_rolled_back") {
     return (
-      <Layout semSmtp={semSmtp} titulo={`${t("A atualização para a versão")} ${alvo} ${t("não deu certo")}`}>
+      <Layout
+        semSmtp={semSmtp}
+        titulo={`${t("A atualização para a versão")} ${alvo} ${t("não deu certo")}`}
+      >
         {/* A VOLTA QUE NINGUÉM PEDIU (#2757).
             O agente do host devolve a versão sozinho quando o site não
             responde duas vezes seguidas logo depois da atualização — e até
@@ -438,14 +479,13 @@ export function UpdatePanel() {
     // comando de volta. A cópia alarmante erra para o lado de fazer conferir, e
     // o log logo abaixo explica em português quando foi só uma recusa.
     return (
-      <Layout semSmtp={semSmtp} titulo={`${t("A atualização para a versão")} ${alvo} ${t("não deu certo")}`}>
+      <Layout
+        semSmtp={semSmtp}
+        titulo={`${t("A atualização para a versão")} ${alvo} ${t("não deu certo")}`}
+      >
         <p className="text-sm">
-          {t("E eu")} <strong>{t("não consegui")}</strong>{" "}
-          {t("voltar sozinho para a versão")} {anterior}:{" "}
-          {t(
-            "o sistema pode estar rodando a versão",
-          )}{" "}
-          {alvo}{" "}
+          {t("E eu")} <strong>{t("não consegui")}</strong> {t("voltar sozinho para a versão")}{" "}
+          {anterior}: {t("o sistema pode estar rodando a versão")} {alvo}{" "}
           {t(
             "com defeito, ou fora do ar. Seus dados estão intactos e a cópia de segurança feita antes da tentativa continua guardada no servidor.",
           )}
@@ -498,6 +538,37 @@ export function UpdatePanel() {
     );
   }
 
+  if (data.identity && !["legacy", "confirmed"].includes(data.identity.status)) {
+    return (
+      <Layout semSmtp={semSmtp}>
+        <p>
+          {t(
+            "A execução dos serviços ainda não foi confirmada. Aguarde a próxima verificação do servidor.",
+          )}
+        </p>
+      </Layout>
+    );
+  }
+  if (data.manual_reconciliation_required) {
+    return (
+      <Layout semSmtp={semSmtp}>
+        <h2 className="font-semibold">{t("Instalação personalizada")}</h2>
+        <p className="mt-2 text-sm">
+          {t("Esta instalação preserva alterações próprias sobre a base oficial.")}
+        </p>
+        {data.update_available && (
+          <p className="mt-2 text-sm">
+            {t("Nova versão")} · {semV(data.latest_version)}
+          </p>
+        )}
+        <p className="mt-2 text-sm text-muted-foreground">
+          {t(
+            "Concilie as alterações antes de trocar as imagens. A versão publicada não substitui automaticamente esta instalação.",
+          )}
+        </p>
+      </Layout>
+    );
+  }
   if (!data.agent_online) {
     return (
       <Layout semSmtp={semSmtp} titulo={t("Atualização automática indisponível")}>
@@ -526,10 +597,8 @@ export function UpdatePanel() {
           {t(
             ") com a última publicada — normalmente é internet instável ou falta de espaço em disco na hora da checagem.",
           )}{" "}
-          <strong>
-            {t("Não quer dizer que esteja desatualizado, nem que esteja em dia")}
-          </strong>
-          : {t("quer dizer que eu não sei.")}
+          <strong>{t("Não quer dizer que esteja desatualizado, nem que esteja em dia")}</strong>:{" "}
+          {t("quer dizer que eu não sei.")}
         </p>
         <p className="mt-3 text-sm">
           {t(
@@ -570,8 +639,7 @@ export function UpdatePanel() {
             {t(
               "Este projeto ainda não tem nenhuma versão publicada para comparar com a sua instalação — normal em um fork novo ou recém-criado a partir do código-fonte.",
             )}{" "}
-            <strong>{t("Não há nada a atualizar agora")}</strong>,{" "}
-            {t("e isso não é um problema.")}
+            <strong>{t("Não há nada a atualizar agora")}</strong>, {t("e isso não é um problema.")}
           </p>
           <p className="mt-3 text-sm">
             {t(
@@ -606,7 +674,9 @@ export function UpdatePanel() {
     <Layout semSmtp={semSmtp} titulo={`${t("Versão")} ${nova} ${t("disponível")}`}>
       {data.off_release && (
         <p className="mb-4 rounded-md border border-warning bg-warning-bg p-3 text-sm text-warning-fg">
-          {t("Sua instalação está numa versão de desenvolvimento. Atualizar vai levá-la para a versão publicada")}{" "}
+          {t(
+            "Sua instalação está numa versão de desenvolvimento. Atualizar vai levá-la para a versão publicada",
+          )}{" "}
           {nova}.
         </p>
       )}
@@ -634,7 +704,9 @@ export function UpdatePanel() {
         <p className="mb-4 text-sm text-muted-foreground">
           {t("Este histórico começa na versão")} {data.notes.sections.at(-1)?.version}{" "}
           {t("e pode não alcançar a que você tem instalada")} ({versao}) —{" "}
-          {t("a última parte pode estar cortada. O texto completo está no arquivo CHANGELOG.md do projeto.")}
+          {t(
+            "a última parte pode estar cortada. O texto completo está no arquivo CHANGELOG.md do projeto.",
+          )}
         </p>
       )}
 
@@ -648,7 +720,11 @@ export function UpdatePanel() {
           só junta as versões presentes no texto: pode estar faltando aviso, e
           esse parágrafo é a única pista disso. */}
       <div className="mb-6">
-        <BotaoAtualizar mutate={() => atualizar.mutate()} isPending={atualizar.isPending} erro={erro} />
+        <BotaoAtualizar
+          mutate={() => atualizar.mutate()}
+          isPending={atualizar.isPending}
+          erro={erro}
+        />
       </div>
 
       {data.notes?.sections.length ? (
@@ -660,7 +736,7 @@ export function UpdatePanel() {
                   lista não virar um muro de texto num salto de várias versões.
                   Só o CORPO é recolhido — o aviso delas já está lá em cima. */}
               {i === 0 ? (
-                <pre className="whitespace-pre-wrap font-sans text-sm text-muted-foreground">
+                <pre className="font-sans text-sm whitespace-pre-wrap text-muted-foreground">
                   {markdownParaTextoSimples(secao.body)}
                 </pre>
               ) : (
@@ -668,7 +744,7 @@ export function UpdatePanel() {
                   <summary className="cursor-pointer text-sm font-medium">
                     {t("Versão")} {secao.version}
                   </summary>
-                  <pre className="mt-2 whitespace-pre-wrap font-sans text-sm text-muted-foreground">
+                  <pre className="mt-2 font-sans text-sm whitespace-pre-wrap text-muted-foreground">
                     {markdownParaTextoSimples(secao.body)}
                   </pre>
                 </details>
@@ -733,7 +809,10 @@ function AguardandoOServidor({
         {t(" — ela se mexe sozinha assim que o servidor começar.")}
       </p>
       {segundos !== null && (
-        <p className="mt-3 text-sm tabular-nums text-muted-foreground" data-testid="espera-decorrida">
+        <p
+          className="mt-3 text-sm text-muted-foreground tabular-nums"
+          data-testid="espera-decorrida"
+        >
           {t("Esperando há")} {formataEspera(segundos)}.
         </p>
       )}
@@ -846,7 +925,7 @@ function DetalhesTecnicos({ texto }: { texto: string | undefined }) {
       <summary className="cursor-pointer px-3 py-2 text-sm text-muted-foreground">
         {t("Detalhes técnicos (útil se for pedir ajuda)")}
       </summary>
-      <pre className="max-h-72 overflow-auto whitespace-pre-wrap px-3 pb-3 font-mono text-xs text-muted-foreground">
+      <pre className="max-h-72 overflow-auto px-3 pb-3 font-mono text-xs whitespace-pre-wrap text-muted-foreground">
         {texto}
       </pre>
     </details>
@@ -874,7 +953,7 @@ function AvisoDeSmtp() {
       <p className="font-medium">⚠️ {t("Sem SMTP configurado")}</p>
       <p className="mt-1">
         {t(
-          "O serviço de login desta instalação não envia e-mail: \"esqueci a senha\" e a confirmação de cadastro não chegam. Configure o servidor de e-mail em /admin/email e, no servidor, rode bash hostgator-setup-kit/update.sh — é ele que leva o SMTP ao serviço de login.",
+          'O serviço de login desta instalação não envia e-mail: "esqueci a senha" e a confirmação de cadastro não chegam. Configure o servidor de e-mail em /admin/email e, no servidor, rode bash hostgator-setup-kit/update.sh — é ele que leva o SMTP ao serviço de login.',
         )}
       </p>
     </div>
@@ -904,6 +983,7 @@ function Layout({
           {titulo ?? t("Atualização do sistema")}
         </h1>
       </header>
+      <InstalledVersion />
       {semSmtp ? <AvisoDeSmtp /> : null}
       <Card className="p-6">{children}</Card>
     </div>
@@ -926,7 +1006,9 @@ function Comando({ comando }: { comando: string }) {
   const [copiado, setCopiado] = useState(false);
   return (
     <div className="mt-3 flex items-center gap-2">
-      <code className="flex-1 overflow-x-auto rounded-md bg-muted px-3 py-2 text-xs">{comando}</code>
+      <code className="flex-1 overflow-x-auto rounded-md bg-muted px-3 py-2 text-xs">
+        {comando}
+      </code>
       <Button
         variant="outline"
         size="sm"
@@ -939,5 +1021,62 @@ function Comando({ comando }: { comando: string }) {
         {copiado ? t("Copiado") : t("Copiar")}
       </Button>
     </div>
+  );
+}
+
+/** Present in every branch: installed identity and update requests are separate. */
+function InstalledVersion() {
+  const t = useT();
+  const { data } = useSystemVersion();
+  if (!data) return null;
+  const identity = data.identity;
+  return (
+    <section className="rounded-md border p-3 text-sm" aria-label={t("Versão instalada")}>
+      <p className="font-medium">
+        {t("Versão instalada")}: {semV(data.current_version) || t("Ainda não confirmada")}
+        {identity?.customized === true ? ` · ${t("Personalizada")}` : ""}
+      </p>
+      {identity && identity.status !== "confirmed" && (
+        <p className="mt-1 text-muted-foreground">
+          {t(
+            identity.status === "divergent"
+              ? "Os serviços executam revisões diferentes"
+              : identity.status === "stale"
+                ? "A confirmação do servidor venceu"
+                : "Execução não confirmada",
+          )}
+        </p>
+      )}
+      {data.is_owner && data.runtime_services && identity?.status !== "confirmed" && (
+        <ul className="mt-2 space-y-1">
+          {data.runtime_services.map((service) => (
+            <li key={service.role} className="break-all">
+              <code>{service.role}</code>: {service.base_version || "?"} ·{" "}
+              {service.revision?.slice(0, 12) || "?"} ·{" "}
+              {t(
+                service.running && service.healthy && service.source_verified
+                  ? "Confirmado"
+                  : "Não confirmado",
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {data.is_owner && data.official_latest_version && (
+        <p className="mt-1">
+          {t("Última release oficial")}: {semV(data.official_latest_version)}
+        </p>
+      )}
+      {data.is_owner && identity?.revision && (
+        <p className="mt-1 break-all">
+          {t("Revisão")}: <code>{identity.revision}</code>
+        </p>
+      )}
+      {data.is_owner && identity?.confirmed_at && (
+        <p className="mt-1">
+          {t("Última confirmação")}: {new Date(identity.confirmed_at).toLocaleString()}
+        </p>
+      )}
+    </section>
   );
 }

@@ -20,6 +20,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { CHANGELOG_MAX_BYTES } from "@/lib/system/changelog";
 import { canTransition, type RunStatus } from "@/lib/system/update-run";
 import { logger } from "@/lib/logger";
+import { runtimeConfirmationSchema } from "@/lib/system/runtime-identity";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +44,7 @@ const heartbeat = z.object({
   // "nunca houve release" para todo mundo.
   has_known_release: z.boolean().optional().default(true),
   changelog: z.string().max(CHANGELOG_MAX_BYTES),
+  runtime_confirmation: runtimeConfirmationSchema.nullable().optional(),
 });
 
 const runProgress = z.object({
@@ -168,6 +170,8 @@ export async function POST(req: NextRequest): Promise<Response> {
     const { error } = await db
       .from("system_version")
       .update({
+        // An old heartbeat must invalidate earlier evidence, never refresh it.
+        runtime_confirmation: payload.runtime_confirmation ?? null,
         current_version: payload.current_version,
         current_sha: payload.current_sha,
         off_release: payload.off_release,
@@ -316,7 +320,10 @@ export async function POST(req: NextRequest): Promise<Response> {
       .update({ last_step: payload.step })
       .eq("id", payload.run_id);
     if (error) {
-      logger.error("[system/agent] run_progress falhou", { error: error.message, runId: payload.run_id });
+      logger.error("[system/agent] run_progress falhou", {
+        error: error.message,
+        runId: payload.run_id,
+      });
       return fail("internal_error", "Não consegui gravar o passo.", 500);
     }
     return ok({ update_requested: false, run_id: payload.run_id });

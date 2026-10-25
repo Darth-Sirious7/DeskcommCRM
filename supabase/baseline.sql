@@ -63759,3 +63759,12 @@ create index if not exists idx_crm_leads_org_pipeline_position_id
 
 comment on index public.idx_crm_leads_org_pipeline_position_id is
   'Página da aba Lista do funil (#3172): (organization_id, pipeline_id) por igualdade e (position_in_stage, id) na ordem da consulta. `id` é o desempate que torna a paginação determinística quando dois negócios têm a mesma position_in_stage.';
+
+
+-- 0774 — runtime identity (idempotent, no business data changes)
+-- manifest: system_version records bounded host observations of running services, separate from checkout and update intent.
+-- Nullable for compatibility. Old heartbeats explicitly clear the observation.
+alter table public.system_version
+  add column if not exists runtime_confirmation jsonb;
+comment on column public.system_version.runtime_confirmation is
+  'Authenticated host observation of compose services and immutable images; the API derives coverage, freshness and release identity.';

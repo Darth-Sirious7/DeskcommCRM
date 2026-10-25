@@ -1,3 +1,4 @@
+import { confirmedRuntime } from "@/tests/helpers/runtime-confirmation";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
@@ -17,16 +18,27 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 const pa = vi.hoisted(() => ({ row: null as Record<string, unknown> | null }));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
-    auth: { getUser: async () => ({ data: { user: { id: "11111111-1111-4111-8111-111111111111" } } }) },
+    auth: {
+      getUser: async () => ({ data: { user: { id: "11111111-1111-4111-8111-111111111111" } } }),
+    },
     from: () => {
-      const q = { select: () => q, eq: () => q, is: () => q, maybeSingle: async () => ({ data: pa.row }) };
+      const q = {
+        select: () => q,
+        eq: () => q,
+        is: () => q,
+        maybeSingle: async () => ({ data: pa.row }),
+      };
       return q;
     },
   }),
 }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 
-const OWNER = { id: "11111111-1111-4111-8111-111111111111", email: "dono@x.com", is_platform_admin: true };
+const OWNER = {
+  id: "11111111-1111-4111-8111-111111111111",
+  email: "dono@x.com",
+  is_platform_admin: true,
+};
 const MEMBRO = { ...OWNER, id: "22222222-2222-4222-8222-222222222222", is_platform_admin: false };
 
 let versionRow: Record<string, unknown>;
@@ -63,7 +75,12 @@ let smtpSelectError: { message: string } | null;
 
 beforeEach(() => {
   vi.clearAllMocks();
-  pa.row = { user_id: "11111111-1111-4111-8111-111111111111", scope: "full", mfa_required: false, revoked_at: null };
+  pa.row = {
+    user_id: "11111111-1111-4111-8111-111111111111",
+    scope: "full",
+    mfa_required: false,
+    revoked_at: null,
+  };
   inserted = null;
   runRow = null;
   runUpdatePatch = null;
@@ -527,7 +544,7 @@ describe("GET /api/v1/system/version", () => {
     expect(body.data.run.superseded).toBe(false);
   });
 
-  it("reinstalar a MESMA versão que falhou: o app respondendo nela solta a tela", async () => {
+  it("reinstalar a MESMA versão que falhou: confirmação posterior de todos os serviços solta a tela", async () => {
     // O caso que a prova temporal não alcança por construção — o host reporta
     // `to_version`, que é uma das duas do run. Medido em produção (18/09): a
     // 1.33.0 falhou porque as imagens ainda não estavam publicadas, meia hora
@@ -537,6 +554,8 @@ describe("GET /api/v1/system/version", () => {
     // A versão vem de DENTRO da imagem (`APP_VERSION`, gravada no build), não
     // do `APP_IMAGE` do `.env` — ver o caso do rollback do agente, abaixo.
     vi.stubEnv("APP_VERSION", "1.33.0");
+    versionRow.runtime_confirmation = confirmedRuntime("1.33.0");
+    versionRow.agent_last_seen_at = new Date().toISOString();
     // `v1.33.0` como o `git describe` do host escreve — igual ao `to_version`
     // do run, que é o que faz a prova temporal empatar.
     versionRow.current_version = "v1.33.0";
@@ -557,7 +576,7 @@ describe("GET /api/v1/system/version", () => {
     const body = await (await GET(get())).json();
     expect(body.data.run.superseded).toBe(true);
     // E a versão no ar deixa de ser a `from_version` do rollback.
-    expect(body.data.current_version).toBe("v1.33.0");
+    expect(body.data.current_version).toBe("1.33.0");
     expect(body.data.update_available).toBe(true);
     vi.unstubAllEnvs();
   });
@@ -871,7 +890,9 @@ describe("POST /api/v1/system/update", () => {
       requested_by: OWNER.id,
     });
     expect(versionUpdatePatch).toBeNull();
-    expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: "system.update_requested" }));
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "system.update_requested" }),
+    );
   });
 
   it("recusa um segundo pedido enquanto há run em andamento", async () => {
@@ -902,7 +923,11 @@ describe("POST /api/v1/system/update", () => {
     const res = await POST(post());
     expect(res.status).toBe(200);
     expect(runUpdatePatch).toMatchObject({ status: "failed" });
-    expect(inserted).toMatchObject({ from_version: "1.0.0", to_version: "1.1.0", status: "dispatched" });
+    expect(inserted).toMatchObject({
+      from_version: "1.0.0",
+      to_version: "1.1.0",
+      status: "dispatched",
+    });
   });
 
   it("recusa quando já está na última versão", async () => {
@@ -920,7 +945,11 @@ describe("POST /api/v1/system/update", () => {
     // precisa tratar isso como o MESMO estado de negócio do check acima, não
     // deixar vazar como 500.
     vi.mocked(loadAuthUser).mockResolvedValue(OWNER as never);
-    insertError = { code: "23505", message: 'duplicate key value violates unique constraint "uniq_system_update_runs_dispatched"' };
+    insertError = {
+      code: "23505",
+      message:
+        'duplicate key value violates unique constraint "uniq_system_update_runs_dispatched"',
+    };
     const { POST } = await import("../update/route");
     const res = await POST(post());
     expect(res.status).toBe(409);
@@ -1003,5 +1032,65 @@ describe("GET /api/v1/system/version — o estado do SMTP da instalação", () =
     const body = await corpo();
 
     expect(body.data.smtp_configured).toBeUndefined();
+  });
+});
+
+describe("runtime identity through native routes", () => {
+  it("reports a customized verified base instead of an old checkout and keeps updates separate", async () => {
+    versionRow.current_version = "deadbeef";
+    versionRow.off_release = true;
+    versionRow.latest_version = "v1.89.0";
+    versionRow.runtime_confirmation = confirmedRuntime("1.89.0", new Date().toISOString(), true);
+    vi.mocked(loadAuthUser).mockResolvedValue(OWNER as never);
+    const { GET } = await import("./route");
+    let data = (await (await GET(get())).json()).data;
+    expect(data.current_version).toBe("1.89.0");
+    expect(data.identity).toMatchObject({ status: "confirmed", customized: true });
+    expect(data.update_available).toBe(false);
+    versionRow.latest_version = "v1.90.0";
+    data = (await (await GET(get())).json()).data;
+    expect(data.update_available).toBe(true);
+    expect(data.manual_reconciliation_required).toBe(true);
+    const { POST } = await import("../update/route");
+    expect((await POST(post())).status).toBe(409);
+    expect(inserted).toBeNull();
+  });
+
+  it("allows a later official release from a verified official runtime", async () => {
+    versionRow.current_version = "old-checkout";
+    versionRow.latest_version = "v1.90.0";
+    versionRow.runtime_confirmation = confirmedRuntime("1.89.0");
+    vi.mocked(loadAuthUser).mockResolvedValue(OWNER as never);
+    const { GET } = await import("./route");
+    const data = (await (await GET(get())).json()).data;
+    expect(data.identity.customized).toBe(false);
+    expect(data.update_available).toBe(true);
+    const { POST } = await import("../update/route");
+    expect((await POST(post())).status).toBe(200);
+    expect(inserted).toMatchObject({ from_version: "1.89.0", to_version: "v1.90.0" });
+  });
+
+  it("does not clear a failure or offer deployment from a divergent snapshot", async () => {
+    vi.stubEnv("APP_VERSION", "1.89.0");
+    const snapshot = confirmedRuntime("1.89.0");
+    snapshot.services[1]!.revision = "c".repeat(40);
+    versionRow.runtime_confirmation = snapshot;
+    versionRow.current_version = "1.89.0";
+    runRow = {
+      status: "failed_rolled_back",
+      from_version: "1.88.0",
+      to_version: "1.89.0",
+      finished_at: "2026-10-20T11:00:00.000Z",
+    };
+    vi.mocked(loadAuthUser).mockResolvedValue(OWNER as never);
+    const { GET } = await import("./route");
+    const data = (await (await GET(get())).json()).data;
+    expect(data.identity.status).toBe("divergent");
+    expect(data.current_version).toBe("");
+    expect(data.run.superseded).toBe(false);
+    expect(data.update_available).toBe(false);
+    const { POST } = await import("../update/route");
+    expect((await POST(post())).status).toBe(409);
+    expect(inserted).toBeNull();
   });
 });
