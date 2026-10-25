@@ -1,5 +1,16 @@
 import type { ToolSet } from "ai";
 
+/** Uma seleção recusada no preflight devolve o turno ao modelo. */
+export function apresentacaoEncerraTurno(result: unknown): boolean {
+  return !(
+    typeof result === "object" &&
+    result !== null &&
+    "ok" in result &&
+    result.ok === false &&
+    (!("code" in result) || result.code !== "catalog_presentation_agent_paused")
+  );
+}
+
 /**
  * O SDK pode executar várias tools do mesmo passo em paralelo. Serializar as
  * execuções preserva a ordem em que ele as iniciou e impede qualquer efeito
@@ -9,6 +20,7 @@ export function terminalizarApresentacaoNoTurno(
   tools: ToolSet,
   name: string,
   activated: () => void,
+  terminalOnResult: (result: unknown) => boolean = () => true,
 ): ToolSet {
   let tail: Promise<unknown> = Promise.resolve();
   let terminal = false;
@@ -29,8 +41,20 @@ export function terminalizarApresentacaoNoTurno(
                 };
               }
               if (toolName === name) {
-                terminal = true;
-                activated();
+                try {
+                  const result = await execute(input, options);
+                  if (terminalOnResult(result)) {
+                    terminal = true;
+                    activated();
+                  }
+                  return result;
+                } catch (error) {
+                  // Depois de uma falha inesperada, o estado do envio pode ser
+                  // incerto. O retry do job e o ledger preservam a idempotência.
+                  terminal = true;
+                  activated();
+                  throw error;
+                }
               }
               return execute(input, options);
             });

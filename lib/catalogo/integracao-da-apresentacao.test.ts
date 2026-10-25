@@ -4,6 +4,13 @@ import type { ChannelAdapter, ChannelSendInput } from "@/lib/agent-engine/channe
 import type { runBeforeSend } from "@/lib/agent-engine/guardrails/before-send";
 import type { reconcileAcceptedSend } from "@/lib/agent-engine/edge/crm/send-ledger";
 import type { JobRow } from "@/lib/agent-engine/queue/queue";
+import { generateText, stepCountIs, tool } from "ai";
+import { MockLanguageModelV3 } from "ai/test";
+import { z } from "zod";
+import {
+  apresentacaoEncerraTurno,
+  terminalizarApresentacaoNoTurno,
+} from "./terminalidade-de-apresentacao";
 import { prepareCatalogPresentationPayloads } from "./preparo-de-apresentacao";
 import {
   CHAVE_DO_SNAPSHOT_DA_APRESENTACAO,
@@ -18,7 +25,10 @@ const CONVERSATION = "dddddddd-0000-4000-8000-000000000001";
 const SESSION = "eeeeeeee-0000-4000-8000-000000000001";
 const CLAIM = { worker_id: "worker-a", acquired_at: "2026-10-15T12:00:00.000Z" };
 
-function fixture(outcomes: Array<"sent" | "queued"> = ["sent", "sent"]) {
+function fixture(
+  outcomes: Array<"sent" | "queued"> = ["sent", "sent"],
+  options: { withoutPresentation?: boolean } = {},
+) {
   const events: string[] = [];
   const sends: ChannelSendInput[] = [];
   const reconciled: number[] = [];
@@ -32,7 +42,10 @@ function fixture(outcomes: Array<"sent" | "queued"> = ["sent", "sent"]) {
     price_cents: "1000",
     currency: "BRL",
     photo_storage_paths: [],
-    presentation_id: `99999999-0000-4000-8000-00000000000${index + 1}`,
+    presentation_id:
+      options.withoutPresentation && code === "A"
+        ? null
+        : `99999999-0000-4000-8000-00000000000${index + 1}`,
     presentation_enabled: true,
     presentation_kind: "text",
     presentation_title: null,
@@ -52,8 +65,9 @@ function fixture(outcomes: Array<"sent" | "queued"> = ["sent", "sent"]) {
       return { rows: [{ payload }], rowCount: 1 };
     }
     if (sql.includes("from public.catalog_products")) {
-      expect(values).toEqual([ORG, ["A", "B"]]);
-      return { rows, rowCount: rows.length };
+      expect(values?.[0]).toBe(ORG);
+      const selected = rows.filter((row) => (values?.[1] as string[]).includes(row.product_code));
+      return { rows: selected, rowCount: selected.length };
     }
     if (sql.includes("update public.job_queue")) {
       payload = { ...payload, [String(values?.[4])]: JSON.parse(String(values?.[5])) };
@@ -173,6 +187,168 @@ async function snapshot(f: ReturnType<typeof fixture>, sendsAlreadyCounted = 0) 
 }
 
 describe("integração da seleção persistida com a disposição do worker", () => {
+  it.each([
+    {
+      name: "item sem apresentação",
+      codes: ["A"],
+      withoutPresentation: true,
+      limit: 10,
+      code: "presentation_not_found",
+    },
+    {
+      name: "código inexistente",
+      codes: ["INEXISTENTE"],
+      withoutPresentation: false,
+      limit: 10,
+      code: "product_not_found",
+    },
+    {
+      name: "lista acima do teto",
+      codes: ["A", "B"],
+      withoutPresentation: false,
+      limit: 1,
+      code: "max_sends_per_turn",
+    },
+  ])("$name devolve o controle ao agente para responder ao cliente", async (case_) => {
+    const f = fixture([], { withoutPresentation: case_.withoutPresentation });
+    const responder = vi.fn(async () => ({ ok: true, message: "Resposta ao cliente" }));
+    const acionada = vi.fn();
+    const tools = terminalizarApresentacaoNoTurno(
+      {
+        present_catalog_items: tool({
+          inputSchema: z.object({ product_codes: z.array(z.string()) }),
+          execute: async ({ product_codes }) => {
+            const selection = await resolveAndSnapshotCatalogPresentation(f.pool, {
+              organizationId: ORG,
+              jobId: JOB,
+              claim: CLAIM,
+              sendsAlreadyCounted: 0,
+              maxSendsPerTurn: case_.limit,
+              orderedProductCodes: product_codes,
+            });
+            return selection.ok
+              ? { ok: true }
+              : { ok: false, code: `catalog_presentation_${selection.error.code}` };
+          },
+        }),
+        send_message: tool({ inputSchema: z.object({}), execute: responder }),
+      },
+      "present_catalog_items",
+      acionada,
+      apresentacaoEncerraTurno,
+    );
+    const options = { toolCallId: "turno", messages: [], context: {} };
+    const presentation = await tools.present_catalog_items!.execute!(
+      { product_codes: case_.codes } as never,
+      options,
+    );
+    expect(presentation).toEqual({ ok: false, code: `catalog_presentation_${case_.code}` });
+    expect(await tools.send_message!.execute!({} as never, options)).toEqual({
+      ok: true,
+      message: "Resposta ao cliente",
+    });
+    expect(responder).toHaveBeenCalledOnce();
+    expect(acionada).not.toHaveBeenCalled();
+    expect(f.job().payload).not.toHaveProperty(CHAVE_DO_SNAPSHOT_DA_APRESENTACAO);
+    expect(f.sends).toEqual([]);
+  });
+
+  it.each([
+    { name: "presentation_not_found", codes: ["A"], withoutPresentation: true, limit: 10 },
+    { name: "product_not_found", codes: ["INEXISTENTE"], withoutPresentation: false, limit: 10 },
+    { name: "max_sends_per_turn", codes: ["A", "B"], withoutPresentation: false, limit: 1 },
+  ])("SDK continua o turno após $name e entrega a resposta ao lead", async (case_) => {
+    const f = fixture([], { withoutPresentation: case_.withoutPresentation });
+    const leadMessages: string[] = [];
+    const acionada = vi.fn();
+    const responder = vi.fn(async ({ message }: { message: string }) => {
+      leadMessages.push(message);
+      return { ok: true, message };
+    });
+    const tools = terminalizarApresentacaoNoTurno(
+      {
+        present_catalog_items: tool({
+          inputSchema: z.object({ product_codes: z.array(z.string()) }),
+          execute: async ({ product_codes }) => {
+            const selection = await resolveAndSnapshotCatalogPresentation(f.pool, {
+              organizationId: ORG,
+              jobId: JOB,
+              claim: CLAIM,
+              sendsAlreadyCounted: 0,
+              maxSendsPerTurn: case_.limit,
+              orderedProductCodes: product_codes,
+            });
+            return selection.ok
+              ? { ok: true }
+              : { ok: false, code: `catalog_presentation_${selection.error.code}` };
+          },
+        }),
+        send_message: tool({
+          inputSchema: z.object({ message: z.string() }),
+          execute: responder,
+        }),
+      },
+      "present_catalog_items",
+      acionada,
+      apresentacaoEncerraTurno,
+    );
+    const model = new MockLanguageModelV3({
+      doGenerate: async (options) => {
+        const step = model.doGenerateCalls.length;
+        if (step === 2) {
+          expect(JSON.stringify(options.prompt)).toContain(`catalog_presentation_${case_.name}`);
+        }
+        return {
+          content:
+            step === 1
+              ? [
+                  {
+                    type: "tool-call",
+                    toolCallId: "presentation",
+                    toolName: "present_catalog_items",
+                    input: JSON.stringify({ product_codes: case_.codes }),
+                  },
+                ]
+              : step === 2
+                ? [
+                    {
+                      type: "tool-call",
+                      toolCallId: "reply",
+                      toolName: "send_message",
+                      input: JSON.stringify({ message: "Resposta ao cliente" }),
+                    },
+                  ]
+                : [{ type: "text", text: "" }],
+          finishReason: {
+            unified: step < 3 ? "tool-calls" : "stop",
+            raw: step < 3 ? "tool_calls" : "stop",
+          },
+          usage: { inputTokens: { total: 1 }, outputTokens: { total: 1 } },
+        } as never;
+      },
+    });
+
+    const result = await generateText({
+      model,
+      prompt: "O lead pediu uma apresentação de catálogo.",
+      tools,
+      stopWhen: stepCountIs(3),
+    });
+
+    expect(model.doGenerateCalls).toHaveLength(3);
+    expect(result.steps[0]?.toolResults[0]?.output).toMatchObject({
+      ok: false,
+      code: `catalog_presentation_${case_.name}`,
+    });
+    expect(result.steps[1]?.toolCalls[0]?.toolName).toBe("send_message");
+    expect(responder).toHaveBeenCalledOnce();
+    expect(leadMessages).toEqual(["Resposta ao cliente"]);
+    expect(acionada).not.toHaveBeenCalled();
+    expect(f.job().payload).not.toHaveProperty(CHAVE_DO_SNAPSHOT_DA_APRESENTACAO);
+    expect(f.sends).toEqual([]);
+    expect(f.events).not.toContain("snapshot-written");
+  });
+
   it("commita o snapshot antes do canal e conclui na ordem e seq congeladas", async () => {
     const f = fixture();
     await snapshot(f, 2);

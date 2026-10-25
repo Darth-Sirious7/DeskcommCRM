@@ -84,7 +84,7 @@ import { resumePersistedCatalogPresentation } from '@/lib/catalogo/retomada-de-a
 import { resolveAndSnapshotCatalogPresentation } from '@/lib/catalogo/snapshot-de-apresentacao';
 import { CHAVE_DO_SNAPSHOT_DA_APRESENTACAO } from '@/lib/catalogo/snapshot-de-apresentacao';
 import { catalogPresentationSelectionSchema } from '@/lib/catalogo/plano-de-apresentacao';
-import { terminalizarApresentacaoNoTurno } from '@/lib/catalogo/terminalidade-de-apresentacao';
+import { apresentacaoEncerraTurno, terminalizarApresentacaoNoTurno } from '@/lib/catalogo/terminalidade-de-apresentacao';
 import {
   applyLeadStateUpdate,
   getLeadState,
@@ -4342,7 +4342,7 @@ async function executarTurnoDoAgente(
     ) {
       rawTools.present_catalog_items = tool({
         description:
-          'Apresenta os produtos do catálogo pelos códigos na ordem escolhida. Esta é a última ação do turno; não chame outra ferramenta nem escreva resposta depois.',
+          'Apresenta os produtos do catálogo pelos códigos na ordem escolhida. Se retornar ok: true, esta é a última ação do turno; não chame outra ferramenta nem escreva resposta depois. Se retornar ok: false, responda normalmente ao cliente usando send_message.',
         inputSchema: catalogPresentationSelectionSchema,
         execute: async ({ product_codes }) => {
           const current = liveJob();
@@ -4363,7 +4363,13 @@ async function executarTurnoDoAgente(
             maxSendsPerTurn,
             orderedProductCodes: product_codes,
           });
-          if (!snapshot.ok) throw new Error(`catalog_presentation_${snapshot.error.code}`);
+          if (!snapshot.ok) {
+            return {
+              ok: false,
+              code: `catalog_presentation_${snapshot.error.code}`,
+              message: 'A apresentação não pôde ser iniciada. Responda normalmente ao cliente.',
+            };
+          }
           const resumed = await resumePersistedCatalogPresentation(
             pool,
             { ...current, payload: { ...current.payload, [CHAVE_DO_SNAPSHOT_DA_APRESENTACAO]: snapshot.snapshot } },
@@ -4441,9 +4447,12 @@ async function executarTurnoDoAgente(
       log: runLog, // os warns dos gates do breaker saem carimbados com o run
     });
     const tools = rawTools.present_catalog_items
-      ? terminalizarApresentacaoNoTurno(breakerTools, 'present_catalog_items', () => {
-          apresentacaoAcionada = true;
-        })
+      ? terminalizarApresentacaoNoTurno(
+          breakerTools,
+          'present_catalog_items',
+          () => { apresentacaoAcionada = true; },
+          apresentacaoEncerraTurno,
+        )
       : breakerTools;
 
     // F3-11: stage-classifier auxiliar. Roda ANTES do turno (modelo BARATO pelo seam
