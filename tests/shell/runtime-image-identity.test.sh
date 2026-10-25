@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# A hook may export GIT_DIR/GIT_INDEX_FILE: the fixture must own its Git state.
+unset $(git rev-parse --local-env-vars)
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
