@@ -15,6 +15,7 @@
  */
 import { beforeEach, describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import { customFieldSchema } from "@/lib/schemas/settings";
 
@@ -963,6 +964,182 @@ describe("organização sem nenhum funil", () => {
     const link = screen.getByTestId("link-criar-funil");
     expect(link.getAttribute("href")).toBe(funis!.href);
     expect(link.textContent).toContain(funis!.label);
+  });
+});
+
+/* ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * A ETAPA DE ENTRADA DAS CONVERSAS DO INBOX, PELA TELA (#3011 — CR do PR #3250).
+ *
+ * O ajuste já existia no BANCO: a etapa declarada valia, o fallback era
+ * provado, e NINGUÉM CONSEGUIA LIGAR — nenhum ponto da interface mandava
+ * `entrada_do_inbox` no patch que a tela envia ao `updatePipelineConfig`.
+ *
+ * O que estes casos prendem é o caminho inteiro: o admin escolhe a etapa NA
+ * TELA, a escolha sai no patch da porta única de escrita, a tela reaberta
+ * mostra a escolha feita — e, quando a etapa escolhida deixa de valer, o aviso
+ * aparece em vez de a queda para a primeira etapa virar silêncio.
+ */
+describe("etapa de entrada das conversas do Inbox na tela (#3011)", () => {
+  const ETAPA_ABERTA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const OUTRA_ABERTA = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  const ETAPA_ARQUIVADA = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const ETAPA_GANHO = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+
+  const ETAPAS_DE_ENTRADA: Record<string, EtapaDoFunil[]> = {
+    [FUNIL.id]: [
+      { id: ETAPA_ABERTA, name: "Em atendimento", is_archived: false },
+      { id: OUTRA_ABERTA, name: "Proposta", is_archived: false },
+      { id: ETAPA_ARQUIVADA, name: "Antiga", is_archived: true },
+      { id: ETAPA_GANHO, name: "Fechado", is_archived: false, is_won: true },
+    ],
+  };
+
+  const funilCom = (settings: Record<string, unknown>): PipelineRow => ({
+    ...FUNIL,
+    settings: { ...FUNIL.settings, ...settings },
+  });
+
+  // O editor do funil só monta expandido (#3176): o seletor mora dentro dele.
+  // E o seletor só existe no funil de entrada: por padrão, `p` é o padrão.
+  const montar = (p: PipelineRow) => {
+    const r = render(
+      <PipelinesClient pipelines={[{ is_default: true, ...p }]} etapas={ETAPAS_DE_ENTRADA} podeEditarConfig />,
+    );
+    abrirEditores();
+    return r;
+  };
+  const salvar = () =>
+    fireEvent.click(screen.getByRole("button", { name: "Salvar vocabulário e campos" }));
+  const patchSalvo = () => vi.mocked(updatePipelineConfig).mock.calls.at(-1)![1];
+  const seletor = () => screen.getByLabelText("Etapa de entrada das conversas do Inbox");
+
+  beforeEach(() => vi.mocked(updatePipelineConfig).mockClear());
+
+  it("o seletor só aparece no funil que o servidor lê: o padrão e o de clientes, nunca um secundário", () => {
+    // `funilDeEntrada` consulta `entrada_do_inbox` só no `is_default` e no
+    // `is_client_pipeline`. Num secundário a escolha seria salva e nunca usada.
+    const SECUNDARIO: PipelineRow = {
+      ...FUNIL,
+      id: "44444444-4444-4444-8444-444444444444",
+      name: "Pós-venda",
+      slug: "pos-venda",
+      is_default: false,
+    };
+    const etapas = { ...ETAPAS_DE_ENTRADA, [SECUNDARIO.id]: ETAPAS_DE_ENTRADA[FUNIL.id]! };
+    const rotulo = "Etapa de entrada das conversas do Inbox";
+
+    const { unmount } = render(
+      <PipelinesClient pipelines={[{ ...FUNIL, is_default: true }, SECUNDARIO]} etapas={etapas} podeEditarConfig />,
+    );
+    abrirEditores();
+    expect(screen.getAllByRole("button", { name: /Salvar vocabulário e campos/i })).toHaveLength(2);
+    expect(screen.queryAllByLabelText(rotulo)).toHaveLength(1);
+    unmount();
+
+    const { unmount: desmontar } = render(
+      <PipelinesClient pipelines={[SECUNDARIO]} etapas={etapas} podeEditarConfig />,
+    );
+    abrirEditores();
+    expect(screen.queryAllByLabelText(rotulo)).toHaveLength(0);
+    desmontar();
+
+    render(
+      <PipelinesClient
+        pipelines={[{ ...SECUNDARIO, is_client_pipeline: true }]}
+        etapas={etapas}
+        podeEditarConfig
+      />,
+    );
+    abrirEditores();
+    expect(screen.queryAllByLabelText(rotulo)).toHaveLength(1);
+  });
+
+  it("abre na primeira etapa quando o funil não declara nada, e sem aviso", () => {
+    montar(FUNIL);
+
+    expect(seletor().textContent?.trim()).toBe("Primeira etapa do funil (padrão)");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("o admin ESCOLHE a etapa na tela e a escolha vai no patch do updatePipelineConfig", async () => {
+    const user = userEvent.setup();
+    montar(FUNIL);
+
+    await user.click(seletor());
+    await user.click(await screen.findByRole("option", { name: "Em atendimento" }));
+    salvar();
+
+    await vi.waitFor(() => expect(updatePipelineConfig).toHaveBeenCalledTimes(1));
+    // A chave só existe aqui porque a TELA a mandou: é este o elo que faltava
+    // entre o ajuste do banco e quem configura.
+    expect(patchSalvo().entrada_do_inbox).toEqual({ ativa: true, stage_id: ETAPA_ABERTA });
+  });
+
+  it("a tela reabre mostrando a escolha feita, e salvar mantém a decisão", async () => {
+    montar(funilCom({ entrada_do_inbox: { ativa: true, stage_id: ETAPA_ABERTA } }));
+
+    expect(seletor().textContent?.trim()).toBe("Em atendimento");
+    salvar();
+
+    await vi.waitFor(() => expect(updatePipelineConfig).toHaveBeenCalledTimes(1));
+    expect(patchSalvo().entrada_do_inbox).toEqual({ ativa: true, stage_id: ETAPA_ABERTA });
+  });
+
+  it("não oferece etapa arquivada nem de ganho — a gravação no banco as recusaria", async () => {
+    const user = userEvent.setup();
+    montar(FUNIL);
+
+    await user.click(seletor());
+    expect(await screen.findByRole("option", { name: "Em atendimento" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Antiga/ })).toBeNull();
+    expect(screen.queryByRole("option", { name: /Fechado/ })).toBeNull();
+  });
+
+  it("funil que nunca declarou nada NÃO ganha a chave morta no patch", async () => {
+    montar(FUNIL);
+
+    salvar();
+
+    await vi.waitFor(() => expect(updatePipelineConfig).toHaveBeenCalledTimes(1));
+    // O settings de um funil intocado continua idêntico ao de antes do #3011.
+    expect(patchSalvo()).not.toHaveProperty("entrada_do_inbox");
+  });
+
+  it("desligar GUARDA a etapa escolhida: religar não obriga a escolher de novo", async () => {
+    const user = userEvent.setup();
+    montar(funilCom({ entrada_do_inbox: { ativa: true, stage_id: ETAPA_ABERTA } }));
+
+    await user.click(seletor());
+    await user.click(
+      await screen.findByRole("option", { name: "Primeira etapa do funil (padrão)" }),
+    );
+    salvar();
+
+    await vi.waitFor(() => expect(updatePipelineConfig).toHaveBeenCalledTimes(1));
+    expect(patchSalvo().entrada_do_inbox).toEqual({ ativa: false, stage_id: ETAPA_ABERTA });
+  });
+
+  it("etapa que deixou de valer: AVISO visível, e a escolha continua à mostra", () => {
+    montar(funilCom({ entrada_do_inbox: { ativa: true, stage_id: ETAPA_ARQUIVADA } }));
+
+    expect(screen.getByRole("alert").textContent).toContain("primeira etapa do funil");
+    expect(seletor().textContent?.trim()).toBe("Antiga (indisponível)");
+  });
+
+  it("etapa apagada (nem aparece na lista) também avisa, como removida", () => {
+    montar(funilCom({ entrada_do_inbox: { ativa: true, stage_id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee" } }));
+
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    expect(seletor().textContent?.trim()).toBe("Etapa removida (indisponível)");
+  });
+
+  it("ajuste DESLIGADO com etapa lembrada não avisa — não há queda acontecendo", () => {
+    montar(funilCom({ entrada_do_inbox: { ativa: false, stage_id: ETAPA_ABERTA } }));
+
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(seletor().textContent?.trim()).toBe("Primeira etapa do funil (padrão)");
   });
 });
 
