@@ -111,10 +111,20 @@ test("convite chega em Minhas, permite resposta e revogação retira o acesso se
     }
     const principal = await conversa(org, nome);
     const outra = await conversa(vizinha, "Cliente vizinho sintético");
+    async function esperarContagemMinhas(quantidade: number) {
+      await expect.poll(async () => {
+        const resposta = await convidada.page.request.get("/api/v1/conversations/counts");
+        expect(resposta.status()).toBe(200);
+        const corpo = await resposta.json() as { data: { mine: number } };
+        return corpo.data.mine;
+      }).toBe(quantidade);
+    }
     await navegar(gestor.page, `/app/inbox?id=${principal.id}`);
     await navegar(convidada.page, "/app/inbox");
     await convidada.page.getByRole("tab", { name: /Minhas/ }).click();
-    await expect(convidada.page.getByRole("tab", { name: /Minhas/ })).toContainText("0");
+    // O zero vem da API real; a UX canônica omite o badge quando ele é zero.
+    await esperarContagemMinhas(0);
+    await expect(convidada.page.getByRole("tab", { name: /Minhas/ })).toHaveText("Minhas");
     await expect(convidada.page.getByText(nome, { exact: true })).toHaveCount(0);
     expect((await convidada.page.request.get(`/api/v1/conversations/${principal.id}`)).status()).toBe(404);
 
@@ -130,6 +140,7 @@ test("convite chega em Minhas, permite resposta e revogação retira o acesso se
     // Sem goto/reload/link na convidada: é a entrega em outra sessão aberta.
     const linhaConvidada = convidada.page.locator(`[data-conversation-id="${principal.id}"]`);
     await expect(linhaConvidada).toBeVisible({ timeout: 15_000 });
+    await esperarContagemMinhas(1);
     await expect(convidada.page.getByRole("tab", { name: /Minhas/ })).toContainText("1");
     await linhaConvidada.click();
     await expect(convidada.page.getByText(`Contexto sintético ${prefixo}`, { exact: true })).toBeVisible();
@@ -171,6 +182,8 @@ test("convite chega em Minhas, permite resposta e revogação retira o acesso se
     await gestaoDaParticipante.click();
     await gestor.page.getByRole("menuitem", { name: "Remover participante", exact: true }).click();
     await expect(linhaConvidada).toHaveCount(0, { timeout: 15_000 });
+    await esperarContagemMinhas(0);
+    await expect(convidada.page.getByRole("tab", { name: /Minhas/ })).toHaveText("Minhas");
     await expect(convidada.page.getByText("Conversa não encontrada ou fora do seu acesso.", { exact: true })).toBeVisible();
     expect((await convidada.page.request.get(`/api/v1/conversations/${principal.id}`)).status()).toBe(404);
     expect((await convidada.page.request.post("/api/v1/messages", { data: { conversation_id: principal.id, type: "text", body: "Convite revogado não envia" } })).status()).toBe(404);
