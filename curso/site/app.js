@@ -382,6 +382,7 @@
   var ampliada = document.getElementById("ampliada");
   ampliada.addEventListener("click", function (e) { if (e.target === ampliada || e.target.closest("[data-fechar]")) ampliada.close(); });
   window.addEventListener("hashchange", function () { if (ampliada.open) ampliada.close(); render(); });
-  document.getElementById("rodape").innerHTML = '<div class="coluna"><span>Fotos tiradas do DeskComm versão ' + esc(D.versao) + " em " + esc(D.gerado.split("-").reverse().join("/")) + ", numa empresa de demonstração. Os nomes e conversas são fictícios.</span></div>";
+  var datasFotos = (D.datas_das_fotos || []).map(function (data) { return data.split("-").reverse().join("/"); });
+  document.getElementById("rodape").innerHTML = '<div class="coluna"><span>Material atualizado em ' + esc(D.gerado.split("-").reverse().join("/")) + ". Fotos das versões " + esc(D.versao) + (datasFotos.length ? ", capturadas em " + esc(datasFotos.join(" e ")) : "") + ", numa empresa de demonstração. Os nomes e conversas são fictícios.</span></div>";
   render();
 })();
