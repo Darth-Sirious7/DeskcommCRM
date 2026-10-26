@@ -68,8 +68,10 @@ describe("coleta declarativa com opção finita, sem motor ou código do pacote"
   });
 
   it("referência futura, opção inexistente e JavaScript não entram no contrato", () => {
-    const futuro = declaracao();
-    futuro.perguntas[0] = { ...futuro.perguntas[0], quando: quando(["beta"]) };
+    const futuro = { ...declaracao(), perguntas: [
+      { ...declaracao().perguntas[0]!, quando: quando(["beta"]) },
+      ...declaracao().perguntas.slice(1),
+    ] };
     expect(() => parseFluxoDoTurno(futuro)).toThrow();
     const desconhecida = declaracao();
     desconhecida.encerrar_quando.valores = ["inexistente"];

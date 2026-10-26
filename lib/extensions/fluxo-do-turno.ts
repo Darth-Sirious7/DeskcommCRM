@@ -361,6 +361,10 @@ const PALAVRAS_DO_IDIOMA: Record<IdiomaDoTurno, readonly string[]> = {
   "hi-Latn": [
     "mera", "hai", "kya", "kaise", "kab", "kahan", "dhanyavad", "namaste", "aap",
     "mujhe", "chahiye", "taiyar", "report", "result", "doctor", "mil", "gaya", "miltajulta",
+    // Escrita latina do #3063: frases curtas também precisam distinguir-se do inglês.
+    "hain", "hoon", "karna", "kar", "hua", "hoga", "mere", "meri", "tum", "nahi", "nahin",
+    "batao", "bata", "kitna", "kitne", "jaldi", "abhi", "lekin", "accha", "theek", "dena",
+    "milegi", "milega", "mila", "mili",
   ],
 };
 
@@ -428,6 +432,9 @@ export function gatilhoQueCasou(
 const ENCERRAMENTOS = new Set([
   "obrigado", "obrigada", "valeu", "vlw", "ok", "okay", "certo", "beleza", "blz",
   "tchau", "ate", "adeus", "thanks", "thank", "you", "gracias", "dhanyavad", "bye",
+  // Confirmações/saudações não úteis do #3063: nunca viram nome ou outro campo livre.
+  "hi", "hello", "hey", "yes", "no", "haan", "han", "ji", "namaste", "namaskar",
+  "shukriya", "theek", "acha", "accha", "good", "fine",
 ]);
 
 export function mensagemForaDoFluxo(texto: string): boolean {

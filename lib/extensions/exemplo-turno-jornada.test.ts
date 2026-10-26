@@ -108,6 +108,8 @@ describe("idiomas, intenção e saídas sem prender a conversa", () => {
     ["¿Mi informe está listo?", "¿De qué servicio es el informe?"],
     ["मेरा रिपोर्ट कहाँ है", "यह रिपोर्ट किस सेवा की है?"],
     ["mera report kab milegi", "Yeh report kis service ki hai?"],
+    ["report milegi", "Yeh report kis service ki hai?"],
+    ["report mila", "Yeh report kis service ki hai?"],
   ])("%s usa o idioma declarado", (texto, inicio) => {
     const d = decidir(texto);
     expect(d.acao).toBe("perguntar");
@@ -121,6 +123,12 @@ describe("idiomas, intenção e saídas sem prender a conversa", () => {
     const aberta = decidir("Where is my biopsy report?");
     if (aberta.acao !== "perguntar") throw new Error("coleta esperada");
     expect(decidir("What is the price?", aberta.estado)).toEqual({ acao: "devolver", porque: "fora_do_fluxo" });
+  });
+
+  it("saudação de confirmação não vira nome de paciente", () => {
+    const aberta = decidir("Where is my biopsy report?");
+    if (aberta.acao !== "perguntar") throw new Error("coleta esperada");
+    expect(decidir("hello", aberta.estado)).toEqual({ acao: "devolver", porque: "fora_do_fluxo" });
   });
 
   it("três mensagens sem progresso levam à equipe e mídia posterior volta à IA", () => {
