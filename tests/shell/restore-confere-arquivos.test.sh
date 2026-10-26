@@ -85,7 +85,7 @@ preparar() {
   mkdir -p "$PROJ/backups" "$PROJ/.runtime/supabase/volumes/storage" "$WORK/sessoes"
   : > "$PROJ/docker-compose.prod.yml"
   printf '%s\n' 'SINGLE_SERVER="1"' \
-    'SUPABASE_DB_URL="postgresql://postgres:teste@db.exemplo:5432/postgres"' \
+    'SUPABASE_DB_URL="postgresql://postgres@db.exemplo:5432/postgres"' \
     'NEXT_PUBLIC_SUPABASE_URL="https://exemplo.supabase.co"' > "$PROJ/.env"
   printf 'sessão anterior\n' > "$WORK/sessoes/anterior"
   printf 'anexo anterior\n' > "$PROJ/.runtime/supabase/volumes/storage/anterior"
