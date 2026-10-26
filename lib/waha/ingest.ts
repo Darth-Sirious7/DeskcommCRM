@@ -1769,7 +1769,8 @@ async function handleOutboundFromUserPhone(
  *
  * A condição mora NO PRÓPRIO UPDATE (`.in("status", …)`), sobre a linha vigente;
  * não se lê o status antes para depois escrever. E as horas de entrega e de
- * leitura são gravadas uma vez só (`is null`).
+ * leitura são gravadas uma vez só (`is null`). Aviso positivo não toca em linha
+ * `failed`: nem o status, nem as horas (`.neq("status", "failed")` em `carimbarUmaVez`).
  */
 async function handleAck(admin: Admin, session: Session, p: WahaPayload): Promise<void> {
   if (!p.id) return;
@@ -1821,11 +1822,14 @@ async function carimbarUmaVez(
   coluna: "delivered_at" | "read_at",
   quando: string,
 ): Promise<void> {
+  // `failed` não é tocado por aviso positivo, nem nas horas: uma falha registrada
+  // não ganha hora de entrega ou de leitura.
   const { error } = await admin
     .from("messages")
     .update({ [coluna]: quando })
     .eq("organization_id", session.organization_id)
     .in("external_id", candidates)
+    .neq("status", "failed")
     .is(coluna, null);
   if (error) {
     logger.warn("waha.ingest: hora do aviso não gravada", { detail: error.message, coluna });

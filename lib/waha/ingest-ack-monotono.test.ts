@@ -76,6 +76,10 @@ function banco(linhas: Linha[]) {
       this.filtros.push((l) => valores.includes(l[coluna]));
       return this;
     }
+    neq(coluna: string, valor: unknown) {
+      this.filtros.push((l) => l[coluna] !== valor);
+      return this;
+    }
     is(coluna: string, valor: null) {
       this.filtros.push((l) => (valor === null ? l[coluna] == null : l[coluna] === valor));
       return this;
@@ -170,6 +174,17 @@ describe("aviso positivo nunca faz o status voltar (fatia 1)", () => {
     await chegarAviso(admin, 2);
     expect(filas[0]?.status).toBe("delivered");
     expect(typeof filas[0]?.delivered_at).toBe("string");
+  });
+});
+
+describe("linha failed não é tocada por aviso positivo (fatia 1)", () => {
+  it("failed + ack 2 e ack 3 → continua failed, e delivered_at/read_at continuam nulos", async () => {
+    const filas = [linha({ status: "failed", ack: null, error_code: "send_timeout", delivered_at: null, read_at: null })];
+    const { admin } = banco(filas);
+    await chegarAviso(admin, 2);
+    expect(filas[0]).toMatchObject({ status: "failed", delivered_at: null, read_at: null });
+    await chegarAviso(admin, 3);
+    expect(filas[0]).toMatchObject({ status: "failed", delivered_at: null, read_at: null });
   });
 });
 
