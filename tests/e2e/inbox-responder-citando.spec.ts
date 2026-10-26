@@ -177,6 +177,53 @@ test.afterAll(async () => {
 });
 
 test.describe("responder citando", () => {
+  test("a barra de respostas rápidas preserva o rascunho e volta a funcionar ao apagar (#3354)", async ({
+    page,
+  }, testInfo) => {
+    await login(page, creds.users.agent!.email);
+    // Precondição pela rota real: recurso pessoal, na mesma sessão que atende.
+    const titulo = `Rascunho ${SUFIXO}`;
+    const corpo = `Resposta preparada ${SUFIXO}`;
+    const criada = await page.request.post("/api/v1/message-templates", {
+      data: { title: titulo, body: corpo, mostrar_na_barra: true },
+    });
+    expect(criada.status()).toBe(201);
+    const { data: recurso } = (await criada.json()) as { data: { id: string } };
+    try {
+      await abrirConversa(page, conversas[0]!);
+      const barra = page.getByRole("toolbar", { name: "Respostas rápidas" });
+      const botao = barra.getByRole("button", { name: titulo, exact: true });
+      const campo = page.getByRole("textbox", { name: "Mensagem", exact: true });
+      await page.getByRole("button", { name: "Assumir", exact: true }).click();
+      await expect(campo).toBeEditable();
+      await expect(botao).toBeEnabled();
+      const rascunho = "Já confirmo o horário com a equipe";
+      await campo.fill(rascunho);
+      await expect(botao).toBeDisabled();
+      await expect(botao).toHaveAttribute("title", /Envie ou apague o rascunho/);
+      // Clique físico no botão desligado: dispatchEvent/force contornariam a UX.
+      const caixa = await botao.boundingBox();
+      expect(caixa).not.toBeNull();
+      await page.mouse.click(caixa!.x + caixa!.width / 2, caixa!.y + caixa!.height / 2);
+      await expect(campo).toHaveValue(rascunho);
+      await page.screenshot({ path: testInfo.outputPath("rascunho-preservado.png") });
+
+      await campo.fill("");
+      await expect(botao).toBeEnabled();
+      await botao.click();
+      await expect(campo).toHaveValue(corpo);
+      // O comando em andamento continua sendo substituível, como no menu /.
+      await campo.fill("/rascunho");
+      await expect(botao).toBeEnabled();
+      await botao.click();
+      await expect(campo).toHaveValue(corpo);
+      await page.screenshot({ path: testInfo.outputPath("resposta-preparada-no-campo.png") });
+    } finally {
+      const removida = await page.request.delete(`/api/v1/message-templates/${recurso.id}`);
+      expect(removida.ok(), "limpeza da resposta rápida do próprio caso").toBe(true);
+    }
+  });
+
   test("o botão de responder revela a faixa, e o × a desfaz", async ({ page }) => {
     await login(page, creds.users.agent!.email);
     await abrirConversa(page, conversas[0]!);
