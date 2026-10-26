@@ -1,0 +1,71 @@
+# Jornadas do curso — reprodução local
+
+O catálogo contém dez nichos, trinta histórias e quatro cenas por história. As empresas, pessoas e diálogos são fictícios. `curso/receitas-jornadas.json` declara as superfícies e falas de cada cena; `curso/demonstracoes/*.json` contém a narrativa pública. Os IDs das fotos são `demo-<jornada>--historia--<cena>`.
+
+## O que a foto demonstra
+
+**CONFIRMADO pelo pipeline:** cada fotografia abre uma tela real do aplicativo sobre um estado semeado no banco local. A posição do destaque é medida pelo mesmo helper das lições (`curso/capturar.ts` / `curso/geometria.ts`); o curso reutiliza seu renderizador SVG. As fotos não são imagens geradas nem screenshots de HTML que imita o aplicativo.
+
+**Limite:** semear uma consulta, tarefa, negócio ou caso não prova que o motor os criou. Todas as histórias continuam identificadas como roteiro demonstrativo. Notas públicas distinguem reconstituição e prova separada. Respostas encenadas são humanas; somente trechos copiados dos pilotos observados recebem autoria de IA na reconstituição. Nenhuma captura chama um modelo ou transporta mensagem para fora da bancada.
+
+## Preparação e captura
+
+Use a instalação local de teste com baseline aplicado, dono criado e a base de `curso/semear-demonstracao.ts` preparada. Pare os workers antes de semear: mensagens inseridas emitem eventos reais. Mantenha as credenciais no ambiente privado da bancada e `curso/saida/contas.json` fora do Git. Não copie segredos para comandos publicados, receitas ou assets.
+
+O app fotografado pode usar uma versão publicada diferente do checkout do curso. Informe a versão realmente executada:
+
+```bash
+CURSO_URL=http://127.0.0.1:3460 CURSO_VERSAO_FOTOS=1.89.0 \
+  pnpm exec tsx curso/capturar-jornadas.ts clinicas-remarcar-sessao
+```
+
+A fonte de pedidos tem um helper próprio, sem credenciais fixas ou alteração de schema do aplicativo:
+
+```bash
+CURSO_FONTE_HOST=10.0.2.2 CURSO_FONTE_PORT=5432 \
+  pnpm exec tsx curso/preparar-fonte-loja.ts
+```
+
+O endereço acima é um exemplo da bancada medida: informe o IPv4 LAN pelo qual o contêiner do app alcança o Postgres local. O helper administra **somente** o Postgres da URL localhost; o host LAN vai para o registro de leitura e passa pela política real do produto. Cria `curso_loja_demo` e um papel somente de leitura com senha aleatória cifrada. Em repetição, exige dono e marcador `curso-jornadas:loja:v1` nos objetos existentes; não adota bancos ou papéis desconhecidos. Faz upsert apenas de CT-4729 e CT-4730, sem apagar a tabela. A bancada previamente preparada por outro script precisa de verificação explícita do responsável antes de receber esse marcador.
+
+O argumento aceita uma jornada exata ou um nicho; sem argumento captura todas. `CURSO_BROWSER_CHANNEL=chrome` seleciona o Chrome instalado se o Chromium do Playwright não estiver disponível. Para inspecionar só um estado sem fotografar:
+
+```bash
+pnpm exec tsx curso/semear-jornadas.ts clinicas-remarcar-sessao acao
+```
+
+`NEXT_PUBLIC_SUPABASE_URL` e `CURSO_URL` precisam ser origens HTTP de localhost. A guarda recusa hosts remotos, usuário/senha na URL, query, fragmento e caminhos. A semente não usa SSH ou acesso direto a Postgres. O helper antigo mantém a guarda própria de `SUPABASE_DB_URL` ao restaurar a base.
+
+O helper das jornadas reaproveita contas, organização, canal e agente da base. Só limpa entidades do prefixo `deca0000` declarado no catálogo; não apaga pilotos ou volumes. Muda os nomes de organização/canal/agente e etapas do funil para a história fotografada. Retira somente as três respostas rápidas clínicas conhecidas da base; a busca da Inbox filtra o personagem pela interface. Os pilotos usam estado de atendimento automático nas etapas correspondentes, sem ligar worker. A primeira cena remove histórias anteriores; as seguintes evoluem o estado. Casos semeados usam o sufixo “· demonstração”, distinguindo-os de casos originais do piloto ou de controles diretos sem escolher uma linha por posição. Remarcação mantém o mesmo ID de compromisso e usa UPDATE explícito após o primeiro INSERT. A sessão de Rui pertence à Ana, preservando o compromisso de equipe já existente na agenda de Helena. Quando o compromisso do piloto clínico existe, a captura o lê sem modificar ou criar uma segunda reserva. Negócios permanecem abertos; tarefas não equivalem a venda, matrícula ou autorização concluída.
+
+Falha de seletor ou medição interrompe a execução. O manifesto é salvo após cada foto bem-sucedida, preservando capturas antigas e permitindo retomar pelo filtro da história. A conta e a sessão autenticada não entram no manifesto. Importar os helpers não lê contas, exige credenciais ou abre conexão.
+
+## Pilotos e alcance da evidência
+
+Em 26/10/2026, a bancada do aplicativo v1.89.0 foi usada para provas separadas do motor nativo com provedor real. O transporte final foi simulado; não se afirma entrega em WhatsApp real.
+
+- **Clínica:** Marina Exemplo / Clínica Bem Viver pediu avaliação postural para 27/10/2026 às 9h30. O motor consultou e marcou; o compromisso persistiu e a chamada direta conferiu os mesmos argumentos auditados. A reconstituição usa essa data histórica, não um horário relativo ao dia da leitura do curso.
+- **Loja:** Bia Exemplo / Casa das Trilhas consultou CT-4729. A fonte fictícia real retornou Mochila Horizonte, situação Despachado e RASTREIO-EXEMPLO-4729. A ferramenta direta, com os mesmos argumentos e contexto, devolveu a mesma linha; a consulta de controle ao pedido de outro cliente retornou zero linhas. A conexão da fonte é preparada separadamente pelo helper da fixture, antes do pipeline de fotografia.
+
+- **Infoproduto:** Pati Exemplo relatou erro 403 na aula 3 de Fotografia na Prática, após tentar novo login e outro navegador. O motor abriu o caso; na UI a equipe escolheu `Preciso de info do cliente` e pediu o título completo da aula. O turno nativo de retomada fez a pergunta e o caso persistiu em `awaiting_lead`. A ferramenta direta em uma conversa de controle nova gravou os mesmos campos estruturados e `awaiting_human`. Repetir a abertura na conversa que já tinha caso retornou `case_already_open`: recusa esperada, sem reutilização ou novo aviso à equipe. Não se demonstrou correção de acesso à plataforma externa.
+
+A reconstituição da loja usa o mesmo telefone fictício que a fonte espera. Se o contato do piloto já existir, ele é apenas lido; em bancada fresca, o contato próprio recebe esse telefone. Como o produto permite uma conversa por contato e canal, a reconstituição usa um canal próprio identificado como demonstração, parado e sem envio. Não muda o contato, a conversa ou o canal originais, nem publica outro agente.
+
+Os artefatos brutos ficam fora do repositório e dos assets. A configuração da fonte de pedidos usa o endereço de rede permitido pela política do produto dentro da bancada; não se altera a proteção contra localhost do leitor de dados externos. O limite localhost dos scripts diz respeito ao app e Supabase que recebem seeds, não revoga a política do leitor externo.
+
+Nos exemplos de seguros, contabilidade e assistência técnica, a tela de Dados externos mostra **preparação da conexão**, sem executar um teste contra origem inoperante ou rotular leitura como concluída. A conferência do sistema de origem é atribuída à equipe. A montagem indica as dependências que uma implantação real precisa resolver.
+
+## Verificação e montagem
+
+```bash
+pnpm exec vitest run curso/receitas-jornadas.test.ts curso/jornada.test.ts curso/licoes.test.ts
+CURSO_BASE=/curso/ pnpm exec tsx curso/montar.ts
+```
+
+O teste de unidade deriva as fotos esperadas do catálogo versionado: roda em clone fresco sem `curso/saida`. O montador exige o manifesto e a existência física de cada foto referenciada. Os arquivos em `curso/saida/` são saída privada ignorada e não devem ser commitados. A prova visual final precisa percorrer catálogo, cenas e montagem em desktop/celular, conferir imagens decodificadas e erros do navegador; sucesso de unidade não substitui essa prova.
+
+A rodada de 26/10/2026 produziu 120 fotos dedicadas com 120 hashes distintos e destaques medidos dentro do quadro. A montagem completa preservou as 1097 fotos das lições e incluiu as novas: 61 módulos, 1217 fotos. Os testes focados passaram (91 casos); a conferência de arquivos físicos e a montagem foram repetidas após a sincronização final.
+
+Na rodada de 26/10/2026, o helper de fonte foi recusado com banco/papel existentes sem marcador. Após conferência explícita de ownership dos recursos criados na própria bancada, foi executado com sucesso. A consulta de ACL confirmou SELECT permitido e INSERT/UPDATE/DELETE/TRUNCATE negados ao papel da fonte.
+
+O circuito de correção é explícito: captura falha → não publica entrada dessa cena → corrige receita/seletor → recaptura a jornada → montador valida os arquivos. Não foram adicionadas rotas, tabelas, integrações ou capacidades ao produto.

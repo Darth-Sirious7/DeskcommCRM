@@ -38,6 +38,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { vi } from "vitest";
 import { Modulo, chaveDoPasso } from "./licao";
+import { receitas, chaveDaCena } from "./receitas-jornadas";
 
 describe("catálogo público de jornadas", () => {
   const pasta = path.join(process.cwd(), "curso");
@@ -50,6 +51,11 @@ describe("catálogo público de jornadas", () => {
     const chave = chaveDoPasso(m.id, l.id, p.id);
     return [chave, { foto: `capturas/${chave}.jpg` }];
   }))));
+
+  for (const r of receitas) for (const c of r.cenas) {
+    const chave = chaveDaCena(r.jornada, c.id);
+    fotos[chave] = { foto: `capturas/${chave}.jpg` };
+  }
 
   it("cobre os dez nichos com três histórias e ao menos quatro cenas por história", () => {
     expect(nichos.map((n) => n.id).sort()).toEqual([
@@ -79,9 +85,9 @@ describe("catálogo público de jornadas", () => {
     for (const n of nichos) for (const j of n.jornadas) {
       expect(j.tipo).toBe("roteiro-demonstrativo");
       expect(j.empresa).toContain("fictícia");
-      expect(j.nota).toContain("telas reais");
-      expect(j.nota).toContain("não correspondem aos personagens");
-      expect(j.nota).toContain("não comprova execução do motor");
+      expect(j.nota.toLowerCase()).toContain("telas reais");
+      expect(j.nota).toMatch(/semeados|reconstituíd/);
+      expect(j.nota).toMatch(/simulado/);
       expect(j.dependencias.length).toBeGreaterThan(80);
     }
   });

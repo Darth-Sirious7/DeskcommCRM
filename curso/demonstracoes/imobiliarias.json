@@ -10,7 +10,7 @@
       "contexto": "Eva procura apartamento com acesso por elevador e quer visitar antes de decidir.",
       "resultado": "Visita registrada com corretor e preferências disponíveis no histórico.",
       "tipo": "roteiro-demonstrativo",
-      "nota": "Roteiro demonstrativo: empresas, pessoas e mensagens desta história são fictícias. As fotos mostram telas reais de uma empresa fictícia usada no curso; seus nomes e dados ilustram os recursos, não correspondem aos personagens deste roteiro. A sequência narrada não comprova execução do motor de IA. Fotos específicas e comprovação serão preparadas separadamente.",
+      "nota": "Roteiro demonstrativo com empresas, pessoas e mensagens fictícias. As fotos são telas reais com estados semeados para esta história; a sequência não comprova execução do motor de IA. O transporte de mensagens é simulado.",
       "dependencias": "Requer imóveis conferidos pela imobiliária, funil, agenda e expediente do corretor. O roteiro não consulta portais automaticamente nem garante reserva, acessibilidade técnica ou disponibilidade de imóvel.",
       "montagem": [
         {
@@ -41,7 +41,7 @@
           "cliente": "Eva procura apartamento com elevador e espaço para trabalhar.",
           "operacao": "O atendimento pergunta região e características indispensáveis, distinguindo preferência de requisito obrigatório.",
           "valor": "A busca ganha critérios úteis para o corretor.",
-          "captura": "inbox--conhecendo-a-tela--p1"
+          "captura": "demo-imobiliarias-visita--historia--chegada"
         },
         {
           "id": "qualificacao",
@@ -49,7 +49,7 @@
           "cliente": "Eva informa quais opções gostaria de conhecer.",
           "operacao": "A equipe registra um negócio com as preferências e os imóveis a conferir, ligados ao contato.",
           "valor": "O corretor encontra contexto antes de telefonar.",
-          "captura": "funis--novo-negocio--p1"
+          "captura": "demo-imobiliarias-visita--historia--qualificacao"
         },
         {
           "id": "acao",
@@ -57,7 +57,7 @@
           "cliente": "Eva aceita visitar uma das opções conferidas.",
           "operacao": "Depois de checar acesso ao imóvel e disponibilidade do corretor, a equipe registra o compromisso na Agenda.",
           "valor": "O horário representa uma combinação, sem prometer reserva do imóvel.",
-          "captura": "agenda--novo-agendamento--p1"
+          "captura": "demo-imobiliarias-visita--historia--acao"
         },
         {
           "id": "continuidade",
@@ -65,7 +65,7 @@
           "cliente": "Eva quer comparar iluminação e ruído antes de decidir.",
           "operacao": "O corretor cria uma tarefa para retomar essas questões e atualizar o negócio após a conversa.",
           "valor": "O acompanhamento considera os critérios da visita.",
-          "captura": "tarefas--tarefas-criar-uma-tarefa--p2"
+          "captura": "demo-imobiliarias-visita--historia--continuidade"
         }
       ]
     },
@@ -76,7 +76,7 @@
       "contexto": "Ivo gostou de um imóvel e quer saber como avançar na locação.",
       "resultado": "Documentos pendentes e responsável identificados sem antecipar a análise cadastral.",
       "tipo": "roteiro-demonstrativo",
-      "nota": "Roteiro demonstrativo: empresas, pessoas e mensagens desta história são fictícias. As fotos mostram telas reais de uma empresa fictícia usada no curso; seus nomes e dados ilustram os recursos, não correspondem aos personagens deste roteiro. A sequência narrada não comprova execução do motor de IA. Fotos específicas e comprovação serão preparadas separadamente.",
+      "nota": "Roteiro demonstrativo com empresas, pessoas e mensagens fictícias. As fotos são telas reais com estados semeados para esta história; a sequência não comprova execução do motor de IA. O transporte de mensagens é simulado.",
       "dependencias": "Processo documental definido pela imobiliária, tarefa e funil habilitados. Dados sensíveis seguem o canal seguro adotado pela empresa. Não há análise de crédito, aprovação de cadastro ou contrato automático neste roteiro.",
       "montagem": [
         {
@@ -107,7 +107,7 @@
           "cliente": "Ivo pergunta qual é o próximo passo após conhecer o imóvel.",
           "operacao": "A equipe localiza o histórico e explica o processo documental adotado pela imobiliária.",
           "valor": "O atendimento parte de uma visita já realizada.",
-          "captura": "inbox--conhecendo-a-tela--p1"
+          "captura": "demo-imobiliarias-locacao-documentos--historia--chegada"
         },
         {
           "id": "qualificacao",
@@ -115,7 +115,7 @@
           "cliente": "Ivo confirma qual imóvel deseja seguir avaliando.",
           "operacao": "A pessoa responsável abre a ficha do negócio e confere preferências e anotações da visita.",
           "valor": "Não se mistura a candidatura com outros imóveis.",
-          "captura": "funis--ficha-do-negocio--p1"
+          "captura": "demo-imobiliarias-locacao-documentos--historia--qualificacao"
         },
         {
           "id": "acao",
@@ -123,7 +123,7 @@
           "cliente": "Ivo pergunta quais itens ainda faltam.",
           "operacao": "A equipe cria uma tarefa de conferência documental com responsável, sem pedir envio indiscriminado de documentos pelo chat.",
           "valor": "Existe um próximo passo verificável para a análise.",
-          "captura": "tarefas--tarefas-criar-uma-tarefa--p2"
+          "captura": "demo-imobiliarias-locacao-documentos--historia--acao"
         },
         {
           "id": "continuidade",
@@ -131,7 +131,7 @@
           "cliente": "Ivo quer saber se a locação já está aprovada.",
           "operacao": "A equipe mantém o negócio na etapa real de análise e esclarece que a decisão depende dos responsáveis externos ao roteiro.",
           "valor": "O funil não transforma documentação recebida em aprovação.",
-          "captura": "funis--mover-e-fechar--p1"
+          "captura": "demo-imobiliarias-locacao-documentos--historia--continuidade"
         }
       ]
     },
@@ -142,7 +142,7 @@
       "contexto": "Luz quer anunciar sua casa e pergunta por qual preço poderia vender.",
       "resultado": "Conversa chega ao corretor com visita de avaliação registrada.",
       "tipo": "roteiro-demonstrativo",
-      "nota": "Roteiro demonstrativo: empresas, pessoas e mensagens desta história são fictícias. As fotos mostram telas reais de uma empresa fictícia usada no curso; seus nomes e dados ilustram os recursos, não correspondem aos personagens deste roteiro. A sequência narrada não comprova execução do motor de IA. Fotos específicas e comprovação serão preparadas separadamente.",
+      "nota": "Roteiro demonstrativo com empresas, pessoas e mensagens fictícias. As fotos são telas reais com estados semeados para esta história; a sequência não comprova execução do motor de IA. O transporte de mensagens é simulado.",
       "dependencias": "Equipe e distribuição de atendimento configuradas; agenda para visita de avaliação. O roteiro não estima preço de mercado, prazo de venda ou valorização garantida.",
       "montagem": [
         {
@@ -173,7 +173,7 @@
           "cliente": "Luz pergunta quanto vale sua casa.",
           "operacao": "A recepção identifica que é captação de imóvel, sem tratar a proprietária como compradora.",
           "valor": "A conversa segue para quem atende esse tipo de demanda.",
-          "captura": "inbox--conhecendo-a-tela--p1"
+          "captura": "demo-imobiliarias-proprietario--historia--chegada"
         },
         {
           "id": "qualificacao",
@@ -181,7 +181,7 @@
           "cliente": "Luz descreve localização e situação de ocupação.",
           "operacao": "Uma nota interna reúne os dados úteis e as dúvidas, sem produzir avaliação financeira.",
           "valor": "O corretor prepara a visita a partir de contexto concreto.",
-          "captura": "inbox--nota-interna--p1"
+          "captura": "demo-imobiliarias-proprietario--historia--qualificacao"
         },
         {
           "id": "acao",
@@ -189,7 +189,7 @@
           "cliente": "Luz quer entender o processo de anúncio.",
           "operacao": "A conversa é transferida ao corretor que cuida da captação, com o motivo da transferência.",
           "valor": "A proprietária encontra uma pessoa responsável.",
-          "captura": "inbox--passar-pausar-encerrar--p3"
+          "captura": "demo-imobiliarias-proprietario--historia--acao"
         },
         {
           "id": "continuidade",
@@ -197,7 +197,7 @@
           "cliente": "Luz aceita conversar no imóvel.",
           "operacao": "O corretor combina e registra uma visita de avaliação; preço e estratégia serão definidos por ele com a proprietária.",
           "valor": "O próximo passo é uma avaliação real, sem estimativa inventada.",
-          "captura": "agenda--novo-agendamento--p1"
+          "captura": "demo-imobiliarias-proprietario--historia--continuidade"
         }
       ]
     }

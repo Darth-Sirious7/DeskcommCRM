@@ -10,7 +10,7 @@
       "contexto": "Mila busca seguro para o carro e quer entender as diferenças entre opções.",
       "resultado": "Demanda registrada para cotação humana com necessidades do cliente.",
       "tipo": "roteiro-demonstrativo",
-      "nota": "Roteiro demonstrativo: empresas, pessoas e mensagens desta história são fictícias. As fotos mostram telas reais de uma empresa fictícia usada no curso; seus nomes e dados ilustram os recursos, não correspondem aos personagens deste roteiro. A sequência narrada não comprova execução do motor de IA. Fotos específicas e comprovação serão preparadas separadamente.",
+      "nota": "Roteiro demonstrativo com empresas, pessoas e mensagens fictícias. As fotos são telas reais com estados semeados para esta história; a sequência não comprova execução do motor de IA. O transporte de mensagens é simulado.",
       "dependencias": "Corretor responsável, funil e tarefas configurados. Nenhuma consulta automática a seguradoras, cálculo de prêmio, aceitação de risco ou garantia de cobertura é demonstrada.",
       "montagem": [
         {
@@ -41,7 +41,7 @@
           "cliente": "Mila pergunta quanto custa um seguro para o carro.",
           "operacao": "O atendimento pergunta o que ela quer proteger e se já possui apólice, sem calcular um prêmio genérico.",
           "valor": "A conversa identifica a necessidade antes da proposta.",
-          "captura": "inbox--conhecendo-a-tela--p1"
+          "captura": "demo-seguros-cotacao--historia--chegada"
         },
         {
           "id": "qualificacao",
@@ -49,7 +49,7 @@
           "cliente": "Mila explica que usa o carro para deslocamentos ao trabalho.",
           "operacao": "A equipe abre um negócio para cotação e registra as informações declaradas, sem substituir o questionário da seguradora.",
           "valor": "O corretor encontra o contexto do pedido.",
-          "captura": "funis--novo-negocio--p1"
+          "captura": "demo-seguros-cotacao--historia--qualificacao"
         },
         {
           "id": "acao",
@@ -57,7 +57,7 @@
           "cliente": "Mila pede comparação entre opções.",
           "operacao": "Uma tarefa é atribuída ao corretor para levantar propostas pelos canais que ele utiliza e conferir os dados necessários.",
           "valor": "Existe uma ação concreta sem fingir integração com seguradoras.",
-          "captura": "tarefas--tarefas-criar-uma-tarefa--p2"
+          "captura": "demo-seguros-cotacao--historia--acao"
         },
         {
           "id": "continuidade",
@@ -65,7 +65,7 @@
           "cliente": "Mila quer entender franquia e exclusões.",
           "operacao": "A conversa é transferida ao corretor, que explica os termos das propostas reais antes de qualquer aceite.",
           "valor": "Decisões contratuais ficam com quem pode esclarecê-las.",
-          "captura": "inbox--passar-pausar-encerrar--p3"
+          "captura": "demo-seguros-cotacao--historia--continuidade"
         }
       ]
     },
@@ -76,7 +76,7 @@
       "contexto": "Otto pergunta se sua apólice está perto do fim e se precisa mudar algo.",
       "resultado": "Conferência externa limitada à fonte autorizada e revisão humana das condições.",
       "tipo": "roteiro-demonstrativo",
-      "nota": "Roteiro demonstrativo: empresas, pessoas e mensagens desta história são fictícias. As fotos mostram telas reais de uma empresa fictícia usada no curso; seus nomes e dados ilustram os recursos, não correspondem aos personagens deste roteiro. A sequência narrada não comprova execução do motor de IA. Fotos específicas e comprovação serão preparadas separadamente.",
+      "nota": "Roteiro demonstrativo com empresas, pessoas e mensagens fictícias. As fotos são telas reais com estados semeados para esta história; a sequência não comprova execução do motor de IA. O transporte de mensagens é simulado. A tela de Dados externos ilustra preparação; a conferência da origem fica com a equipe.",
       "dependencias": "Conexão de leitura com cadastro de apólices, campos liberados e identificação validada pela corretora. Não implica integração com toda seguradora; não renova contrato, cobra prêmio ou altera cobertura.",
       "montagem": [
         {
@@ -117,15 +117,15 @@
           "cliente": "Otto quer saber se já é hora de revisar seu seguro.",
           "operacao": "A equipe identifica a apólice em questão e aplica o procedimento da corretora para validar o solicitante.",
           "valor": "O atendimento não confunde contratos de clientes diferentes.",
-          "captura": "inbox--conhecendo-a-tela--p1"
+          "captura": "demo-seguros-renovacao--historia--chegada"
         },
         {
           "id": "qualificacao",
-          "titulo": "Uma data da fonte",
+          "titulo": "Preparar a fonte autorizada",
           "cliente": "Otto pergunta qual vigência consta no cadastro.",
-          "operacao": "No roteiro, o agente lê o campo autorizado na fonte externa e informa apenas o registro encontrado, sem interpretar cobertura.",
-          "valor": "A resposta tem uma origem identificada.",
-          "captura": "dados-externos--o-que-o-assistente-ve--p2"
+          "operacao": "A tela mostra a preparação de uma conexão de leitura. Nesta história, a equipe confere manualmente o registro no sistema de origem; não há consulta automatizada demonstrada.",
+          "valor": "Expõe a dependência da fonte e evita apresentar uma informação não conferida como resposta do agente.",
+          "captura": "demo-seguros-renovacao--historia--qualificacao"
         },
         {
           "id": "acao",
@@ -133,7 +133,7 @@
           "cliente": "Otto conta que passou a usar o carro em outra atividade.",
           "operacao": "A equipe cria uma tarefa para o corretor revisar essa mudança com a seguradora.",
           "valor": "Uma alteração relevante não vira renovação silenciosa.",
-          "captura": "tarefas--tarefas-criar-uma-tarefa--p2"
+          "captura": "demo-seguros-renovacao--historia--acao"
         },
         {
           "id": "continuidade",
@@ -141,7 +141,7 @@
           "cliente": "Otto quer saber se pode manter as mesmas condições.",
           "operacao": "O corretor assume e confere propostas e condições atualizadas; nenhuma renovação é dada como concluída pelo roteiro.",
           "valor": "A continuidade depende da análise contratual efetiva.",
-          "captura": "inbox--assumir-e-responder--p1"
+          "captura": "demo-seguros-renovacao--historia--continuidade"
         }
       ]
     },
@@ -152,7 +152,7 @@
       "contexto": "Yara relata um dano e pergunta se o seguro cobre o ocorrido.",
       "resultado": "Relato encaminhado para orientação humana e análise pelos responsáveis.",
       "tipo": "roteiro-demonstrativo",
-      "nota": "Roteiro demonstrativo: empresas, pessoas e mensagens desta história são fictícias. As fotos mostram telas reais de uma empresa fictícia usada no curso; seus nomes e dados ilustram os recursos, não correspondem aos personagens deste roteiro. A sequência narrada não comprova execução do motor de IA. Fotos específicas e comprovação serão preparadas separadamente.",
+      "nota": "Roteiro demonstrativo com empresas, pessoas e mensagens fictícias. As fotos são telas reais com estados semeados para esta história; a sequência não comprova execução do motor de IA. O transporte de mensagens é simulado.",
       "dependencias": "Equipe habilitada e agente com abertura de caso, se usado. Não atende emergência, não decide cobertura, indenização ou prazo de regulação; procedimentos são os da seguradora responsável.",
       "montagem": [
         {
@@ -193,7 +193,7 @@
           "cliente": "Yara pergunta se o ocorrido está coberto.",
           "operacao": "O agente do roteiro acolhe a solicitação e evita confirmar cobertura com base em uma frase.",
           "valor": "O atendimento não antecipa a decisão da seguradora.",
-          "captura": "inbox--conhecendo-a-tela--p1"
+          "captura": "demo-seguros-sinistro--historia--chegada"
         },
         {
           "id": "qualificacao",
@@ -201,7 +201,7 @@
           "cliente": "Yara explica a que apólice se refere.",
           "operacao": "O roteiro abre caso com a pergunta sobre o procedimento e o contexto informado, sem laudo ou conclusão sobre o evento.",
           "valor": "A equipe recebe uma demanda delimitada.",
-          "captura": "casos--abrindo-um-caso--p1"
+          "captura": "demo-seguros-sinistro--historia--qualificacao"
         },
         {
           "id": "acao",
@@ -209,7 +209,7 @@
           "cliente": "Yara pede ajuda para saber por onde começar.",
           "operacao": "A equipe seleciona a passagem ao humano e registra quais orientações precisam ser conferidas.",
           "valor": "A continuidade fica com um responsável.",
-          "captura": "casos--respondendo-um-caso--p1"
+          "captura": "demo-seguros-sinistro--historia--acao"
         },
         {
           "id": "continuidade",
@@ -217,7 +217,7 @@
           "cliente": "Yara volta à conversa com os dados solicitados pelo corretor.",
           "operacao": "A pessoa responsável explica os canais e os próximos passos aplicáveis, sem prometer indenização ou prazo de análise.",
           "valor": "O cliente recebe orientação operacional situada no contrato real.",
-          "captura": "inbox--assumir-e-responder--p1"
+          "captura": "demo-seguros-sinistro--historia--continuidade"
         }
       ]
     }

@@ -39,13 +39,9 @@ export type Captura = {
   clicar: Caixa | null;
 };
 
-const contas: Record<string, { email: string; senha: string }> = JSON.parse(
-  readFileSync(path.join(SAIDA, "contas.json"), "utf8"),
-);
-
 type Raiz = Pick<Page, "getByTestId" | "getByRole" | "getByLabel" | "getByPlaceholder" | "getByText" | "locator">;
 
-function localizar(raiz: Raiz, a: Omit<Alvo, "dentro"> & { dentro?: Alvo["dentro"] }): Locator {
+export function localizar(raiz: Raiz, a: Omit<Alvo, "dentro"> & { dentro?: Alvo["dentro"] }): Locator {
   const base: Raiz = a.dentro ? localizar(raiz, a.dentro) : raiz;
   const exact = a.exato ?? false;
   const nome = a.nome === undefined ? undefined : a.regex ? new RegExp(a.nome) : a.nome;
@@ -59,7 +55,7 @@ function localizar(raiz: Raiz, a: Omit<Alvo, "dentro"> & { dentro?: Alvo["dentro
   return a.n === undefined ? l : l.nth(a.n);
 }
 
-async function medir(page: Page, a: Alvo): Promise<Caixa> {
+export async function medir(page: Page, a: Alvo): Promise<Caixa> {
   const l = localizar(page, a);
   await l.waitFor({ state: "visible", timeout: 8_000 });
   const b = await l.boundingBox();
@@ -67,7 +63,7 @@ async function medir(page: Page, a: Alvo): Promise<Caixa> {
   return caixaNaFoto(b, LARGURA, ALTURA);
 }
 
-async function executar(page: Page, a: Acao) {
+export async function executar(page: Page, a: Acao) {
   if (a.acao === "press") {
     if (a.alvo) await localizar(page, a.alvo).press(a.tecla, { timeout: 8_000 });
     else await page.keyboard.press(a.tecla);
@@ -88,7 +84,7 @@ async function executar(page: Page, a: Acao) {
 }
 
 /** Esqueletos de carregamento (animate-pulse do shadcn) na foto ensinam uma tela que não existe. */
-async function esperarCarregar(page: Page) {
+export async function esperarCarregar(page: Page) {
   await page.waitForLoadState("networkidle");
   await page
     .waitForFunction(() => ![...document.querySelectorAll(".animate-pulse")].some((e) => (e as HTMLElement).offsetParent !== null), null, { timeout: 8_000 })
@@ -100,7 +96,7 @@ async function esperarCarregar(page: Page) {
  * explicação. Tira o foco — menos de campo de texto e de menu/diálogo/lista
  * aberta, que fecham ou mudam de cara sem ele.
  */
-async function tirarFocoDeClique(page: Page) {
+export async function tirarFocoDeClique(page: Page) {
   await page.evaluate(() => {
     const el = document.activeElement as HTMLElement | null;
     if (!el || el === document.body) return;
@@ -111,13 +107,14 @@ async function tirarFocoDeClique(page: Page) {
 }
 
 /** Congela o que muda entre rodadas e atrapalharia a foto. */
-const CSS_DE_FOTO = `*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;transition:none!important;caret-color:transparent!important}
+export const CSS_DE_FOTO = `*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;transition:none!important;caret-color:transparent!important}
 [data-sonner-toaster],nextjs-portal{display:none!important}`;
 
-async function entrar(page: Page, papel: string) {
+export async function entrar(page: Page, papel: string, urlBase = URL_BASE) {
+  const contas: Record<string, { email: string; senha: string }> = JSON.parse(readFileSync(path.join(SAIDA, "contas.json"), "utf8"));
   const c = contas[papel];
   if (!c) throw new Error(`curso/saida/contas.json não tem a conta "${papel}"`);
-  await page.goto(`${URL_BASE}/login`);
+  await page.goto(`${urlBase}/login`);
   await page.waitForLoadState("networkidle");
   // pressSequentially: o fill() não dispara os listeners do React Hook Form do login
   for (const [sel, valor] of [['input[type="email"]', c.email], ['input[type="password"]', c.senha]] as const) {
@@ -234,7 +231,6 @@ async function main() {
   if (falhas.length) process.exit(1);
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname)) {
+  main().catch((e) => { console.error(e); process.exit(1); });
+}

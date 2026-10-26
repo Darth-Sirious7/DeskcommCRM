@@ -7,10 +7,10 @@
       "id": "e-commerce-consultar-pedido",
       "titulo": "Onde está meu pedido?",
       "empresa": "Casa das Trilhas (fictícia)",
-      "contexto": "Bia quer saber se a mochila comprada já foi despachada.",
-      "resultado": "Informação disponível no sistema de origem ou encaminhamento explícito se a consulta falhar.",
+      "contexto": "Bia Exemplo pede a situação e o rastreio do pedido CT-4729, uma Mochila Horizonte.",
+      "resultado": "Pedido consultado na fonte autorizada: Despachado, com rastreio RASTREIO-EXEMPLO-4729.",
       "tipo": "roteiro-demonstrativo",
-      "nota": "Roteiro demonstrativo: empresas, pessoas e mensagens desta história são fictícias. As fotos mostram telas reais de uma empresa fictícia usada no curso; seus nomes e dados ilustram os recursos, não correspondem aos personagens deste roteiro. A sequência narrada não comprova execução do motor de IA. Fotos específicas e comprovação serão preparadas separadamente.",
+      "nota": "Telas reais com dados fictícios e estados reconstituídos. Motor e leitura do pedido foram validados com a ferramenta direta, que retornou a mesma linha. Transporte externo simulado; as fotos não são uma gravação da execução.",
       "dependencias": "Requer conexão externa ativa, tabelas e colunas autorizadas, capacidades de leitura no agente e regra da loja para conferir identidade e vínculo com o pedido. Não consulta qualquer loja por padrão, não altera pedido e não garante entrega.",
       "montagem": [
         {
@@ -48,34 +48,34 @@
         {
           "id": "chegada",
           "titulo": "Uma compra anterior",
-          "cliente": "Bia pergunta sobre o envio da mochila.",
+          "cliente": "Bia Exemplo pergunta se a mochila do pedido CT-4729 já foi despachada.",
           "operacao": "O roteiro identifica que é pós-venda, sem criar uma nova oportunidade de compra para responder ao pedido.",
           "valor": "A demanda segue pelo contexto correto.",
-          "captura": "inbox--conhecendo-a-tela--p1"
+          "captura": "demo-e-commerce-consultar-pedido--historia--chegada"
         },
         {
           "id": "qualificacao",
           "titulo": "Conferir antes de expor",
-          "cliente": "Bia fornece a referência do pedido.",
-          "operacao": "A equipe aplica a regra de identificação da loja antes de liberar dados; um número informado sozinho não comprova titularidade.",
+          "cliente": "Bia informa o pedido CT-4729.",
+          "operacao": "O piloto associa a consulta ao contato. A fonte aplica o filtro do cliente e mantém outro pedido de controle fora da resposta.",
           "valor": "A consulta não deve expor compras de outra pessoa.",
-          "captura": "inbox--nota-interna--p1"
+          "captura": "demo-e-commerce-consultar-pedido--historia--qualificacao"
         },
         {
           "id": "acao",
           "titulo": "Ler a fonte disponível",
-          "cliente": "Bia pergunta se a encomenda saiu.",
-          "operacao": "No roteiro, o agente consulta somente os campos liberados da conexão e relata o estado encontrado, indicando quando o dado não existe.",
+          "cliente": "Bia pede a situação e o rastreio.",
+          "operacao": "O piloto leu uma linha da fonte autorizada: Mochila Horizonte, Despachado, RASTREIO-EXEMPLO-4729. A foto mostra a fonte fictícia real e destaca esse pedido; o administrador também enxerga o pedido de controle.",
           "valor": "A resposta depende da fonte, sem inventar transportadora ou previsão.",
-          "captura": "dados-externos--o-que-o-assistente-ve--p2"
+          "captura": "demo-e-commerce-consultar-pedido--historia--acao"
         },
         {
           "id": "continuidade",
-          "titulo": "Quando falta informação",
-          "cliente": "Bia diz que o estado informado não esclareceu sua dúvida.",
-          "operacao": "Se a fonte não responder ou estiver incompleta, a equipe cria tarefa de conferência com a operação da loja e combina a continuidade.",
-          "valor": "Uma falha de consulta vira próximo passo, sem falsa confirmação de envio.",
-          "captura": "tarefas--tarefas-criar-uma-tarefa--p2"
+          "titulo": "Resposta com a fonte conferida",
+          "cliente": "Bia recebe a situação e o código de rastreio.",
+          "operacao": "A conversa reconstitui a resposta observada do agente. O transporte externo foi simulado; não houve envio a cliente real.",
+          "valor": "A equipe vê qual pedido e rastreio sustentaram a resposta.",
+          "captura": "demo-e-commerce-consultar-pedido--historia--continuidade"
         }
       ]
     },
@@ -86,7 +86,7 @@
       "contexto": "Cris recebeu um calçado e precisa de outro tamanho.",
       "resultado": "Solicitação contextualizada e encaminhada à equipe que decide a troca.",
       "tipo": "roteiro-demonstrativo",
-      "nota": "Roteiro demonstrativo: empresas, pessoas e mensagens desta história são fictícias. As fotos mostram telas reais de uma empresa fictícia usada no curso; seus nomes e dados ilustram os recursos, não correspondem aos personagens deste roteiro. A sequência narrada não comprova execução do motor de IA. Fotos específicas e comprovação serão preparadas separadamente.",
+      "nota": "Roteiro demonstrativo com empresas, pessoas e mensagens fictícias. As fotos são telas reais com estados semeados para esta história; a sequência não comprova execução do motor de IA. O transporte de mensagens é simulado.",
       "dependencias": "Política de trocas cadastrada e equipe responsável; caso via agente exige capacidade habilitada. Nenhuma foto comprova concessão de troca, estoque, frete ou reembolso. Alterações na plataforma de venda são feitas fora deste fluxo.",
       "montagem": [
         {
@@ -127,7 +127,7 @@
           "cliente": "Cris explica que o calçado ficou apertado.",
           "operacao": "A conversa registra que se trata de troca, e não de uma nova venda.",
           "valor": "A equipe consegue ler o motivo desde a primeira mensagem.",
-          "captura": "inbox--conhecendo-a-tela--p1"
+          "captura": "demo-e-commerce-troca-tamanho--historia--chegada"
         },
         {
           "id": "qualificacao",
@@ -135,7 +135,7 @@
           "cliente": "Cris indica o pedido e o tamanho desejado.",
           "operacao": "No roteiro, o agente reúne a demanda em um caso para conferência da política e da compra pela equipe.",
           "valor": "A exceção tem um lugar de acompanhamento.",
-          "captura": "casos--abrindo-um-caso--p1"
+          "captura": "demo-e-commerce-troca-tamanho--historia--qualificacao"
         },
         {
           "id": "acao",
@@ -143,7 +143,7 @@
           "cliente": "Cris ainda não informou se o produto foi usado.",
           "operacao": "A equipe usa a opção de pedir informação ao cliente, especificando o que falta para analisar, sem aprovar a troca antecipadamente.",
           "valor": "A análise avança com uma pergunta concreta.",
-          "captura": "casos--respondendo-um-caso--p1"
+          "captura": "demo-e-commerce-troca-tamanho--historia--acao"
         },
         {
           "id": "continuidade",
@@ -151,7 +151,7 @@
           "cliente": "Cris responde e pede as orientações de envio.",
           "operacao": "A pessoa responsável assume a conversa e comunica somente a decisão efetiva; eventual troca no sistema da loja é uma ação separada.",
           "valor": "Atendimento e execução logística ficam distinguíveis.",
-          "captura": "inbox--assumir-e-responder--p1"
+          "captura": "demo-e-commerce-troca-tamanho--historia--continuidade"
         }
       ]
     },
@@ -162,7 +162,7 @@
       "contexto": "Davi busca um presente e ainda não decidiu qual kit faz sentido.",
       "resultado": "Oportunidade organizada com preferência e tarefa de atendimento.",
       "tipo": "roteiro-demonstrativo",
-      "nota": "Roteiro demonstrativo: empresas, pessoas e mensagens desta história são fictícias. As fotos mostram telas reais de uma empresa fictícia usada no curso; seus nomes e dados ilustram os recursos, não correspondem aos personagens deste roteiro. A sequência narrada não comprova execução do motor de IA. Fotos específicas e comprovação serão preparadas separadamente.",
+      "nota": "Roteiro demonstrativo com empresas, pessoas e mensagens fictícias. As fotos são telas reais com estados semeados para esta história; a sequência não comprova execução do motor de IA. O transporte de mensagens é simulado.",
       "dependencias": "Funil configurado, contato e equipe com permissão de edição. Preço, estoque, desconto e prazo dependem da loja; o CRM não garante disponibilidade nem pagamento.",
       "montagem": [
         {
@@ -193,7 +193,7 @@
           "cliente": "Davi quer presentear alguém que gosta de jardinagem.",
           "operacao": "A equipe pergunta sobre o uso pretendido e as preferências antes de sugerir um kit.",
           "valor": "A sugestão começa pela necessidade do comprador.",
-          "captura": "inbox--conhecendo-a-tela--p1"
+          "captura": "demo-e-commerce-venda-consultiva--historia--chegada"
         },
         {
           "id": "qualificacao",
@@ -201,7 +201,7 @@
           "cliente": "Davi prefere um kit para varanda pequena.",
           "operacao": "O atendente cria um negócio ligado ao contato e registra o interesse, sem atribuir receita a uma intenção de compra.",
           "valor": "A oportunidade permanece identificada para outro atendente.",
-          "captura": "funis--novo-negocio--p1"
+          "captura": "demo-e-commerce-venda-consultiva--historia--qualificacao"
         },
         {
           "id": "acao",
@@ -209,7 +209,7 @@
           "cliente": "Davi pergunta se pode incluir uma ferramenta diferente.",
           "operacao": "A equipe cria uma tarefa para conferir a composição com quem monta os kits.",
           "valor": "Uma pergunta que exige conferência não fica perdida no chat.",
-          "captura": "tarefas--tarefas-criar-uma-tarefa--p2"
+          "captura": "demo-e-commerce-venda-consultiva--historia--acao"
         },
         {
           "id": "continuidade",
@@ -217,7 +217,7 @@
           "cliente": "Davi recebe as opções e pede para avaliar.",
           "operacao": "A equipe move o negócio à etapa configurada que corresponde à análise e deixa o próximo passo registrado, sem marcar venda como ganha.",
           "valor": "O quadro reflete a decisão real do comprador.",
-          "captura": "funis--mover-e-fechar--p1"
+          "captura": "demo-e-commerce-venda-consultiva--historia--continuidade"
         }
       ]
     }
