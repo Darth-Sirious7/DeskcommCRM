@@ -58,6 +58,9 @@ estratégia que o sistema monta só usa a automação num caso estreito; o resul
   ninguém da equipe." O ramo "Site ok, demanda alta" continua igual (ali a
   automação já é o ângulo principal).
 - Sem oferta de automação marcada, `complementar` é `null` e tudo fica como hoje.
+- Quando site não está entre as ofertas selecionadas, a frase complementar fala
+  só das automações marcadas, sem o prefixo "Além do site". Isso não altera o
+  ângulo principal de site que o motor já calculava antes desta fatia.
 - `complementar` sai na ferramenta (`estrategia_de_abordagem.complementar`) e na
   prévia da tela (`estrategiaDoCandidato`), que já bebem da mesma função.
 
@@ -79,6 +82,8 @@ estratégia que o sistema monta só usa a automação num caso estreito; o resul
   - `prospectingConversationContext` com `ofertas` de três itens traz a linha
     com os três rótulos em ordem; sem a chave, traz só "Site profissional".
   - A ferramenta devolve `ofertas_da_campanha` igual à config.
+  - Automação isolada e as duas automações sem site não anunciam site na frase
+    complementar; todas essas combinações têm cobertura de espanhol.
   - `montarEstrategia` com `classe = agregador` e ofertas com automação traz
     `complementar` preenchido; só `["site"]` traz `null`; "Site ok, demanda
     alta" continua igual.

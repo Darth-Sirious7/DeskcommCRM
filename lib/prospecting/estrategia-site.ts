@@ -155,6 +155,15 @@ function juntarProblemas(problemas: string[], t: TradutorDeTexto): string | null
 function fraseDeAutomacaoComplementar(ofertas: OfertaDaCampanha[], t: TradutorDeTexto): string | null {
   const crm = ofertas.includes("automacao_crm");
   const n8n = ofertas.includes("automacao_n8n");
+  if (!ofertas.includes("site")) {
+    if (crm && n8n)
+      return t("O atendimento automatizado responde quem chama fora de hora e as automações tiram o trabalho repetido, sem trocar ninguém da equipe.");
+    if (crm)
+      return t("O atendimento automatizado responde quem chama fora de hora, sem trocar ninguém da equipe.");
+    if (n8n)
+      return t("As automações tiram o trabalho repetido, sem trocar ninguém da equipe.");
+    return null;
+  }
   if (crm && n8n)
     return t(
       "Além do site, o atendimento automatizado responde quem chama fora de hora e as automações tiram o trabalho repetido, sem trocar ninguém da equipe.",

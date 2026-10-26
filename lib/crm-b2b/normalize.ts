@@ -5,13 +5,12 @@
 import { isValidCnpj } from "@/lib/cobranca/documento";
 
 /**
- * Devolve os 14 dígitos do CNPJ, ou `null` quando o documento não existe.
+ * Devolve os 14 dígitos do CNPJ, ou `null` quando formato/DV são inválidos.
  *
  * O TAMANHO não basta: `11.222.333/0001-00` tem 14 dígitos e não é CNPJ de
- * ninguém. Antes desta régua a empresa entrava com o número errado, o
- * `normalized_cnpj` (UNIQUE por organização) ficava ocupado por um documento
- * inexistente e o cliente real recebia `409 CNPJ já cadastrado` ao tentar se
- * cadastrar — com o erro aparecendo longe da causa, no enriquecimento.
+ * válido. Antes desta régua a empresa entrava com o número errado, e o erro
+ * só aparecia depois, ao tentar enriquecer o cadastro. O checksum confere o
+ * dígito; ele não comprova existência nem situação cadastral na Receita.
  *
  * Quem confere o dígito é `isValidCnpj`, a MESMA função que a cobrança usa no
  * documento do pagador (mod-11 da Receita). Uma implementação só: duas réguas

@@ -78,6 +78,11 @@ const REPUTACOES: Array<[number | null, number | null]> = [
 const OFERTAS: Array<[OfertaDaCampanha[], number | null]> = [
   [["site"], null],
   [["automacao_crm"], 80],
+  [["automacao_n8n"], 80],
+  [["automacao_crm", "automacao_n8n"], 80],
+  [["site", "automacao_crm"], 80],
+  [["site", "automacao_n8n"], 80],
+  [["site", "automacao_crm", "automacao_n8n"], 80],
 ];
 const FALTAS: ItemDoRaioX[] = ["whatsapp", "tel", "mapa"];
 

@@ -74,11 +74,21 @@ describe("complementar: a oferta de automação ao lado do site", () => {
   it("o campo existe em todo ramo, inclusive no 'Site ok' sem volume", () => {
     const e = montarEstrategia({ ...base, classe: "site-ok", ofertas: ["automacao_crm"], numAvaliacoes: 10 });
     expect(e.cenario).toBe("Site ok");
-    expect(e.complementar).toBe(FRASE_CRM);
+    expect(e.complementar).toBe("O atendimento automatizado responde quem chama fora de hora, sem trocar ninguém da equipe.");
     expect(montarEstrategia({ ...base, classe: "site-ok", ofertas: ["site"], numAvaliacoes: 10 })).toHaveProperty(
       "complementar",
       null,
     );
+  });
+
+  it.each<{ ofertas: EntradaDaEstrategia["ofertas"] }>([
+    { ofertas: ["automacao_crm"] },
+    { ofertas: ["automacao_n8n"] },
+    { ofertas: ["automacao_crm", "automacao_n8n"] },
+  ])("automação sem site não anuncia site na frase nova: $ofertas", ({ ofertas }) => {
+    const e = montarEstrategia({ ...base, classe: "agregador", ofertas, numAvaliacoes: 20 });
+    expect(e.complementar).not.toBeNull();
+    expect(e.complementar).not.toMatch(/site/i);
   });
 });
 
