@@ -81,3 +81,24 @@ esta integração não declara ter fotografado todos os passos novamente.
 
 Logs dirigidos e a prova CLI ficaram na bancada local da revisão. Não há env,
 credencial, dump de cliente ou captura real nova neste registro.
+
+## Retomada do CI — dublê do claim (#3481)
+
+No head `366b9ef88`, o `verify-parte (5)` da execução `40376293326` falhou no
+caminho feliz de `cliente-que-falha-nao-volta-ao-pool.test.ts`. Não era flake:
+o dublê devolvia o job somente quando a consulta continha `with dedup`, mas o
+hold passou a abrir o SQL com `with para_reter`. A consulta real executava;
+o dublê escolhia a resposta vazia. A reprodução local confirmou 1 falha e 11
+casos verdes, com o mesmo `[]` onde se esperava `[{ id: 'job-1' }]`.
+
+O reparo identifica a escrita que muda o job para `running` e cobra os parâmetros
+`[2, 'w1']`, preservando as asserções do job retornado, commit e release sem erro.
+Não muda SQL, schema, hold nem invariantes. Após o ajuste, sete arquivos dirigidos
+passaram: 46 casos em 13,75 s, com um worker, incluindo os dois contratos de
+liberação de cliente, claim/hold, watchdog, pre-go-live, aritmética de infinito e
+cerca do preparo Supabase. ESLint do teste e `git diff --check` passaram.
+
+Na fotografia anterior ao reparo, `build-and-size`, `invariants`, `e2e` e
+`imagens-ok` estavam verdes no GitHub; só `verify` estava vermelho. Essa prova
+pertence ao head anterior e não substitui os cinco checks do novo head. Não foram
+executados typecheck, build, Docker, banco ou E2E local nesta retomada.
