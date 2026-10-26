@@ -140,7 +140,7 @@
       "titulo": "Captação de imóvel com avaliação humana",
       "empresa": "Pátio Imobiliária (fictícia)",
       "contexto": "Luz quer anunciar sua casa e pergunta por qual preço poderia vender.",
-      "resultado": "Conversa chega ao corretor com uma tarefa de avaliação.",
+      "resultado": "Conversa chega ao corretor com visita de avaliação registrada.",
       "tipo": "roteiro-demonstrativo",
       "nota": "Roteiro demonstrativo: empresas, pessoas e mensagens desta história são fictícias. As fotos mostram telas reais de uma empresa fictícia usada no curso; seus nomes e dados ilustram os recursos, não correspondem aos personagens deste roteiro. A sequência narrada não comprova execução do motor de IA. Fotos específicas e comprovação serão preparadas separadamente.",
       "dependencias": "Equipe e distribuição de atendimento configuradas; agenda para visita de avaliação. O roteiro não estima preço de mercado, prazo de venda ou valorização garantida.",

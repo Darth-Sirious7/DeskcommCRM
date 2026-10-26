@@ -30,13 +30,13 @@
         },
         {
           "modulo": "inbox",
-          "licao": "nota-interna",
-          "porque": "Guardar contexto visível somente para a equipe."
+          "licao": "passar-pausar-encerrar",
+          "porque": "Transferir a conversa para quem pode continuar."
         },
         {
           "modulo": "inbox",
-          "licao": "passar-pausar-encerrar",
-          "porque": "Transferir a conversa para quem pode continuar."
+          "licao": "nota-interna",
+          "porque": "Guardar contexto visível somente para a equipe."
         },
         {
           "modulo": "tarefas",
@@ -55,19 +55,19 @@
         },
         {
           "id": "qualificacao",
-          "titulo": "O que já foi tentado",
+          "titulo": "A base não resolveu",
           "cliente": "Lena conta que seguiu a orientação oficial de recuperação de acesso.",
-          "operacao": "O roteiro reúne a tentativa e o erro numa nota interna, sem afirmar que o acesso foi restaurado.",
-          "valor": "A equipe recebe contexto e evita repetir a mesma orientação.",
-          "captura": "inbox--nota-interna--p1"
+          "operacao": "Como a orientação oficial não resolveu, o agente do roteiro passa a conversa para atendimento humano; a pessoa responsável assume a investigação.",
+          "valor": "A limitação tem um encaminhamento claro.",
+          "captura": "inbox--passar-pausar-encerrar--p3"
         },
         {
           "id": "acao",
-          "titulo": "A base não resolveu",
+          "titulo": "O que já foi tentado",
           "cliente": "Lena informa que o erro continua.",
-          "operacao": "O agente do roteiro passa a conversa para atendimento humano; a pessoa responsável assume a investigação.",
-          "valor": "A limitação tem um encaminhamento claro.",
-          "captura": "inbox--passar-pausar-encerrar--p3"
+          "operacao": "Depois de assumir a conversa, a pessoa da equipe lê o histórico e escreve manualmente uma nota interna com a tentativa e o erro, sem afirmar que o acesso foi restaurado.",
+          "valor": "A equipe mantém o contexto e evita repetir a mesma orientação.",
+          "captura": "inbox--nota-interna--p1"
         },
         {
           "id": "continuidade",
