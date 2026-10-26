@@ -45,7 +45,16 @@ for (const m of modulos) {
 
 const arquivoCapturas = path.join(SAIDA, "capturas.json");
 if (!existsSync(arquivoCapturas)) throw new Error("falta curso/saida/capturas.json — rode curso/capturar.ts antes");
-const { largura, altura, capturas } = JSON.parse(readFileSync(arquivoCapturas, "utf8"));
+const { largura, altura, capturas, falhas = [] } = JSON.parse(readFileSync(arquivoCapturas, "utf8"));
+
+// O capturador conserva fotos anteriores; elas não podem esconder uma falha
+// desta rodada, inclusive de revogação. Manifestos antigos não tinham `falhas`.
+const modulosComFalha = modulos.filter((m) => falhas.some((falha: string) =>
+  falha.startsWith(`${m.id}/`) || falha.startsWith(`${m.id}:`),
+)).map((m) => m.id);
+if (modulosComFalha.length) {
+  throw new Error(`capturas com falha nos módulos selecionados: ${modulosComFalha.join(", ")} — capture novamente antes de montar`);
+}
 
 const faltando = modulos.flatMap((m) =>
   m.licoes.flatMap((l) => l.passos.map((p) => chaveDoPasso(m.id, l.id, p.id)).filter((k) => !capturas[k])),
