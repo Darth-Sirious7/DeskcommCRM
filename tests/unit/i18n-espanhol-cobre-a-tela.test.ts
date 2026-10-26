@@ -648,7 +648,8 @@ function temTraducao(idioma: Idioma): (chave: string) => boolean {
  * ficam como estão.
  */
 const COMPLETOS_ALEM_DO_ESPANHOL = IDIOMAS_VISIVEIS.filter(
-  (idioma) => idioma.nivel === "completo" && idioma.codigo !== "pt-BR" && idioma.codigo !== "es",
+  // Com só pt-BR/es visíveis, inferir um type guard estreitaria o array a never[].
+  (idioma): boolean => idioma.nivel === "completo" && idioma.codigo !== "pt-BR" && idioma.codigo !== "es",
 ).map((idioma) => idioma.codigo);
 
 const COMO_CONSERTAR_NO_CATALOGO =
