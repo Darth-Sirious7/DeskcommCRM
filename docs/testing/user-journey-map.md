@@ -271,7 +271,7 @@ consertos estão em commits próprios desta branch — procure pelas palavras ab
 |---|------|-------------|
 | J5.1 | Admin convida atendente pela UI (sem Resend) | UI diz a verdade + accept_url copiável |
 | J5.2 | Convidado abre link, cria sessão, aceita | vira membro agent, cai no inbox |
-| J5.3 | Atendente vê APENAS fila + suas conversas | escopo RLS na prática; a autorização dos anexos e da reprodução AAC também é conferida pela rota real em `tests/e2e/inbox-scope.spec.ts`, com recursos sintéticos de duas organizações. **Cobertura preparada; execução real pendente no CI.** O teste de rota com Storage dublê está em `tests/unit/midia-da-mensagem-isolamento.test.ts` |
+| J5.3 | Atendente vê APENAS fila + suas conversas | escopo RLS na prática; a leitura de mídia também é exercitada pela rota real em `tests/e2e/inbox-scope.spec.ts`, com recursos sintéticos. **Execução confirmada:** [CI de 2026-10-26, parte 1](https://github.com/melgarafael/DeskcommCRM/actions/runs/40415056701/job/121895249691), caso de mídia em 5,5s, sem repetição. O teste de rota com Storage dublê está em `tests/unit/midia-da-mensagem-isolamento.test.ts` |
 | J5.4 | Atendente dá claim numa conversa da fila | claim ok; 2º atendente levando 409 amigável |
 | J5.5 | Transferir conversa pra colega | imediata, contador de não-lidas zera pro novo dono |
 | J5.6 | Atendente tenta ver billing/api-tokens | 403 página amigável |
@@ -3985,13 +3985,17 @@ não foram alterados e os recursos exclusivos foram removidos ao fim.
 spec. Upload real no bucket e mensagens próprias preparam XLSX/PDF com nomes
 acentuados; o clique real no download deve preservar `suggestedFilename` e os
 bytes completos. A rota de preview é relida sem pedir download. Uma terceira
-mensagem sem nome/path deve mostrar `Documento XLSX` a partir do MIME canônico.
+mensagem sem nome, com objeto real e extensão genérica `.bin`, deve mostrar
+`Documento XLSX` a partir do MIME canônico. Os unitários mantêm os controles
+discriminantes sem path; o E2E precisa do objeto para montar a bolha real.
 O CI já executa esse spec na parte 6; a distribuição não mudou.
 
 A captura só ocorre após todas as assertivas, em
 `evidence/documento-3511-01a178b3/`, recolhida pelo artefato de sucesso existente.
-Ainda não há captura ou PASS visual declarado. O caso desliga trace/vídeo para
-não arquivar URLs assinadas; usa apenas nomes e bytes sintéticos e limpa seus
+Ainda não há captura ou PASS visual declarado. Trace/vídeo são opções de worker
+e ficam desligados neste arquivo para não arquivar URLs assinadas; as capturas e
+assertivas dos casos anteriores permanecem, mas suas falhas não terão trace/vídeo.
+O caso usa apenas nomes e bytes sintéticos e limpa seus
 objetos ao terminar. Não mede download pela janela anterior à persistência do
 worker, nem um viewer de PDF/aplicativo externo; essa janela permanece coberta
 pela unidade da rota e exige observação em bancada antes do aceite final.

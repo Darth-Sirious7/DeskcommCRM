@@ -54,7 +54,10 @@ import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
  * no `afterAll`); a conexão caída do A-6 nasce e morre dentro do próprio caso.
  */
 
-test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+// Trace/vídeo são opções de worker: ficam no topo, não dentro do describe.
+// Este arquivo baixa URLs assinadas; preservamos as capturas/assertivas, mas
+// não arquivamos a rede nem vídeos (inclusive nos casos anteriores).
+test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, trace: "off", video: "off" });
 test.describe.configure({ timeout: 120_000 });
 
 interface E2ECreds {
@@ -751,9 +754,6 @@ test.describe("atender pelo celular", () => {
 
 // Mesma bancada real de mídia do B-5, sem dublar rota, Storage ou download.
 test.describe("documentos recebidos: rótulo e arquivo salvo (#2613)", () => {
-  // URLs assinadas não devem ir para traces/vídeos de artefato. Só capturamos o Inbox.
-  test.use({ trace: "off", video: "off" });
-
   test("XLSX/PDF preservam nome com acento e bytes; MIME-only tem rótulo legível", async ({ page }) => {
     const partes = {
       "[Content_Types].xml": '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>',
@@ -773,9 +773,9 @@ test.describe("documentos recebidos: rótulo e arquivo salvo (#2613)", () => {
       for (const arquivo of arquivos) {
         const id = randomUUID();
         const caminho = `${orgId}/${conversa}/${id}.${arquivo.ext}`;
+        caminhos.push(caminho);
         const upload = await db.storage.from("whatsapp-media").upload(caminho, arquivo.bytes, { contentType: arquivo.mime });
         expect(upload.error).toBeNull();
-        caminhos.push(caminho);
         mensagens.push(await insere("messages", {
           id, organization_id: orgId, conversation_id: conversa, contact_id: contato, channel_session_id: canal,
           type: "document", direction: "inbound", status: "received", sent_at: new Date().toISOString(),
@@ -783,10 +783,19 @@ test.describe("documentos recebidos: rótulo e arquivo salvo (#2613)", () => {
           metadata: { media_filename: arquivo.nome }, external_id: `documento-${id}`,
         }));
       }
+      // Objeto real com extensão genérica: a bolha tem mídia, mas só o MIME
+      // pode dizer XLSX. Não usamos o corpo para fabricar o rótulo esperado.
+      const semNome = randomUUID();
+      const caminhoSemNome = `${orgId}/${conversa}/${semNome}.bin`;
+      caminhos.push(caminhoSemNome);
+      const uploadSemNome = await db.storage.from("whatsapp-media").upload(caminhoSemNome, xlsx, { contentType: arquivos[0]!.mime });
+      expect(uploadSemNome.error).toBeNull();
       mensagens.push(await insere("messages", {
+        id: semNome,
         organization_id: orgId, conversation_id: conversa, contact_id: contato, channel_session_id: canal,
         type: "document", direction: "inbound", status: "received", sent_at: new Date().toISOString(),
-        media_mime: arquivos[0]!.mime, media_storage_path: null, metadata: {}, external_id: `mime-only-${SUFIXO}`,
+        media_mime: arquivos[0]!.mime, media_storage_path: caminhoSemNome, media_size_bytes: xlsx.length,
+        metadata: {}, external_id: `mime-only-${SUFIXO}`,
       }));
       await entrar(page);
       await page.goto(`/app/inbox?filter=all&id=${conversa}`);
@@ -794,7 +803,7 @@ test.describe("documentos recebidos: rótulo e arquivo salvo (#2613)", () => {
       await expect(page.getByText("Documento XLSX", { exact: true })).toBeVisible();
       for (const [i, arquivo] of arquivos.entries()) {
         await expect(page.getByText(arquivo.nome, { exact: true })).toBeVisible();
-        const baixar = page.getByRole("link", { name: new RegExp(`^Baixar ${arquivo.nome.replace(/\./g, "\\.")}`) });
+        const baixar = page.getByRole("link", { name: new RegExp(`^Baixar ${arquivo.nome.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`) });
         await expect(baixar).toHaveAttribute("href", `/api/v1/messages/${mensagens[i]}/media?baixar=1`);
         // Controle do preview pela rota real: não pede o Content-Disposition de download.
         const preview = await page.request.get(`/api/v1/messages/${mensagens[i]}/media`, { maxRedirects: 0 });
@@ -813,8 +822,12 @@ test.describe("documentos recebidos: rótulo e arquivo salvo (#2613)", () => {
       fs.mkdirSync("evidence/documento-3511-01a178b3", { recursive: true });
       await page.screenshot({ path: "evidence/documento-3511-01a178b3/documentos-no-inbox.png" });
     } finally {
-      if (mensagens.length) expect((await db.from("messages").delete().eq("organization_id", orgId).in("id", mensagens)).error).toBeNull();
-      if (caminhos.length) expect((await db.storage.from("whatsapp-media").remove(caminhos)).error).toBeNull();
+      // Uma falha de limpeza não pode impedir a tentativa da outra.
+      const limpezas = await Promise.allSettled([
+        mensagens.length ? db.from("messages").delete().eq("organization_id", orgId).in("id", mensagens) : Promise.resolve({ error: null }),
+        caminhos.length ? db.storage.from("whatsapp-media").remove(caminhos) : Promise.resolve({ error: null }),
+      ]);
+      expect(limpezas.every((r) => r.status === "fulfilled" && r.value.error === null), "a prova precisa limpar seus recursos sintéticos").toBe(true);
     }
   });
 });

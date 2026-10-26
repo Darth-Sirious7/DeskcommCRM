@@ -13,7 +13,7 @@
  *      o que faz o Storage responder `Content-Disposition: attachment` com o
  *      nome. Sem o terceiro argumento, o Storage devolve o basename canônico.
  *  (B) `?baixar=1` SEM nome guardado → NENHUM nome é inventado: a assinatura
- *      continua com dois argumentos. Anexo antigo (ou canal que não manda
+ *      continua sem opções de download. Anexo antigo (ou canal que não manda
  *      `filename`) não vira `documento.pdf` na cara do atendente.
  *  (C) sem `?baixar=1` → a rota segue 302 como sempre: o cartão abre o PDF em
  *      aba nova, e o preview não é sequestrado pelo download.
@@ -28,6 +28,8 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type * as Channels from "@/lib/channels";
+
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/auth/server", () => ({ loadAuthUser: vi.fn() }));
@@ -39,7 +41,7 @@ vi.mock("@/lib/messaging/media/voice-transcode", () => ({
   paraReproducaoAac: vi.fn(),
 }));
 vi.mock("@/lib/channels", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/channels")>("@/lib/channels");
+  const actual = await vi.importActual<typeof Channels>("@/lib/channels");
   return {
     ...actual,
     getAdapter: vi.fn(),

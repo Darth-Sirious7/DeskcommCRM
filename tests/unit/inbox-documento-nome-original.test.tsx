@@ -205,7 +205,7 @@ describe("DocumentCard", () => {
     expect(rotulo).toHaveAttribute("title", NOME_LONGO);
     // O nome inteiro chega aos dois links (abrir e baixar) por aria-label.
     expect(
-      screen.getAllByRole("link", { name: new RegExp(NOME_LONGO.replace(/\./g, "\\.")) }),
+      screen.getAllByRole("link", { name: (nome) => nome.includes(NOME_LONGO) }),
     ).toHaveLength(2);
   });
 });
