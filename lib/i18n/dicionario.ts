@@ -39,6 +39,7 @@ import { TEXTOS_AGENDA_SERVICOS } from "./agenda-servicos";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Não foi possível concluir a ação. Confira o código técnico nos detalhes.": { es: "No se pudo completar la acción. Revisa el código técnico en los detalles." },
   "Mensagens da conversa": { es: "Mensajes de la conversación" },
   "Novas mensagens · Ir para o fim": { es: "Mensajes nuevos · Ir al final" },
   // Encaminhar mensagem (#2835) — botão na bolha do chat e o diálogo de destino.
