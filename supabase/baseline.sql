@@ -51781,6 +51781,41 @@ begin
     );
   get diagnostics v_count = row_count;
   v_counts := v_counts || jsonb_build_object('leads', v_count);
+  -- 5b. lead_field_proposals (0772, #3316) — a proposta de campo que a IA leu
+  -- num DOCUMENTO (voucher, bilhete, apólice). `trecho` é o texto do documento
+  -- sobre a PESSOA e os dois valores são o dado que a IA extraiu: o MESMO
+  -- tratamento do `custom_fields` do próprio negócio (passo 5) — campo, status
+  -- e decisão PERMANECEM (a fila continua explicável), o conteúdo identificável
+  -- sai. Alcança pelo vínculo do negócio com o contato (direto ou pela
+  -- `crm_lead_links`), como os passos 4 e 5.
+  -- Gate: tests/invariants/cascata-lgpd-nao-encolhe.test.ts (catraca da lista).
+  update lead_field_proposals set
+    trecho = v_anon_label,
+    valor_proposto = null,
+    valor_anterior = null,
+    updated_at = now()
+  where organization_id = p_organization_id
+    and (
+      lead_id in (
+        select id from crm_leads
+         where organization_id = p_organization_id
+           and contact_id = p_contact_id
+      )
+      or lead_id in (
+        select lead_id from crm_lead_links
+         where target_kind = 'contact'
+           and target_id = p_contact_id
+           and organization_id = p_organization_id
+      )
+    )
+    -- Redação IDEMPOTENTE: a segunda anonimização não deve contar linha de novo
+    -- (o `already_anonymized` já barra, mas a condição também protege o rerun
+    -- parcial que a 0414 permite).
+    and (trecho is distinct from v_anon_label
+         or valor_proposto is not null
+         or valor_anterior is not null);
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('lead_field_proposals', v_count);
 
   -- 6. orders — PRESERVE values + status + timestamps. Strip personal fields from payload jsonb
   --    and replace customer_external_id with null (FK-safe; soft de-link). Keep contact_id null.
@@ -61169,6 +61204,180 @@ comment on column public.crm_metas.periodo is
 
 comment on column public.crm_metas.alvo is
   'Quanto se quer atingir no indicador, naquele mês: nesta fatia, a QUANTIDADE de vendas ganhas. É o denominador que a tela de Desempenho não tinha.';
+
+-- ---- fila de proposta de campo do CARD lida num documento (migration 0772, #3316) ----
+-- manifest: lead_field_proposals — a IA lê um documento (voucher, bilhete,
+-- apólice) e propõe valores SÓ para `pipeline.settings.fields`; ninguém grava
+-- `crm_leads.custom_fields` sem confirmação humana. A tabela nasce aqui porque
+-- quem instala pelo kit self-host aplica SÓ o baseline e ficaria sem ela.
+--
+-- A ORDEM não é cosmética: `fn_proteger_tabelas_de_organizacao()` (chamada mais
+-- abaixo, depois das proteções) varre tabela com `organization_id` e SEM RLS
+-- ligada e lhe dá `tenant_isolation_<t>_all` só-tenancy — a policy que
+-- `tests/invariants/rbac-config-ia-canais.test.ts` reprova em tabela NOVA.
+-- Nascer COM RLS ligado é o que faz o gerador pular esta tabela, como pula as
+-- vizinhas. O `revoke … from anon` é o par obrigatório: o `alter default
+-- privileges` do topo deste arquivo dá ALL a `anon` em tabela nova.
+--
+-- O passo 5b da cascata de anonimização, que redige `trecho`/valores, está no
+-- corpo VIGENTE de `fn_lgpd_cascade_redact_contact` (acima), e a catraca
+-- `tests/invariants/cascata-lgpd-nao-encolhe.test.ts` guarda a entrada.
+
+create table if not exists public.lead_field_proposals (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  lead_id uuid not null references public.crm_leads(id) on delete cascade,
+
+  -- QUAL campo do funil. A FORMA é a de `customFieldSchema.key` (letra inicial,
+  -- até 40, letras/números/underscore); o SERVIDOR decide se a chave está no
+  -- funil do negócio — o vocabulário é do dono, não desta tabela.
+  campo text not null,
+
+  -- O valor proposto e o que existia no card quando a proposta nasceu. jsonb,
+  -- porque o card é jsonb: número, booleano e lista chegam como são.
+  valor_proposto jsonb,
+  valor_anterior jsonb,
+
+  -- DE ONDE veio, para quem decide conferir em vez de acreditar. `trecho` é o
+  -- texto do documento daquele valor; sem ele a proposta nem nasce (régua do
+  -- servidor). `attachment_id` aponta para o documento ANEXADO AO NEGÓCIO
+  -- (`crm_lead_attachments`, #3229) — o arquivo que a pessoa abre na revisão.
+  trecho text,
+  attachment_id uuid references public.crm_lead_attachments(id) on delete set null,
+  proposed_by_agent_id uuid references public.ai_agents(id) on delete set null,
+  conversation_id uuid references public.conversations(id) on delete set null,
+
+  status text not null default 'pending',
+
+  -- Carimbados pelo BANCO, nunca pelo processo — mesma razão da 0123: instantes
+  -- comparados entre si vêm do mesmo relógio.
+  proposed_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  decided_at timestamptz,
+  decided_by_user_id uuid references auth.users(id) on delete set null,
+  -- Por que foi recusada. É o LAÇO DE RETORNO: proposta que o humano rejeita
+  -- diz onde a IA erra, e sem o motivo o sinal é só um número.
+  motivo_recusa text,
+  updated_at timestamptz not null default now()
+);
+
+comment on table public.lead_field_proposals is
+  'Campo do CARD que a IA leu num documento (voucher, bilhete, apólice) e propôs — aguardando confirmação humana (issue #3316). NUNCA grava em crm_leads.custom_fields sozinha: quem grava é a confirmação, pela porta de edição que já existe. SEMPRE com prazo: proposta que ninguém decide vira badge permanente, que simula atenção e adia a decisão.';
+
+-- ⚠️ O COMMENT DA COLUNA DO PRAZO, DENTRO DA GUARDA.
+--
+-- `comment on column` numa tabela ausente é ERRO, e não aviso: num clone que
+-- aplica só parte das migrations (ou num `update.sh` interrompido), este comando
+-- abortaria a migration inteira por causa de uma frase de documentação. A guarda
+-- `to_regclass` deixa o comentário ser o que ele é — documentação —, e não um
+-- portão de schema. (`comment on table` acima é seguro porque a tabela acabou de
+-- ser criada neste mesmo arquivo.)
+do $$
+begin
+  if to_regclass('public.lead_field_proposals') is not null then
+    comment on column public.lead_field_proposals.expires_at is
+      'Prazo OBRIGATÓRIO da proposta — e prazo que ninguém cobra é pior que prazo nenhum. É aplicado em QUATRO lugares: a leitura da fila (GET .../field-proposals filtra expires_at > now), a decisão (POST recusa decidir vencida), o nascimento (a vencida que bloqueia o índice único parcial é encerrada) e a varredura (cron contact-proposals-watcher → vencePropostasDeCampo). Vencida = expires_at <= now().';
+    comment on column public.lead_field_proposals.trecho is
+      'Trecho do documento de onde o valor saiu — o que permite CONFERIR em vez de acreditar. É texto do documento SOBRE A PESSOA: redigido pela cascata de anonimização (fn_lgpd_cascade_redact_contact, passo 5b), junto com valor_proposto e valor_anterior.';
+  end if;
+end $$;
+
+create index if not exists lead_field_proposals_org_lead_idx
+  on public.lead_field_proposals(organization_id, lead_id);
+
+-- O worker de vencimento varre por aqui (status + prazo), o mesmo desenho da
+-- fila de contatos.
+create index if not exists lead_field_proposals_prazo_idx
+  on public.lead_field_proposals(status, expires_at);
+
+-- A FORMA da chave do funil (`customFieldSchema.key`): letra inicial, até 40
+-- caracteres, letras/números/underscore. Só a forma — a decisão de "isto está
+-- no funil?" é do servidor, que lê o funil do próprio negócio.
+alter table public.lead_field_proposals
+  drop constraint if exists lead_field_proposals_campo_check;
+alter table public.lead_field_proposals
+  add constraint lead_field_proposals_campo_check check (campo ~ '^[A-Za-z][A-Za-z0-9_]{0,39}$');
+
+alter table public.lead_field_proposals
+  drop constraint if exists lead_field_proposals_status_check;
+alter table public.lead_field_proposals
+  add constraint lead_field_proposals_status_check check (
+    status = any (array['pending', 'accepted', 'dismissed', 'expired']::text[])
+  );
+
+-- Prazo no futuro: proposta que nasce vencida vira item de caixa no primeiro
+-- tick e ninguém entende de onde veio.
+alter table public.lead_field_proposals
+  drop constraint if exists lead_field_proposals_prazo_no_futuro;
+alter table public.lead_field_proposals
+  add constraint lead_field_proposals_prazo_no_futuro check (expires_at > proposed_at);
+
+-- Decisão e decisor andam juntos. Status decidido sem `decided_at` é registro
+-- que não sabe dizer quando aconteceu — e é essa pergunta que a auditoria faz.
+alter table public.lead_field_proposals
+  drop constraint if exists lead_field_proposals_decisao_datada;
+alter table public.lead_field_proposals
+  add constraint lead_field_proposals_decisao_datada check (
+    (status = 'pending' and decided_at is null)
+    or (status <> 'pending' and decided_at is not null)
+  );
+
+-- ⚠️ ESTE ÍNDICE É A IDEMPOTÊNCIA — não é otimização.
+--
+-- O modelo vai reler o MESMO voucher em turnos seguidos. Sem ele, dez leituras
+-- viram dez linhas e a tela de revisão vira coluna de repetições. `where not
+-- exists` no código NÃO substitui: é check-then-act, e dois turnos
+-- concorrentes passam pela janela — o mesmo defeito que a 0027 matou nos
+-- contatos. PARCIAL: propostas decididas ficam como histórico e não bloqueiam
+-- a próxima leitura (o funil pode ter mudado, e o voucher novo é outro).
+create unique index if not exists uq_lead_field_proposals_uma_viva
+  on public.lead_field_proposals (organization_id, lead_id, campo)
+  where status = 'pending';
+
+alter table public.lead_field_proposals enable row level security;
+
+-- `anon` NÃO lê a fila: o `alter default privileges … grant all on tables to
+-- anon` do baseline alcança toda tabela nova, e a anon key vai para o browser.
+-- O `fn_proteger_tabelas_de_organizacao()` não cobre este caso porque ele só
+-- age em tabela SEM RLS — e esta nasce com RLS ligada (de propósito, para não
+-- receber a policy `for all` só-tenancy).
+revoke all on public.lead_field_proposals from anon;
+
+-- Leitura e escrita amarradas à visibilidade do NEGÓCIO pai: o `exists` em
+-- `crm_leads` roda sob a RLS dela, então quem não enxerga o negócio (escopo
+-- "só os seus") não enxerga nem mexe nas propostas dele. Escrita: `agent` para
+-- cima também na RLS — as rotas já exigem `agent`, e um `viewer` falando
+-- direto com o PostgREST não decide proposta nenhuma. `drop` + `create` com o
+-- MESMO nome, como a 0731: policies permissivas somam (OR), e uma esquecida
+-- reabriria o que as novas fecham.
+drop policy if exists tenant_isolation_lead_field_proposals_select on public.lead_field_proposals;
+create policy tenant_isolation_lead_field_proposals_select on public.lead_field_proposals
+  for select to authenticated
+  using (
+    organization_id in (select public.fn_user_org_ids())
+      and exists (
+        select 1 from public.crm_leads l
+         where l.id = lead_field_proposals.lead_id
+           and l.organization_id = lead_field_proposals.organization_id
+      )
+  );
+
+drop policy if exists tenant_isolation_lead_field_proposals_write on public.lead_field_proposals;
+create policy tenant_isolation_lead_field_proposals_write on public.lead_field_proposals
+  for all to authenticated
+  using (
+    organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'agent')
+      and exists (
+        select 1 from public.crm_leads l
+         where l.id = lead_field_proposals.lead_id
+           and l.organization_id = lead_field_proposals.organization_id
+      )
+  )
+  with check (
+    organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'agent')
+  );
 
 -- ---- módulos instalados são reaplicados, depois de toda tabela do núcleo (migration 0340) ----
 --

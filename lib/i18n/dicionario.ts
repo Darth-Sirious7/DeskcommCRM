@@ -280,6 +280,15 @@ export const DICIONARIO: Traducoes = {
   "Conflitos": {"es": "Conflictos"},
   "CSV ou XLSX com empresa, CNPJ, pessoa, cargo, telefone e e-mail.": {"es": "CSV o XLSX con empresa, CNPJ, persona, cargo, teléfono y correo."},
   "Dados cadastrais": {"es": "Datos de registro"},
+  "Dados lidos no documento": { es: "Datos leídos en el documento" },
+  "Não foi possível carregar os dados do documento agora.": {
+    es: "No fue posible cargar los datos del documento ahora.",
+  },
+  "Nada foi gravado no card ainda. Confira o trecho do documento e decida campo a campo.": {
+    es: "Nada se ha guardado en la tarjeta todavía. Revisa el fragmento del documento y decide campo por campo.",
+  },
+  "Abrir o documento": { es: "Abrir el documento" },
+  "Corrigir": { es: "Corregir" },
   "Decisores e contatos — telefones ficam em Contatos.": {"es": "Decisores y contactos: los teléfonos quedan en Contactos."},
   "Decisores e contatos ligados a empresas, com vários telefones.": {"es": "Decisores y contactos vinculados a empresas, con varios teléfonos."},
   "Enriquecendo…": {"es": "Completando…"},
