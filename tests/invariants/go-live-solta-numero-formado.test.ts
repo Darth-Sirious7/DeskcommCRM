@@ -14,7 +14,7 @@ import { WARMUP_PULADO } from "@/lib/ai/pacing-knobs";
 
 /**
  * A trava de número novo sai sozinha, na atualização, do número que já está
- * formado (migration 0767, PR #2327, doc 109 opção A) — e de nenhum outro.
+ * formado (migration 0793, PR #2327, doc 109 opção A) — e de nenhum outro.
  *
  * Invariante porque a regra é SQL (`fn_go_live_solta_numero_formado`, no
  * `baseline.sql` que o kit aplica) e porque o que ela promete é ser a MESMA
@@ -55,10 +55,10 @@ async function numero(opts: {
   await pool.query(
     `insert into channel_sessions (id, organization_id, waha_session_name, webhook_secret_encrypted, status)
      values ($1, $2, $3, '\\x00'::bytea, 'WORKING')`,
-    [sessao, org, `sessao-0767-${seq}`],
+    [sessao, org, `sessao-0793-${seq}`],
   );
   await pool.query(
-    `insert into contacts (id, organization_id, name, phone_number) values ($1, $2, 'Lead 0767', $3)`,
+    `insert into contacts (id, organization_id, name, phone_number) values ($1, $2, 'Lead 0793', $3)`,
     [contato, org, `+55119000${String(seq).padStart(5, "0")}`],
   );
   await pool.query(
@@ -137,8 +137,8 @@ const sessoes: Record<string, string> = {};
 beforeAll(async () => {
   for (const org of [ORG, ORG_B]) {
     await pool.query(
-      `insert into organizations (id, slug, legal_name, display_name) values ($1, $2, 'Org 0767 LTDA', 'Org 0767')`,
-      [org, `org-0767-${org.slice(-1)}`],
+      `insert into organizations (id, slug, legal_name, display_name) values ($1, $2, 'Org 0793 LTDA', 'Org 0793')`,
+      [org, `org-0793-${org.slice(-1)}`],
     );
   }
   sessoes.idade = await numero({ dias: 40 });
@@ -253,7 +253,7 @@ describe("o item da trava de número novo na Central (circuit.ts)", () => {
     const fresco = id((seq += 1));
     await pool.query(
       `insert into channel_sessions (id, organization_id, waha_session_name, webhook_secret_encrypted, status)
-       values ($1, $2, 'sessao-0767-fresca', '\\x00'::bytea, 'WORKING')`,
+       values ($1, $2, 'sessao-0793-fresca', '\\x00'::bytea, 'WORKING')`,
       [fresco, ORG],
     );
     await pool.query(

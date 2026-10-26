@@ -60280,8 +60280,8 @@ grant execute on function public.fn_casos_parados_para_lembrar(integer) to servi
 
 notify pgrst, 'reload schema';
 
--- ---- #2327: a trava de número novo sai sozinha do número já formado (migration 0767) ----
--- Ver o cabeçalho da migration 0767 (doc 109, opção A). Cria função, então fica
+-- ---- #2327: a trava de número novo sai sozinha do número já formado (migration 0793) ----
+-- Ver o cabeçalho da migration 0793 (doc 109, opção A). Cria função, então fica
 -- ANTES da VARREDURA anon. Idempotente: `create or replace`; a transição roda
 -- uma vez por instalação (marca no audit log), e repetir a função não muda nada.
 create or replace function public.fn_go_live_solta_numero_formado()
