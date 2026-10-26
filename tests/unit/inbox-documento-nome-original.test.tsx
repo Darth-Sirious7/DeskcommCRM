@@ -49,6 +49,28 @@ describe("mediaFileLabel com nome original", () => {
 });
 
 describe("extensaoDoDocumento", () => {
+  it.each([
+    ["application/vnd.ms-excel", "XLS"],
+    ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "XLSX"],
+    ["application/vnd.openxmlformats-officedocument.wordprocessingml.document", "DOCX"],
+    ["application/vnd.openxmlformats-officedocument.presentationml.presentation", "PPTX"],
+    ["application/pdf", "PDF"],
+    ["APPLICATION/VND.OPENXMLFORMATS-OFFICEDOCUMENT.SPREADSHEETML.SHEET; charset=utf-8", "XLSX"],
+  ])("antes do Storage, %s é reconhecido como %s", (mime, extensao) => {
+    expect(extensaoDoDocumento(mime, null)).toBe(extensao);
+    expect(extensaoDoDocumento(mime, "org/conv/m.bin")).toBe(extensao);
+  });
+
+  it("MIME desconhecido não vira extensão inventada", () => {
+    expect(extensaoDoDocumento("application/x-formato-desconhecido", null)).toBeNull();
+    expect(mediaFileLabel("application/x-formato-desconhecido", null)).toBe("Arquivo");
+  });
+
+  it("path persistido continua sendo a fonte antes do MIME", () => {
+    expect(extensaoDoDocumento("application/octet-stream", "org/conv/m.xlsx")).toBe("XLSX");
+    expect(extensaoDoDocumento("application/pdf", "org/conv/m.xls")).toBe("XLS");
+  });
+
   it("diz a extensão das três do relato, do path e do mime", () => {
     expect(extensaoDoDocumento("application/vnd.ms-excel", "org/conv/m.xls")).toBe("XLS");
     expect(
@@ -85,6 +107,13 @@ describe("nomeOriginalDoDocumento", () => {
 });
 
 describe("DocumentCard", () => {
+  it("XLSX sem nome nem path mostra o fallback legível antes do worker", () => {
+    render(<DocumentCard messageId="mime-only" mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      sizeBytes={2048} storagePath={null} isOutbound={false} />);
+    expect(screen.getByText("Documento XLSX")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^Documento XLSX \(2,0 KB\)$/ })).toHaveAttribute("href", "/api/v1/messages/mime-only/media");
+  });
+
   const NOME_LONGO = "Relatorio_Vendas_Outubro_Consolidado_Por_Regiao_Versao_Final.xlsx";
 
   it("com nome no payload, mostra o NOME (não só a extensão)", () => {

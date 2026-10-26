@@ -44,14 +44,14 @@ vi.mock("@/lib/channels", async () => {
     ...actual,
     getAdapter: vi.fn(),
     // O ref da sessão é só o endereço do canal; o adapter é quem busca os bytes.
-    resolveSessionRef: vi.fn(() => ({ provider: "waha", sessionName: "sessao-de-teste" })),
+    resolveSessionRef: vi.fn(() => ({ provider: actual.DEFAULT_CHANNEL_PROVIDER, sessionName: "sessao-de-teste" })),
   };
 });
 
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { orgAtivaDaApi } from "@/lib/auth/require-role";
 import { loadAuthUser } from "@/lib/auth/server";
-import { getAdapter } from "@/lib/channels";
+import { DEFAULT_CHANNEL_PROVIDER, getAdapter } from "@/lib/channels";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -118,7 +118,7 @@ function adminFake() {
   const sessao = {
     select: () => sessao,
     eq: () => sessao,
-    maybeSingle: async () => ({ data: { provider: "waha" }, error: null }),
+    maybeSingle: async () => ({ data: { provider: DEFAULT_CHANNEL_PROVIDER }, error: null }),
   };
   return {
     from: () => sessao,

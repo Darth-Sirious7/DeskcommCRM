@@ -4,6 +4,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { createClient } from "@supabase/supabase-js";
+import { strToU8, zipSync } from "fflate";
 import { test, expect, type Page } from "./helpers/test";
 
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
@@ -743,6 +744,77 @@ test.describe("atender pelo celular", () => {
       await page.screenshot({ path: path.join(EVIDENCE, "b6-teclado-sem-painel.png") });
     } finally {
       await page.setViewportSize({ width: LARGURA, height: ALTURA });
+    }
+  });
+});
+
+
+// Mesma bancada real de mídia do B-5, sem dublar rota, Storage ou download.
+test.describe("documentos recebidos: rótulo e arquivo salvo (#2613)", () => {
+  // URLs assinadas não devem ir para traces/vídeos de artefato. Só capturamos o Inbox.
+  test.use({ trace: "off", video: "off" });
+
+  test("XLSX/PDF preservam nome com acento e bytes; MIME-only tem rótulo legível", async ({ page }) => {
+    const partes = {
+      "[Content_Types].xml": '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>',
+      "_rels/.rels": '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',
+      "xl/workbook.xml": '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Controle" sheetId="1" r:id="rId1"/></sheets></workbook>',
+      "xl/_rels/workbook.xml.rels": '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>',
+      "xl/worksheets/sheet1.xml": '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Controle sintético</t></is></c></row></sheetData></worksheet>',
+    };
+    const xlsx = Buffer.from(zipSync(Object.fromEntries(Object.entries(partes).map(([k, v]) => [k, strToU8(v)]))));
+    const arquivos = [
+      { nome: "Relatório sintético.xlsx", ext: "xlsx", mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", bytes: xlsx },
+      { nome: "Orçamento sintético.pdf", ext: "pdf", mime: "application/pdf", bytes: fs.readFileSync(path.join(process.cwd(), "tests/fixtures/sample-text.pdf")) },
+    ];
+    const mensagens: string[] = [];
+    const caminhos: string[] = [];
+    try {
+      for (const arquivo of arquivos) {
+        const id = randomUUID();
+        const caminho = `${orgId}/${conversa}/${id}.${arquivo.ext}`;
+        const upload = await db.storage.from("whatsapp-media").upload(caminho, arquivo.bytes, { contentType: arquivo.mime });
+        expect(upload.error).toBeNull();
+        caminhos.push(caminho);
+        mensagens.push(await insere("messages", {
+          id, organization_id: orgId, conversation_id: conversa, contact_id: contato, channel_session_id: canal,
+          type: "document", direction: "inbound", status: "received", sent_at: new Date().toISOString(),
+          media_mime: arquivo.mime, media_storage_path: caminho, media_size_bytes: arquivo.bytes.length,
+          metadata: { media_filename: arquivo.nome }, external_id: `documento-${id}`,
+        }));
+      }
+      mensagens.push(await insere("messages", {
+        organization_id: orgId, conversation_id: conversa, contact_id: contato, channel_session_id: canal,
+        type: "document", direction: "inbound", status: "received", sent_at: new Date().toISOString(),
+        media_mime: arquivos[0]!.mime, media_storage_path: null, metadata: {}, external_id: `mime-only-${SUFIXO}`,
+      }));
+      await entrar(page);
+      await page.goto(`/app/inbox?filter=all&id=${conversa}`);
+      await esperarConversa(page);
+      await expect(page.getByText("Documento XLSX", { exact: true })).toBeVisible();
+      for (const [i, arquivo] of arquivos.entries()) {
+        await expect(page.getByText(arquivo.nome, { exact: true })).toBeVisible();
+        const baixar = page.getByRole("link", { name: new RegExp(`^Baixar ${arquivo.nome.replace(/\./g, "\\.")}`) });
+        await expect(baixar).toHaveAttribute("href", `/api/v1/messages/${mensagens[i]}/media?baixar=1`);
+        // Controle do preview pela rota real: não pede o Content-Disposition de download.
+        const preview = await page.request.get(`/api/v1/messages/${mensagens[i]}/media`, { maxRedirects: 0 });
+        expect(preview.status()).toBe(302);
+        expect(new URL(preview.headers()["location"]!).searchParams.has("download")).toBe(false);
+        const aguardando = page.waitForEvent("download");
+        await baixar.tap();
+        const download = await aguardando;
+        expect(download.suggestedFilename()).toBe(arquivo.nome);
+        expect((await download.failure()) === null).toBe(true);
+        const salvo = await download.path();
+        expect(Boolean(salvo)).toBe(true);
+        // Booleano evita despejar bytes ou URL assinada em caso de falha.
+        expect(fs.readFileSync(salvo!).equals(arquivo.bytes)).toBe(true);
+      }
+      fs.mkdirSync("evidence/documento-3511-01a178b3", { recursive: true });
+      await page.screenshot({ path: "evidence/documento-3511-01a178b3/documentos-no-inbox.png" });
+    } finally {
+      if (mensagens.length) expect((await db.from("messages").delete().eq("organization_id", orgId).in("id", mensagens)).error).toBeNull();
+      if (caminhos.length) expect((await db.storage.from("whatsapp-media").remove(caminhos)).error).toBeNull();
     }
   });
 });

@@ -3976,3 +3976,22 @@ Realtime perdia o toast; ausência de botão durante reload ainda vazio não pro
 estado. O runner foi corrigido e as tentativas/capturas antigas foram conservadas
 com esses limites. O manager original não foi promovido, os guards do produto
 não foram alterados e os recursos exclusivos foram removidos ao fim.
+
+
+## Nome e rótulo do documento recebido — adaptação #3511 (2026-10-26)
+
+**Preparado; não executado nesta sessão no navegador/Storage.** O caso de
+`atender-pelo-celular.spec.ts` reutiliza a conta agent e a conversa sintética do
+spec. Upload real no bucket e mensagens próprias preparam XLSX/PDF com nomes
+acentuados; o clique real no download deve preservar `suggestedFilename` e os
+bytes completos. A rota de preview é relida sem pedir download. Uma terceira
+mensagem sem nome/path deve mostrar `Documento XLSX` a partir do MIME canônico.
+O CI já executa esse spec na parte 6; a distribuição não mudou.
+
+A captura só ocorre após todas as assertivas, em
+`evidence/documento-3511-01a178b3/`, recolhida pelo artefato de sucesso existente.
+Ainda não há captura ou PASS visual declarado. O caso desliga trace/vídeo para
+não arquivar URLs assinadas; usa apenas nomes e bytes sintéticos e limpa seus
+objetos ao terminar. Não mede download pela janela anterior à persistência do
+worker, nem um viewer de PDF/aplicativo externo; essa janela permanece coberta
+pela unidade da rota e exige observação em bancada antes do aceite final.

@@ -3,6 +3,7 @@
  * A mídia é SEMPRE servida por /api/v1/messages/{id}/media (Onda 0) —
  * o browser segue o 302 pra signed URL; nunca usar media_url do WAHA.
  */
+import { extFromMime } from "@/lib/messaging/media/types";
 import { nomeOriginalDaMensagem } from "@/lib/messaging/media/nome-de-arquivo";
 
 export function mediaSrc(messageId: string): string {
@@ -46,8 +47,8 @@ export function formatBytes(bytes: number | null | undefined): string {
 /**
  * A extensão do documento (`PDF`, `XLSX`), ou `null` quando não há como dizer.
  *
- * Sai do path quando ele a tem (é o que a ingestão gravou) e cai no sufixo do
- * mime quando não. `bin`/`octet-stream` não são extensão: são a AUSÊNCIA de
+ * Sai do path quando ele a tem (é o que a ingestão gravou) e cai no mapa
+ * canônico de MIME quando não. `bin`/`octet-stream` não são extensão: são a AUSÊNCIA de
  * uma, e devolver `BIN` seria inventar um formato que ninguém mandou.
  */
 export function extensaoDoDocumento(
@@ -56,14 +57,13 @@ export function extensaoDoDocumento(
 ): string | null {
   const ext = storagePath?.split(".").pop()?.toLowerCase();
   if (ext && ext !== "bin") return ext.toUpperCase();
-  const sub = mime?.split(";")[0]?.split("/")[1]?.toLowerCase();
-  if (sub && !["octet-stream", "bin"].includes(sub)) return sub.toUpperCase();
-  return null;
+  const peloMime = extFromMime(mime ?? "");
+  return peloMime === "bin" ? null : peloMime.toUpperCase();
 }
 
 /**
  * Rótulo do arquivo: NOME ORIGINAL quando o payload o trouxer (#2613) >
- * extensão do path ("PDF") > sufixo do mime > "Arquivo".
+ * extensão do path ("PDF") > mapa canônico de MIME > "Arquivo".
  *
  * O nome vem do terceiro parâmetro, nunca do path: `media_storage_path` é
  * canônico (`{org}/{conversa}/{mensagem}.{ext}`) e apaga o nome que o cliente
