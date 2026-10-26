@@ -7580,9 +7580,53 @@ export const DICIONARIO: Traducoes = {
   "Para onde vai a resposta do cliente. Deixe em branco para usar o endereço do sistema.": {
     es: "A dónde va la respuesta del cliente. Déjalo en blanco para usar la dirección del sistema.",
   },
-  "O envio continua saindo pelo servidor de e-mail do sistema: o endereço do remetente (o domínio) não muda, e um servidor de e-mail próprio da sua empresa ainda não é configurável por aqui.": {
-    es: "El envío sigue saliendo por el servidor de correo del sistema: la dirección del remitente (el dominio) no cambia, y un servidor de correo propio de tu empresa todavía no es configurable aquí.",
+  "Sem uma conta Resend conectada, o envio continua saindo pelo servidor de e-mail do sistema — o endereço do remetente (o domínio) não muda. Os e-mails do sistema (convites, recuperação de senha, LGPD) seguem pelo remetente do sistema mesmo com a conta conectada.": {
+    es: "Sin una cuenta Resend conectada, el envío sigue saliendo por el servidor de correo del sistema — la dirección del remitente (el dominio) no cambia. Los correos del sistema (invitaciones, recuperación de contraseña, LGPD) siguen por el remitente del sistema incluso con la cuenta conectada.",
   },
+  "Conta Resend da sua empresa (opcional)": {
+    es: "Cuenta Resend de tu empresa (opcional)",
+  },
+  "Se você conectar sua própria conta Resend, os e-mails das automações saem pelo SEU domínio e os registros de entrega ficam na sua conta. Os e-mails do sistema (convites, recuperação de senha, LGPD) continuam pelo remetente do sistema.": {
+    es: "Si conectas tu propia cuenta Resend, los correos de las automatizaciones salen por TU dominio y los registros de entrega quedan en tu cuenta. Los correos del sistema (invitaciones, recuperación de contraseña, LGPD) siguen por el remitente del sistema.",
+  },
+  "Nenhuma conta Resend conectada.": { es: "Ninguna cuenta Resend conectada." },
+  "Chave da API da Resend": { es: "Clave de API de Resend" },
+  "E-mail de envio no seu domínio": { es: "Correo de envío en tu dominio" },
+  "O domínio deste endereço precisa estar verificado na sua conta Resend. Confiro na conexão.": {
+    es: "El dominio de esta dirección debe estar verificado en tu cuenta Resend. Se comprueba al conectar.",
+  },
+  "Conectar conta Resend": { es: "Conectar cuenta Resend" },
+  "Conta Resend conectada. Os e-mails das automações saem por ela agora.": {
+    es: "Cuenta Resend conectada. Los correos de las automatizaciones salen por ella ahora.",
+  },
+  "Conta Resend desconectada. Os e-mails voltam para o remetente do sistema.": {
+    es: "Cuenta Resend desconectada. Los correos vuelven al remitente del sistema.",
+  },
+  "O domínio {dominio} ainda não está verificado na sua conta Resend. Verifique os registros dele no painel da Resend e tente de novo.": {
+    es: "El dominio {dominio} aún no está verificado en tu cuenta Resend. Verifica sus registros en el panel de Resend e inténtalo de nuevo.",
+  },
+  "Confira a chave e o endereço de e-mail.": {
+    es: "Comprueba la clave y la dirección de correo.",
+  },
+  "Sua sessão expirou. Entre de novo para conectar.": {
+    es: "Tu sesión expiró. Entra de nuevo para conectar.",
+  },
+  "Só quem administra esta empresa pode conectar uma conta de e-mail.": {
+    es: "Solo quien administra esta empresa puede conectar una cuenta de correo.",
+  },
+  "A Resend não aceitou esta chave. Confira se você copiou a chave da API dela.": {
+    es: "Resend no aceptó esta clave. Comprueba si copiaste la clave de su API.",
+  },
+  "Não consegui guardar esta chave em segurança. Fale com quem instalou o sistema.": {
+    es: "No pude guardar esta clave de forma segura. Habla con quien instaló el sistema.",
+  },
+  "A conta não chegou ao banco — nada foi conectado. Tente de novo.": {
+    es: "La cuenta no llegó a la base de datos — nada se conectó. Inténtalo de nuevo.",
+  },
+  "Não consegui conectar a conta agora. Tente de novo.": {
+    es: "No pude conectar la cuenta ahora. Inténtalo de nuevo.",
+  },
+  "Não consegui conectar a conta agora.": { es: "No pude conectar la cuenta ahora." },
   "Do jeito que está, esta cor não chegaria à tela: o sistema continuaria com a cor que já usa.": {
     es: "Tal como está, este color no se mostraría en pantalla: el sistema seguiría usando el color que ya tiene.",
   },
