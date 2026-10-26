@@ -35,7 +35,7 @@
 
 **Files:** Create `curso/demonstracoes/{clinicas,e-commerce,imobiliarias,seguros,consorcio,infoprodutos,advocacia,contabilidade,educacao,servicos}.json`; modify `curso/jornada.test.ts` para integridade do catálogo real.
 
-**Interfaces:** consumir `Nicho` da tarefa 1. Cada nicho tem três jornadas e cada jornada pelo menos quatro cenas. Começar como `roteiro-demonstrativo` e explicar que as fotos mostram telas reais com dados fictícios e que o atendimento é um roteiro. Não afirmar prova do motor sem evidência da tarefa 3.
+**Interfaces:** consumir `Nicho` da tarefa 1. Cada nicho tem três jornadas e cada jornada pelo menos quatro cenas. IDs de jornada são únicos no catálogo inteiro, para as chaves de captura não colidirem; usar prefixo do nicho. Começar como `roteiro-demonstrativo` e explicar que as fotos mostram telas reais com dados fictícios e que o atendimento é um roteiro. Não afirmar prova do motor sem evidência da tarefa 3.
 
 - [ ] Ler lições reais e fontes canônicas da feature que cada jornada apresenta. Usar capturas existentes para ilustrar recursos enquanto as novas fotos são preparadas; nunca descrever a pessoa/empresa da foto como se já fosse a do roteiro.
 - [ ] Redigir três histórias distintas por nicho, com começo, qualificação, ação e continuidade. Variar entre agenda, funil, tarefa, atendimento humano, caso e integração externa; evitar trinta paráfrases do mesmo texto.
