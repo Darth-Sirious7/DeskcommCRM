@@ -3977,19 +3977,25 @@ estado. O runner foi corrigido e as tentativas/capturas antigas foram conservada
 com esses limites. O manager original não foi promovido, os guards do produto
 não foram alterados e os recursos exclusivos foram removidos ao fim.
 
-## Rascunho da resposta e documento no cadastro — PRs #3490 / #3498 (2026-10-26)
+## Lote de correções de acesso, documento e atendimento (2026-10-26)
 
-**Preparado, ainda NÃO EXECUTADO no navegador.** Os casos foram acrescentados a
-specs que já rodam no CI; este registro não declara PASS nem inventa captura.
+**Preparado; NÃO EXECUTADO neste lote no navegador nem em Postgres local.**
+Os specs existentes no CI usam usuários sintéticos, app e banco reais. O CI
+publica a evidência nova em `evidence/lote-bugfixes-01a178b3/` somente se a parte
+passar. Este documento não afirma que capturas já existam.
 
-| Ação real | Spec | Evidência prevista, somente quando executar |
-|---|---|---|
-| Atendente assume uma conversa com mensagem recebida, escreve rascunho, toca a resposta rápida desligada e conserva o texto; apagar religa a barra e o `/` continua substituível | `inbox-responder-citando.spec.ts`, caso #3354 | `testInfo.outputPath`: `rascunho-preservado.png`, `resposta-preparada-no-campo.png` + trace |
-| Gerente abre Novo contato, digita documento inválido, sai do campo e vê o erro ligado por aria; tentativa inválida não chega à API, corrigir permite criar; outro contato sem documento continua criando | `contato-salva-email.spec.ts`, caso #3496 | `testInfo.outputPath`: `documento-invalido-junto-do-campo.png`, `contatos-criados-apos-validacao.png` + trace |
+| Jornada | Instrumento preparado |
+|---|---|
+| Rascunho preservado, apagar religa, `/` substitui e recurso com imagem abre prévia sem enviar | `inbox-responder-citando.spec.ts`, upload real no Storage e contagem de mensagens |
+| CPF inválido após blur, corrigir e criar; vazio opcional; organização PT confere NIF em vez de CPF | `contato-salva-email.spec.ts`, cliques reais e POST do formulário |
+| Dois CNPJs informados inválidos não criam empresas, pessoas ou contatos de mesmo nome | `importar-leads-planilha.spec.ts`, API multipart real, lote/linhas e tabelas relidas |
+| Em Só os seus, abrir conversa livre assume; repetir abertura e dois claims 409 não repetem auditoria, evento nem atividade | `inbox-responder-citando.spec.ts`, sessão agent real e quatro contagens no banco |
+| Exceção SQL só para claim próprio com CAS, transferência recusada, dois tenants e dois claims concorrentes com um vencedor | `assumir-conversa-livre-claim-cas.test.ts`, invariante Postgres, sem alterar a cerca de transferência anterior |
+| Conta nova por convite, alternar cadastro/login sem perder token, confirmar no Mailpit e entrar só na equipe convidada | `invite-lifecycle.spec.ts`, conta ausente antes, token_hash de confirmação, assinatura adulterada não preenche e-mail, vínculo agent único e convite aceito; até quatro capturas |
 
-As precondições usam conta e banco reais de teste e a resposta rápida é criada pela
-rota autenticada. Nenhum request é dublado. O aceite visual exige executar estes
-casos sobre build de produção e baseline fresco, abrir os traces/capturas e atualizar
-este estado com o head realmente medido. Não cobre nesta rodada mídia durante
-download, interação por toque em aparelho real ou cadastro sob perfil não brasileiro;
-a regra de país continua coberta pelos testes de componente existentes.
+Os registros anteriores de #3475 permanecem acima com seu head efetivamente
+medido. Não provam este lote. As ofertas de campanha são capacidade nova do
+#3503 e permanecem fora desta integração; não há receiver LLM ou prova de MCP
+neste recorte. Não houve execução de build, typecheck, DB, Docker ou browser local.
+A aprovação continua dependendo dos checks obrigatórios e da inspeção dos
+artefatos produzidos no head do lote.

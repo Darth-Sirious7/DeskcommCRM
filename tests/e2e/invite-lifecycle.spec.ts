@@ -25,6 +25,8 @@ import * as path from "node:path";
 import { test, expect, type Page } from "./helpers/test";
 import { createClient } from "@supabase/supabase-js";
 
+import { waitForEmail, extractAuthConfirmLink, seguirLinkDeAcesso, uniqueEmail } from "./helpers/auth";
+
 import { signInviteToken } from "../../lib/auth/invite-token";
 import { generateTotp, msUntilNextTotpWindow } from "./utils/totp";
 
@@ -559,3 +561,81 @@ function tokenPath(acceptUrl: string): string {
   const t = tokenOf(acceptUrl);
   return `/team/accept-invite/${t}`;
 }
+
+
+// Conta realmente inexistente: não substitui o cadastro por admin.createUser.
+test("convite novo: alternar cadastro/login, confirmar no Mailpit e entrar só na equipe convidada", async ({ browser, baseURL }) => {
+  test.setTimeout(180_000);
+  const email = uniqueEmail("convite-lote");
+  const senha = "SenhaForte!123";
+  const antes = await svc.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  expect(antes.error).toBeNull();
+  expect(antes.data.users.some((u) => u.email === email)).toBe(false);
+  const adminCtx = await browser.newContext();
+  const adminPage = await adminCtx.newPage();
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  let usuarioId: string | undefined;
+  try {
+    await loginAdminTotp(adminPage);
+    const { acceptUrl, failed } = await issueInvite(adminPage, email, "agent");
+    expect(failed).toEqual([]);
+    const token = tokenOf(acceptUrl);
+    expect(Boolean(token)).toBe(true);
+    const adulterado = `${token.slice(0, -1)}${token.endsWith("A") ? "B" : "A"}`;
+    // Query de e-mail não tem autoridade, assinatura adulterada não preenche.
+    await page.goto(`/login?next=${encodeURIComponent(`/team/accept-invite/${adulterado}`)}&email=${encodeURIComponent(email)}`);
+    await expect(page.getByLabel("Email")).toHaveValue("");
+
+    await page.goto(`/team/accept-invite/${token}`);
+    await page.getByRole("link", { name: "Criar minha conta", exact: true }).click();
+    await expect(page.getByLabel("Nome da empresa")).toHaveCount(0);
+    await expect(page.getByLabel("Email")).toHaveValue(email);
+    fs.mkdirSync("evidence/lote-bugfixes-01a178b3", { recursive: true });
+    await page.screenshot({ path: "evidence/lote-bugfixes-01a178b3/convite-01-cadastro.png" });
+    await page.getByRole("link", { name: "Entrar", exact: true }).click();
+    await expect(page.getByLabel("Email")).toHaveValue(email);
+    expect(new URL(page.url()).searchParams.get("next") === `/team/accept-invite/${token}`).toBe(true);
+    await page.screenshot({ path: "evidence/lote-bugfixes-01a178b3/convite-02-login-preenchido.png" });
+    await page.getByRole("link", { name: "Criar conta", exact: true }).click();
+    expect(new URL(page.url()).searchParams.get("invite") === token).toBe(true);
+    await page.getByLabel("Seu nome").fill("Pessoa convidada sintética");
+    await page.getByLabel("Senha", { exact: true }).fill(senha);
+    await page.getByLabel("Confirmar senha").fill(senha);
+    await page.getByRole("button", { name: "Criar conta", exact: true }).click();
+    await expect(page.getByText("Confirme seu e-mail")).toBeVisible();
+    await page.screenshot({ path: "evidence/lote-bugfixes-01a178b3/convite-03-confirmar-email.png" });
+
+    const html = await waitForEmail(email, "Confirme seu e-mail");
+    const link = extractAuthConfirmLink(html, baseURL!);
+    // Confirmação usa o token_hash real entregue ao endereço do convite.
+    expect(Boolean(new URL(link).searchParams.get("token_hash"))).toBe(true);
+    await seguirLinkDeAcesso(page, link);
+    await expect(page).toHaveURL(/\/app\//);
+    const depois = await svc.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    expect(depois.error).toBeNull();
+    const usuario = depois.data.users.find((u) => u.email === email);
+    expect(Boolean(usuario?.email_confirmed_at)).toBe(true);
+    usuarioId = usuario!.id;
+    const vinculos = await svc.from("user_organizations").select("organization_id,role").eq("user_id", usuarioId).is("revoked_at", null);
+    expect(vinculos.error).toBeNull();
+    expect(vinculos.data).toEqual([{ organization_id: inv.org_id, role: "agent" }]);
+    const convite = await svc.from("team_invites").select("accepted_at,accepted_by").eq("organization_id", inv.org_id).eq("email", email).single();
+    expect(convite.error).toBeNull();
+    expect(Boolean(convite.data?.accepted_at)).toBe(true);
+    expect(convite.data?.accepted_by).toBe(usuarioId);
+    // Cookie real, revalidado por getUser() na rota autenticada.
+    expect((await page.request.get("/api/v1/contacts?limit=1")).status()).toBe(200);
+    await page.screenshot({ path: "evidence/lote-bugfixes-01a178b3/convite-04-equipe-certa.png" });
+  } finally {
+    // Se falhar depois do signup, acha só a conta sintética deste caso para limpar.
+    if (!usuarioId) {
+      const criados = await svc.auth.admin.listUsers({ page: 1, perPage: 1000 });
+      usuarioId = criados.data.users.find((u) => u.email === email)?.id;
+    }
+    expect((await svc.from("team_invites").delete().eq("organization_id", inv.org_id).eq("email", email)).error).toBeNull();
+    if (usuarioId) expect((await svc.auth.admin.deleteUser(usuarioId)).error).toBeNull();
+    await ctx.close();
+    await adminCtx.close();
+  }
+});

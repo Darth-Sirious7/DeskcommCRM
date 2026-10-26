@@ -46,7 +46,7 @@ export const dynamic = "force-dynamic";
  * chamada do diálogo do Inbox): se a conversa reaberta já tinha dono — o caso
  * de um colega —, o RPC devolve zero linhas e NADA acontece. Não se rouba
  * atendimento de ninguém, e a conversa do colega continua invisível para quem
- * não a enxerga, porque o predicado de escopo (0776) só abre a assinatura da
+ * não a enxerga, porque o predicado de escopo (9017) só abre a assinatura da
  * conversa SEM dono quando o dono novo é o próprio chamador.
  *
  * Só a SESSÃO do navegador assume: token de servidor (MCP) não é "quem
