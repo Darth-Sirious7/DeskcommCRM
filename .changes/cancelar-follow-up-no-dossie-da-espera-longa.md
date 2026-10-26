@@ -1,5 +1,5 @@
 ---
-impacto: capacidade_nova
+impacto: nada_mudou
 secao: corrigido
 titulo: Cancelar follow-up também no dossiê da espera longa e do roteiro em andamento
 ---

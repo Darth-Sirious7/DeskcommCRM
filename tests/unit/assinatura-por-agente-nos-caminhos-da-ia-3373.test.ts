@@ -53,7 +53,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
+import type * as EfeitoDeAgenda from "@/lib/agenda/efeito";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
+import type * as OrigemDeAtendimento from "@/lib/atendimento/origem";
 import type { SendMessageInput } from "@/lib/schemas";
 import { criarDubleDoHandler } from "@/tests/helpers/duble-do-handler";
 
@@ -86,11 +88,11 @@ vi.mock("@/lib/atendimento/origem-automacao", () => ({
   serviceForAutomation: vi.fn(async () => FRONTEIRA),
 }));
 vi.mock("@/lib/atendimento/origem", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/atendimento/origem")>()),
+  ...(await importOriginal<typeof OrigemDeAtendimento>()),
   assertServiceBoundarySupabase: vi.fn(async () => {}),
 }));
 vi.mock("@/lib/agenda/efeito", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/agenda/efeito")>()),
+  ...(await importOriginal<typeof EfeitoDeAgenda>()),
   assertAgendaEffectSupabase: vi.fn(async () => {}),
 }));
 vi.mock("@/lib/automation/throttle", () => ({
@@ -133,8 +135,6 @@ const CONFIG_POR_AGENTE = {
 const CONFIG_DESLIGADA = {
   assinatura_mensagens: { humanos: false, ia: true, nome_ia: "Assistente Virtual", por_agente: false },
 };
-
-type Row = Record<string, unknown>;
 
 function duble(settings: unknown) {
   return criarDubleDoHandler({
