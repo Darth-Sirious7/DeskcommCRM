@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { countAs, GOV_ORG, GOV_CONTACT_1, GOV_LEAD, GOV_AGENT_A, lastLine, seedGov, sql } from "./gov-helpers";
+import { countAs, GOV_ORG, GOV_CONTACT_1, GOV_CONTACT_2, GOV_LEAD, GOV_AGENT_A, lastLine, seedGov, sql } from "./gov-helpers";
 const CAD = "ca173800-0000-4000-8000-000000000001";
 const INS = "ca173800-0000-4000-8000-000000000002";
 const USER_B = "ca173800-0000-4000-8000-000000000004";
@@ -49,8 +49,17 @@ describe("abertura autorizada no banco, sem sessão de destinatário", () => {
     expect(sql(`select count(*) from public.email_cadence_events where enrollment_id='${INS}' and tipo='descadastrou'`)).toBe("1");
     expect(sql(`select motivo_parada from public.email_cadence_enrollments where id='${INS}'`)).toBe("descadastro");
   });
-  it("anonimização encerra fila e revoga contagem, preservando histórico sem metadados", () => {
-    preparar(); sql(`update public.contacts set is_anonymized=true where id='${GOV_CONTACT_1}';`);
+  it("redige o inscrito original mesmo se o negócio mudar de contato, sem redigir o vizinho", () => {
+    preparar();
+    const cadB = "ca173800-0000-4000-8000-000000000011";
+    const insB = "ca173800-0000-4000-8000-000000000012";
+    sql(`update public.crm_leads set contact_id='${GOV_CONTACT_2}' where id='${GOV_LEAD}' and organization_id='${GOV_ORG}';
+      insert into public.email_cadences(id,organization_id,name) values('${cadB}','${GOV_ORG}','Sequência vizinha');
+      insert into public.email_cadence_enrollments(id,organization_id,cadence_id,lead_id,contact_id) values('${insB}','${GOV_ORG}','${cadB}','${GOV_LEAD}','${GOV_CONTACT_2}');
+      update public.email_cadence_events set metadata='{"codigo":"sintetico-a"}'::jsonb where enrollment_id='${INS}';
+      insert into public.email_cadence_events(organization_id,cadence_id,enrollment_id,lead_id,tipo,metadata) values('${GOV_ORG}','${cadB}','${insB}','${GOV_LEAD}','inscrito','{"codigo":"sintetico-b"}'::jsonb);
+      update public.contacts set is_anonymized=true where id='${GOV_CONTACT_1}';`);
+    expect(sql(`select count(*) from public.email_cadence_events where enrollment_id='${insB}' and metadata->>'codigo'='sintetico-b'`)).toBe("1");
     expect(sql(`select status||':'||rastreio_consentido::text from public.email_cadence_enrollments where id='${INS}'`)).toBe("parada:false");
     expect(abrir()).toBe("false");
     expect(sql(`select count(*) from public.email_cadence_events where enrollment_id='${INS}' and metadata is not null`)).toBe("0");
