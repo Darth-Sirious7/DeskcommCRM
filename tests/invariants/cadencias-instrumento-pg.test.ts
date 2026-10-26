@@ -3,7 +3,7 @@ import { adminEmConexao, novaConexaoDeCadencias } from "../support/cadencias-pg"
 const pg = novaConexaoDeCadencias();
 const admin = adminEmConexao(pg);
 const agora = "2026-10-26T12:00:00Z";
-beforeAll(async () => { await pg.connect(); await pg.query("create table public.sonda_cadencias_pg(id integer primary key,vence timestamptz,claim timestamptz,grupo text)"); });
+beforeAll(async () => { await pg.connect(); await pg.query("create table public.sonda_cadencias_pg(id integer primary key,vence timestamptz,claim timestamptz,grupo text); create table public.sonda_cadencias_arrays(id integer primary key,documento jsonb, legado json, etiquetas text[])"); });
 afterAll(async () => { await pg.end(); });
 beforeEach(async () => { await pg.query(`truncate public.sonda_cadencias_pg; insert into public.sonda_cadencias_pg values
   (1,'2026-10-25',null,'a'),(2,'2026-10-27','2026-10-25','b'),(3,'2026-10-25','2026-10-27','a'),(4,'2026-10-25','2026-10-25','a')`); });
@@ -19,5 +19,14 @@ describe("o instrumento de concorrência não ignora filtros nem contagem", () =
   });
   it("OR não implementado estoura em vez de virar sucesso vazio", () => {
     expect(() => admin.from("sonda_cadencias_pg").update({ grupo: "x" }).or("grupo.eq.a,grupo.eq.b")).toThrow("não está implementado");
+  });
+  it("INSERT e UPDATE distinguem [] JSON de text[] vazio e preservam seus elementos", async () => {
+    const inserir = await admin.from("sonda_cadencias_arrays").insert({ id: 1, documento: [], legado: [], etiquetas: [] }).select("*").single();
+    expect(inserir.error).toBeNull(); expect(inserir.data).toMatchObject({ documento: [], legado: [], etiquetas: [] });
+    const alterar = await admin.from("sonda_cadencias_arrays").update({ documento: [{ nome: "a,b" }], legado: ["x", "y"], etiquetas: ["a,b", 'c"d'] }).eq("id", 1).select("*").single();
+    expect(alterar.error).toBeNull(); expect(alterar.data).toMatchObject({ documento: [{ nome: "a,b" }], legado: ["x", "y"], etiquetas: ["a,b", 'c"d'] });
+    const voltar = await admin.from("sonda_cadencias_arrays").update({ documento: [], legado: [], etiquetas: [] }).eq("id", 1);
+    expect(voltar.error).toBeNull();
+    expect((await pg.query("select jsonb_typeof(documento) as tipo, json_typeof(legado) as legado, cardinality(etiquetas) as total from public.sonda_cadencias_arrays")).rows).toEqual([{ tipo: "array", legado: "array", total: 0 }]);
   });
 });

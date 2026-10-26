@@ -58,7 +58,7 @@ describe("abertura autorizada no banco, sem sessão de destinatário", () => {
       insert into public.email_cadence_enrollments(id,organization_id,cadence_id,lead_id,contact_id) values('${insB}','${GOV_ORG}','${cadB}','${GOV_LEAD}','${GOV_CONTACT_2}');
       update public.email_cadence_events set metadata='{"codigo":"sintetico-a"}'::jsonb where enrollment_id='${INS}';
       insert into public.email_cadence_events(organization_id,cadence_id,enrollment_id,lead_id,tipo,metadata) values('${GOV_ORG}','${cadB}','${insB}','${GOV_LEAD}','inscrito','{"codigo":"sintetico-b"}'::jsonb);
-      update public.contacts set is_anonymized=true where id='${GOV_CONTACT_1}';`);
+      select public.fn_lgpd_cascade_redact_contact('${GOV_ORG}','${GOV_CONTACT_1}',gen_random_uuid());`);
     expect(sql(`select count(*) from public.email_cadence_events where enrollment_id='${insB}' and metadata->>'codigo'='sintetico-b'`)).toBe("1");
     expect(sql(`select status||':'||rastreio_consentido::text from public.email_cadence_enrollments where id='${INS}'`)).toBe("parada:false");
     expect(abrir()).toBe("false");

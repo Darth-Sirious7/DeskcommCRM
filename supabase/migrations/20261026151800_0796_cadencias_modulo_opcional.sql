@@ -157,14 +157,18 @@ grant all on public.email_cadence_events to service_role;
 
   -- Reaplicar restaura todas as proteções na mesma transação da instalação.
   perform public.fn_proteger_modulo_provisionado();
-  insert into public.modulo_secoes_lgpd (modulo,tabela,ligacao,colunas,colunas_rotulo)
+
+end $cadencias$;
+revoke execute on function public.fn_cadencias_provisionar() from public,anon,authenticated;
+grant execute on function public.fn_cadencias_provisionar() to service_role;
+
+-- Registro declarativo existe sem instalar as tabelas (D8/0619). A cascata
+-- consulta to_regclass e só alcança o módulo quando ele está instalado.
+insert into public.modulo_secoes_lgpd (modulo,tabela,ligacao,colunas,colunas_rotulo)
   values
     ('cadencias','email_cadence_enrollments','organization_id = $1 and contact_id = $2',array['ultimo_erro'],'{}'::text[]),
     ('cadencias','email_cadence_events','organization_id = $1 and enrollment_id in (select id from public.email_cadence_enrollments where organization_id = $1 and contact_id = $2)',array['metadata'],'{}'::text[])
   on conflict (modulo,tabela) do update set ligacao=excluded.ligacao,colunas=excluded.colunas,colunas_rotulo=excluded.colunas_rotulo;
-end $cadencias$;
-revoke execute on function public.fn_cadencias_provisionar() from public,anon,authenticated;
-grant execute on function public.fn_cadencias_provisionar() to service_role;
 
 -- Escrita atômica da chave da empresa; não sobrescreve routing/branding etc.
 create or replace function public.fn_cadencias_configurar(p_organization_id uuid,p_enabled boolean)

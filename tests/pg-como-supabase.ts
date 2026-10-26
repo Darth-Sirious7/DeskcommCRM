@@ -392,6 +392,26 @@ class ConsultaPg<T> implements PromiseLike<RespostaFalsa<T[]>> {
   }
 }
 
+/** O driver pg codifica [] como array SQL. Só colunas JSON recebem JSON.stringify. */
+async function valoresDeEscrita(pool: pg.Pool, tabela: string, linha: Record<string, unknown>): Promise<unknown[]> {
+  const chaves = Object.keys(linha);
+  const arrays = chaves.filter((k) => Array.isArray(linha[k]));
+  const json = new Set<string>();
+  if (arrays.length > 0) {
+    const tipos = await pool.query<{ attname: string }>(
+      `select a.attname from pg_attribute a join pg_class c on c.oid=a.attrelid
+       join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname=$1
+       and a.attname=any($2::text[]) and a.atttypid in ('json'::regtype,'jsonb'::regtype) and not a.attisdropped`,
+      [tabela, arrays],
+    );
+    for (const r of tipos.rows) json.add(r.attname);
+  }
+  return chaves.map((k) => {
+    const v = linha[k];
+    return v !== null && typeof v === "object" && (!Array.isArray(v) || json.has(k)) ? JSON.stringify(v) : v;
+  });
+}
+
 class InsercaoPg<T> implements PromiseLike<RespostaFalsa<null>> {
   private colunasDeVolta: string | null = null;
 
@@ -406,13 +426,9 @@ class InsercaoPg<T> implements PromiseLike<RespostaFalsa<null>> {
     return this;
   }
 
-  private montar(): { texto: string; valores: unknown[] } {
+  private async montar(): Promise<{ texto: string; valores: unknown[] }> {
     const chaves = Object.keys(this.linha);
-    const valores = chaves.map((k) => {
-      const v = this.linha[k];
-      // jsonb/array vão como parâmetro; objeto solto o driver não converte.
-      return v !== null && typeof v === "object" && !Array.isArray(v) ? JSON.stringify(v) : v;
-    });
+    const valores = await valoresDeEscrita(this.pool, this.tabela, this.linha);
     const marcas = chaves.map((_, i) => `$${i + 1}`).join(", ");
     const texto =
       `insert into public."${this.tabela}" (${chaves.map((k) => `"${k}"`).join(", ")}) values (${marcas})` +
@@ -421,8 +437,8 @@ class InsercaoPg<T> implements PromiseLike<RespostaFalsa<null>> {
   }
 
   async single(): Promise<RespostaFalsa<T>> {
-    const { texto, valores } = this.montar();
     try {
+      const { texto, valores } = await this.montar();
       const r = await this.pool.query(texto, valores);
       return { data: (r.rows[0] ?? null) as T, error: null };
     } catch (e) {
@@ -443,9 +459,8 @@ class InsercaoPg<T> implements PromiseLike<RespostaFalsa<null>> {
     aoResolver?: ((v: RespostaFalsa<null>) => R1 | PromiseLike<R1>) | null,
     aoRejeitar?: ((r: unknown) => R2 | PromiseLike<R2>) | null,
   ): PromiseLike<R1 | R2> {
-    const { texto, valores } = this.montar();
-    return this.pool
-      .query(texto, valores)
+    return this.montar()
+      .then(({ texto, valores }) => this.pool.query(texto, valores))
       .then(() => ({ data: null, error: null }) as RespostaFalsa<null>)
       .catch((e: unknown) => ({ data: null, error: erroDe(e) }) as RespostaFalsa<null>)
       .then(aoResolver, aoRejeitar);
@@ -518,13 +533,9 @@ class AtualizacaoPg<T> implements PromiseLike<RespostaFalsa<unknown>> {
     return this;
   }
 
-  private montar(): { texto: string; valores: unknown[] } {
-    const valores: unknown[] = [];
-    const sets = Object.keys(this.patch).map((k) => {
-      const v = this.patch[k];
-      valores.push(v !== null && typeof v === "object" && !Array.isArray(v) ? JSON.stringify(v) : v);
-      return `"${k}" = $${valores.length}`;
-    });
+  private async montar(): Promise<{ texto: string; valores: unknown[] }> {
+    const valores = await valoresDeEscrita(this.pool, this.tabela, this.patch);
+    const sets = Object.keys(this.patch).map((k, i) => `"${k}" = $${i + 1}`);
     const onde = this.filtros.map(([op, c, v]) => {
       // `is` não gasta placeholder: a palavra entra inline.
       if (op === "is") return `"${c}" is ${literalDeIs(v)}`;
@@ -544,8 +555,8 @@ class AtualizacaoPg<T> implements PromiseLike<RespostaFalsa<unknown>> {
   }
 
   async maybeSingle(): Promise<RespostaFalsa<T>> {
-    const { texto, valores } = this.montar();
     try {
+      const { texto, valores } = await this.montar();
       const r = await this.pool.query(texto, valores);
       if (r.rows.length > 1) {
         return { data: null, error: { message: "multiple rows returned", code: "PGRST116" } };
@@ -581,10 +592,9 @@ class AtualizacaoPg<T> implements PromiseLike<RespostaFalsa<unknown>> {
     aoResolver?: ((v: RespostaFalsa<unknown>) => R1 | PromiseLike<R1>) | null,
     aoRejeitar?: ((r: unknown) => R2 | PromiseLike<R2>) | null,
   ): PromiseLike<R1 | R2> {
-    const { texto, valores } = this.montar();
     const pediuRetorno = this.colunasDeVolta !== null;
-    return this.pool
-      .query(texto, valores)
+    return this.montar()
+      .then(({ texto, valores }) => this.pool.query(texto, valores))
       .then(
         (r) =>
           ({ data: pediuRetorno ? r.rows : null, error: null }) as RespostaFalsa<unknown>,
