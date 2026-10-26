@@ -3465,6 +3465,7 @@
   "Enviar esta mensagem de novo?": "Send this message again?",
   "Pode ser que esta mensagem já tenha chegado. Confira no WhatsApp do cliente antes de enviar de novo.": "This message may have already arrived. Check the customer's WhatsApp before sending it again.",
   "O WhatsApp não confirmou o envio a tempo. Pode ser que a mensagem tenha chegado.": "WhatsApp didn't confirm the send in time. The message may have arrived.",
+  "O WhatsApp devolveu um erro para esta mensagem depois de aceitá-la. Pode ser que ela tenha chegado; confira na conversa antes de reenviar.": "WhatsApp returned an error for this message after accepting it. It may have arrived; check the conversation before sending again.",
   "Este número está desativado. Reative em Conexões para enviar.": "This number is turned off. Turn it back on in Connections to send.",
   "Este número não tem WhatsApp.": "This number doesn't have WhatsApp.",
   "A janela de 24 horas fechou. Envie um modelo aprovado ou aguarde o cliente escrever.": "The 24-hour window has closed. Send an approved template or wait for the customer to write.",
