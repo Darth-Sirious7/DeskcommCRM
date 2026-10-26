@@ -114,6 +114,7 @@ function textosDa(e: EstrategiaDoLead): string[] {
     e.cenario,
     e.angulo,
     e.proximoPasso,
+    ...(e.complementar ? [e.complementar] : []),
     ...e.ganchos,
     ...e.objecoes.flatMap((o) => [o.objecao, o.resposta]),
   ];
