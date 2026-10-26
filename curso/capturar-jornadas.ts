@@ -144,7 +144,10 @@ async function main() {
         await esperarCarregar(pagina);
         // O helper legado só avisa quando há skeleton: fotografia nova deve falhar.
         // As esperas de identidade acima evitam aceitar o vazio anterior à consulta.
-        await expect(pagina.locator("[data-esqueleto]:visible, .animate-pulse:visible, [aria-busy='true']:visible")).toHaveCount(0, { timeout: 15_000 });
+        // A bolinha da sidebar pode pulsar por canal parado: é saúde da conexão,
+        // não carregamento. A exceção só vale para esse span no link de Conexões.
+        const pulsoDeConexao = "a[href='/app/connections'] > span[aria-label='Uma conexão caiu'][title='Uma conexão caiu']";
+        await expect(pagina.locator(`[data-esqueleto]:visible, .animate-pulse:visible:not(${pulsoDeConexao}), [aria-busy='true']:visible`)).toHaveCount(0, { timeout: 15_000 });
         await expect(pagina.getByText(/^Carregando(?:\b|…|\.{3})/).filter({ visible: true })).toHaveCount(0, { timeout: 15_000 });
         await pagina.addStyleTag({ content: CSS_DE_FOTO });
         await tirarFocoDeClique(pagina);
