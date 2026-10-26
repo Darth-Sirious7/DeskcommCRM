@@ -20,6 +20,8 @@ import { createClient } from "@supabase/supabase-js";
 import { phoneLookupVariants } from "@/lib/channels/phone-variants";
 import type { Database } from "@/lib/database.types";
 import { VERSAO_PADRAO_DA_GRAPH } from "@/lib/graph-version";
+import { copiaDoTitular } from "@/lib/lgpd/copia-do-titular";
+import { collectExportData } from "@/lib/lgpd/export-collector";
 
 import { credenciaisSupabaseDeTeste, destinoEhLocal } from "../../scripts/lib/env-de-teste";
 import { lerCreds, loginComoAdmin } from "./helpers/login-admin";
@@ -688,8 +690,6 @@ test.describe("LeadSubmitted causal pelo webhook WAHA", () => {
 
     // O coletor e a projeção reais leem o mesmo Supabase deste fio; nenhuma
     // resposta de consulta é dublada para preencher o arquivo de acesso.
-    const { collectExportData } = await import("@/lib/lgpd/export-collector");
-    const { copiaDoTitular } = await import("@/lib/lgpd/copia-do-titular");
     const payload = await collectExportData({
       organizationId: creds.org_id,
       requestId: randomUUID(),
