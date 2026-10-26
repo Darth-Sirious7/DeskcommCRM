@@ -12,6 +12,8 @@
  *   - pull recusado duas vezes e depois aceito → verde, com `stop` entre elas
  *     e alternando ghcr.io ↔ public.ecr.aws (a espera sozinha não bastou:
  *     o ghcr.io recusou por 4,5 min seguidos no run 35910532729);
+ *   - GHCR e ECR limitados → a última tentativa libera o fallback nativo do
+ *     CLI, mesmo com o GHCR herdado do setup-cli;
  *   - falha que não é de registro → vermelho NA HORA, sem esperar;
  *   - registro recusando sempre → vermelho depois da 4ª tentativa, com `::error::`.
  *
@@ -46,7 +48,10 @@ afterEach(() => {
 });
 
 /** `saidas`: o que cada chamada de `supabase start` imprime e se falha; a última se repete. */
-function rodar(saidas: Array<{ texto: string; falha: boolean }>) {
+function rodar(
+  saidas: Array<{ texto: string; falha: boolean }>,
+  { nativoDisponivel = false }: { nativoDisponivel?: boolean } = {},
+) {
   const raiz = mkdtempSync(path.join(tmpdir(), "sb-start-"));
   dirs.push(raiz);
   const bin = path.join(raiz, "bin");
@@ -63,6 +68,10 @@ const raiz = ${JSON.stringify(raiz)};
 const registro = process.argv[2] === "start" ? "@" + process.env.SUPABASE_INTERNAL_IMAGE_REGISTRY + " " : "";
 fs.appendFileSync(raiz + "/chamadas.log", registro + process.argv.slice(2).join(" ") + "\\n");
 if (process.argv[2] !== "start") process.exit(0);
+if (${nativoDisponivel} && process.env.SUPABASE_INTERNAL_IMAGE_REGISTRY === "") {
+  process.stderr.write("Started supabase local development setup.\\n");
+  process.exit(0);
+}
 const n = fs.readFileSync(raiz + "/chamadas.log", "utf-8").split("\\n").filter((l) => l.startsWith("@")).length;
 const saidas = JSON.parse(fs.readFileSync(raiz + "/saidas.json", "utf-8"));
 const s = saidas[Math.min(n, saidas.length) - 1];
@@ -80,7 +89,12 @@ process.exit(s.falha ? 1 : 0);
   // `bash -e`, o mesmo shell que o GitHub dá a um `run:` sem `shell:`.
   const r = spawnSync("bash", ["-e", "-c", script], {
     cwd: path.join(raiz, "repo"),
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+    env: {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH}`,
+      // O setup-cli exporta GHCR: omitir o override no comando não o limpa.
+      SUPABASE_INTERNAL_IMAGE_REGISTRY: "ghcr.io",
+    },
     encoding: "utf-8",
   });
   const chamadas = readFileSync(path.join(raiz, "chamadas.log"), "utf-8").trim().split("\n");
@@ -89,6 +103,10 @@ process.exit(s.falha ? 1 : 0);
 
 const LIMITE = {
   texto: "Error response from daemon: toomanyrequests: retry-after: 913.381µs, allowed: 44000/minute",
+  falha: true,
+};
+const LIMITE_ECR = {
+  texto: "Error response from daemon: toomanyrequests: Data limit exceeded",
   falha: true,
 };
 
@@ -108,6 +126,24 @@ describe("e2e.yml — supabase start resiste ao limite do registro", () => {
     expect(r.saida).toContain("::warning");
   });
 
+  it("GHCR e ECR limitados: a última tentativa libera o nativo e fica verde quando ele consegue puxar", () => {
+    const r = rodar([LIMITE, LIMITE_ECR, LIMITE, LIMITE_ECR], { nativoDisponivel: true });
+    expect(r.status, r.saida).toBe(0);
+    expect(r.chamadas).toEqual([
+      "@ghcr.io start -x studio,postgres-meta",
+      "stop --no-backup",
+      "sleep 20",
+      "@public.ecr.aws start -x studio,postgres-meta",
+      "stop --no-backup",
+      "sleep 60",
+      "@ghcr.io start -x studio,postgres-meta",
+      "stop --no-backup",
+      "sleep 120",
+      "@ start -x studio,postgres-meta",
+    ]);
+    expect(r.saida).toContain("fallback nativo");
+  });
+
   it("falha que não é de registro fica vermelha na hora, sem esperar", () => {
     const r = rodar([
       { texto: "failed to bind host port for 0.0.0.0:54322: address already in use", falha: true },
@@ -118,13 +154,16 @@ describe("e2e.yml — supabase start resiste ao limite do registro", () => {
   });
 
   it("registro recusando sempre: vermelho depois da 4ª tentativa, com ::error::", () => {
-    const r = rodar([LIMITE]);
+    const r = rodar([LIMITE, LIMITE_ECR, LIMITE, {
+      texto: "failed to pull docker image from all registries: toomanyrequests",
+      falha: true,
+    }]);
     expect(r.status, r.saida).toBe(1);
     expect(r.chamadas.filter((c) => c.startsWith("@")).map((c) => c.split(" ")[0])).toEqual([
       "@ghcr.io",
       "@public.ecr.aws",
       "@ghcr.io",
-      "@public.ecr.aws",
+      "@",
     ]);
     expect(r.chamadas.filter((c) => c.startsWith("sleep"))).toEqual(["sleep 20", "sleep 60", "sleep 120"]);
     expect(r.saida).toContain("::error title=supabase start falhou 4 vezes");
