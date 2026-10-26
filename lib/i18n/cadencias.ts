@@ -1,5 +1,8 @@
 /** Textos da adaptação como módulo oficial opcional (doc75B). */
 export const TEXTOS_CADENCIAS = {
+  "Use o transporte da instalação e o descadastro obrigatório. Caixas próprias, validação externa e parada por resposta ou devolução ainda não estão disponíveis.": { es: "Usa el transporte de la instalación y la baja obligatoria. Los buzones propios, la validación externa y la detención por respuesta o rebote aún no están disponibles." },
+  "Sequências de e-mail por negócio, com envio pela instalação, descadastro e abertura somente com consentimento. Contribuição de Marcelo (@lmarceloc), PR #1738.": { es: "Secuencias de correo por negocio, con envío desde la instalación, baja y aperturas solo con consentimiento. Contribución de Marcelo (@lmarceloc), PR #1738." },
+  "Não foi possível carregar as cadências.": { es: "No se pudieron cargar las cadencias." },
   "Esta cadência tem inscrições. Pause para preservar o histórico e os descadastros.": { es: "Esta cadencia tiene inscripciones. Pásala a pausa para conservar el historial y las bajas." },
   "Este contato não pode receber cadências pelas preferências registradas.": { es: "Este contacto no puede recibir cadencias por sus preferencias registradas." },
   "Retire as variáveis indisponíveis antes de ativar.": { es: "Retira las variables no disponibles antes de activar." },

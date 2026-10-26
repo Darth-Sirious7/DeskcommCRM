@@ -19,7 +19,7 @@ export interface PassoEmail {
   tipo: "email";
   assunto: string;
   corpo: string;
-  /** Envia como resposta na mesma conversa do e-mail anterior ("Re: ..."). */
+  /** Reaproveita o assunto anterior com prefixo Re:, sem threading de provedor. */
   mesmaConversa: boolean;
 }
 
@@ -63,15 +63,15 @@ export type TipoDePasso = Passo["tipo"];
 export type DiaDaSemana = "seg" | "ter" | "qua" | "qui" | "sex" | "sab" | "dom";
 
 export interface ConfiguracaoDaCadencia {
-  /** Tag de segmento que inscreve o lead (ex.: "papel-e-celulose"). */
+  /** Identificação opcional do segmento, usada no texto; não inscreve por tag. */
   tagDoSegmento: string;
-  /** Só lead com o e-mail marcado como validado pelo Treg entra. */
+  /** Legado de formato; ativação só aceita false (não há validador externo). */
   somenteEmailValidado: boolean;
-  /** Caixa usada quando o lead não tem dono (ou o dono não conectou caixa). */
+  /** Legado de formato; ativação só aceita null (transporte único da instalação). */
   caixaPadraoId: string | null;
   janela: { inicio: string; fim: string; dias: DiaDaSemana[] };
   fuso: string;
-  /** Teto de envios desta cadência por caixa, por dia. */
+  /** Teto de tentativas desta cadência por janela fixa de24h. Nome preservado do PR. */
   limiteDiarioPorCaixa: number;
   paradas: {
     respondeu: boolean;

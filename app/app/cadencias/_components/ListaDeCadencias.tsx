@@ -50,7 +50,7 @@ export function ListaDeCadencias() {
   const t = useT();
   const idioma = useTagDeIdioma();
   const router = useRouter();
-  const { lista, criar, excluir, carregando } = useCadencias();
+  const { lista, criar, excluir, carregando, erro, recarregar } = useCadencias();
   const [novaAberta, setNovaAberta] = useState(false);
   const [paraExcluir, setParaExcluir] = useState<Cadencia | null>(null);
 
@@ -75,7 +75,7 @@ export function ListaDeCadencias() {
         </span>
       </div>
 
-      {carregando ? (
+      {erro ? <Card role="alert" className="space-y-3 p-6"><p>{t("Não foi possível carregar as cadências.")}</p><Button variant="outline" onClick={recarregar}>{t("Tentar novamente")}</Button></Card> : carregando ? (
         <Skeleton className="h-40" />
       ) : lista.length === 0 ? (
         <Card className="flex flex-col items-center gap-2 p-10 text-center">

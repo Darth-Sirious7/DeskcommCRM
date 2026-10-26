@@ -458,7 +458,7 @@ async function criarTarefaDoPasso(
       lead_id: inscricao.lead_id,
       contact_id: inscricao.contact_id,
       assigned_to: ownerId,
-      created_by: inscricao.inscrito_por,
+      created_by: null,
     })
     .select("id, title, due_date, priority, lead_id, contact_id")
     .single();
@@ -477,15 +477,14 @@ async function criarTarefaDoPasso(
     metadata: { task_id: (tarefa as { id: string }).id },
   });
 
-  if (inscricao.inscrito_por) {
-    const { registraAtividadeDaTarefa } = await import("@/lib/tarefas/atividade");
-    await registraAtividadeDaTarefa(admin, {
-      organizationId: inscricao.organization_id,
-      tarefa: tarefa as never,
-      tipo: "task_created",
-      actorUserId: inscricao.inscrito_por,
-    });
-  }
+  // A tarefa foi criada pelo motor, não pela pessoa que inscreveu o negócio.
+  const { registraAtividadeDaTarefa } = await import("@/lib/tarefas/atividade");
+  await registraAtividadeDaTarefa(admin, {
+    organizationId: inscricao.organization_id,
+    tarefa,
+    tipo: "task_created",
+    actor: { type: "webhook_source", id: "cadencias" },
+  });
 }
 
 async function avancar(

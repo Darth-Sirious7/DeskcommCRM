@@ -11,6 +11,12 @@ describe("ativação só de consumidores reais", () => {
     expect(problemasParaAtivar({ configuracao, passos: [email, { id: "w", tipo: "whatsapp", mensagem: "x" }] })).not.toEqual([]);
     expect(problemasParaAtivar({ configuracao: { ...configuracao, janela: { ...configuracao.janela, inicio: "18:00", fim: "08:00" } }, passos: [email] })).not.toEqual([]);
   });
+  it("não aceita controles de configuração sem consumidor nem descadastro desligado", () => {
+    const base = configuracaoPadrao();
+    for (const configuracao of [{ ...base, somenteEmailValidado: true }, { ...base, caixaPadraoId: "caixa-ficticia" }, { ...base, paradas: { ...base.paradas, respondeu: true } }, { ...base, paradas: { ...base.paradas, descadastro: false } }]) {
+      expect(problemasParaAtivar({ configuracao, passos: [email] })).not.toEqual([]);
+    }
+  });
   it("ids repetidos e árvore profunda não passam pela API", () => {
     expect(editarCadenciaSchema.safeParse({ passos: [email, email] }).success).toBe(false);
     let passos: Passo[] = [email];

@@ -59,6 +59,8 @@ async function extrairErro(res: Response): Promise<string> {
 
 export function useCadencias() {
   const [lista, setLista] = useState<Cadencia[]>([]);
+  const [erro, setErro] = useState(false);
+  const [recarga, setRecarga] = useState(0);
   const [carregando, setCarregando] = useState(true);
 
   useEffect(() => {
@@ -66,17 +68,17 @@ export function useCadencias() {
     (async () => {
       try {
         const res = await fetch("/api/v1/cadencias");
-        if (!res.ok) return;
+        if (!res.ok) throw new Error();
         const { data } = (await res.json()) as { data: LinhaDaApi[] };
-        if (vivo) setLista(data.map(linhaParaCadencia));
-      } finally {
+        if (vivo) { setLista(data.map(linhaParaCadencia)); setErro(false); }
+      } catch { if (vivo) setErro(true); } finally {
         if (vivo) setCarregando(false);
       }
     })();
     return () => {
       vivo = false;
     };
-  }, []);
+  }, [recarga]);
 
   const criar = useCallback(async (nome: string, tagDoSegmento: string): Promise<Cadencia> => {
     const res = await fetch("/api/v1/cadencias", {
@@ -97,7 +99,8 @@ export function useCadencias() {
     setLista((atual) => atual.filter((c) => c.id !== id));
   }, []);
 
-  return { lista, criar, excluir, carregando };
+  const recarregar = () => { setCarregando(true); setErro(false); setRecarga((n) => n + 1); };
+  return { lista, criar, excluir, carregando, erro, recarregar };
 }
 
 const ESPERA_DO_DEBOUNCE_MS = 700;

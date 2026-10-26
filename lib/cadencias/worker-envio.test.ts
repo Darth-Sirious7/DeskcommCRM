@@ -4,9 +4,10 @@ import { configuracaoPadrao } from "./exemplos";
 import { processarCadencias } from "./worker";
 import type { Passo } from "./tipos";
 
-const mocks = vi.hoisted(() => ({ modulo: vi.fn(), empresa: vi.fn(), enviar: vi.fn() }));
+const mocks = vi.hoisted(() => ({ modulo: vi.fn(), empresa: vi.fn(), enviar: vi.fn(), atividade: vi.fn() }));
 vi.mock("@/lib/instalacao/modulos", () => ({ moduloLigado: mocks.modulo }));
 vi.mock("./modulo", () => ({ cadenciasLigadas: mocks.empresa }));
+vi.mock("@/lib/tarefas/atividade", () => ({ registraAtividadeDaTarefa: mocks.atividade }));
 vi.mock("@/lib/email/roteador", () => ({ sendEmail: mocks.enviar }));
 vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({ checkRateLimit: async () => ({ allowed: true, count: 1 }) }));
 vi.mock("@/lib/env", () => ({ env: { NEXT_PUBLIC_APP_URL: "https://cadencias.test", CADENCIA_LIMITE_EMAILS_POR_DIA: 60 } }));
@@ -16,9 +17,10 @@ const email: Passo = { id: "email-1", tipo: "email", assunto: "Olá {{primeiro_n
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 
 /** Fake só da borda Supabase; exercita o motor, inclusive a ordem dos efeitos. */
-function bancada(opcoes: { consentimento?: boolean; pendente?: string; falhaAoAvancar?: boolean } = {}) {
+function bancada(opcoes: { consentimento?: boolean; pendente?: string; falhaAoAvancar?: boolean; passos?: Passo[] } = {}) {
   const inscricao: Record<string, unknown> = { id: id(1), organization_id: id(2), cadence_id: id(3), lead_id: id(4), contact_id: id(5), passo_atual_id: null, ultimo_email_em: null, ultimo_email_passo_id: null, aberturas: 0, aberturas_ultimo_email: 0, emails_enviados: 0, tentativas: 0, inscrito_por: null, rastreio_consentido: opcoes.consentimento ?? false, envio_pendente_passo_id: opcoes.pendente ?? null, status: "ativa", proximo_em: agora.toISOString(), processando_ate: null };
   const eventos: Record<string, unknown>[] = [];
+  const tarefas: Record<string, unknown>[] = [];
   let leituras = 0;
   function from(tabela: string) {
     leituras++;
@@ -26,9 +28,10 @@ function bancada(opcoes: { consentimento?: boolean; pendente?: string; falhaAoAv
     let insercao: Record<string, unknown> | null = null;
     const filtros: [string, unknown][] = [];
     const executar = () => {
-      if (tabela === "email_cadences") return { data: { id: id(3), status: "ativa", passos: [email], configuracao: configuracaoPadrao() }, error: null };
+      if (tabela === "email_cadences") return { data: { id: id(3), status: "ativa", passos: opcoes.passos ?? [email], configuracao: configuracaoPadrao() }, error: null };
       if (tabela === "contacts") return { data: { email: "pessoa@synthetic.test", name: "Pessoa Sintética", display_name: "Pessoa Sintética", is_anonymized: false }, error: null };
       if (tabela === "crm_leads") return { data: { owner_user_id: null, status: "open" }, error: null };
+      if (tabela === "crm_tasks") { if (insercao) tarefas.push(insercao); return { data: { ...insercao, id: id(6) }, error: null }; }
       if (tabela === "email_cadence_events") { if (insercao) eventos.push(insercao); return { data: null, error: null }; }
       if (tabela === "email_cadence_enrollments") {
         if (!patch) return { data: inscricao.status === "ativa" ? [{ ...inscricao }] : [], error: null };
@@ -50,7 +53,7 @@ function bancada(opcoes: { consentimento?: boolean; pendente?: string; falhaAoAv
     };
     return q;
   }
-  return { admin: { from } as unknown as ReturnType<typeof createAdminClient>, inscricao, eventos, leituras: () => leituras };
+  return { admin: { from } as unknown as ReturnType<typeof createAdminClient>, inscricao, eventos, tarefas, leituras: () => leituras };
 }
 afterEach(() => vi.unstubAllEnvs());
 beforeEach(() => {
@@ -84,6 +87,13 @@ describe("efeitos do worker de cadências", () => {
     const html: string = mocks.enviar.mock.calls[0]![0].html;
     const pixel = html.match(/cadencia-pixel\/([^\"]+)/)?.[1]; const saida = html.match(/cadencia-descadastro\/([^\"]+)/)?.[1];
     expect(pixel).toBeTruthy(); expect(saida).toBeTruthy(); expect(pixel).not.toBe(saida);
+  });
+  it("tarefa automática assina atividade como sistema mesmo sem usuário inscritor", async () => {
+    const b = bancada({ passos: [{ id: "tarefa-1", tipo: "tarefa", titulo: "Retornar", prazoDias: 1 }, email] });
+    await processarCadencias(b.admin, agora, "request-sintetico");
+    expect(b.tarefas).toHaveLength(1); expect(b.tarefas[0]!.created_by).toBeNull();
+    expect(mocks.atividade).toHaveBeenCalledWith(b.admin, expect.objectContaining({ actor: { type: "webhook_source", id: "cadencias" } }));
+    expect(b.inscricao.passo_atual_id).toBe("email-1");
   });
   it("resultado local incerto após envio confirmado não reenvia no próximo tick", async () => {
     const b = bancada({ falhaAoAvancar: true });
