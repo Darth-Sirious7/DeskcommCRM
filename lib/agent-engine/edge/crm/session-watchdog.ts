@@ -13,7 +13,7 @@ import type pg from 'pg';
 import type { PacingKnobs } from '../../pacing/defaults';
 import { janelaDeEnvioAberta, proximaAberturaDaJanela } from '../../pacing/engine';
 import { loadChannelKnobs } from '../../pacing/store';
-import type { Queryable } from '../../queue/queue';
+import { CANAL_DO_JOB_SQL as CANAL_DO_JOB, type Queryable } from '../../queue/queue';
 
 /** Status do WAHA em que a sessão consegue enviar (uppercase — contrato do CRM). */
 export const SESSION_HEALTHY_STATUS = 'WORKING';
@@ -51,12 +51,8 @@ const PROACTIVE_SEND_JOB_KIND = 'followup_turn';
  * valor do payload lançaria `invalid input syntax` na rodada inteira se um job
  * trouxesse lixo, e o watchdog pararia de reter qualquer job.
  */
-const CANAL_DO_JOB = `coalesce(
-         j.payload->>'channel_session_id',
-         (select c.channel_session_id::text from conversations c
-           where c.organization_id = j.organization_id
-             and c.contact_id = j.contact_id
-             and c.id::text = j.payload #>> '{service_boundary,conversation_id}'))`;
+// A resolução vive na fila: o claim e o relógio aplicam a mesma chave ANTES
+// deste tick, sem permitir um envio no intervalo entre as retenções.
 
 /**
  * O canal que o hold usou fica no job (`held_channel_session_id`), e é por ele

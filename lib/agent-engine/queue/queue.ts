@@ -123,12 +123,45 @@ export interface ClaimOptions {
   batchSize?: number;
 }
 
+/**
+ * O mesmo canal que o handler usa: payload direto ou conversa do atendimento,
+ * sempre da organização e do contato do job. Comparar o id como texto mantém
+ * payload malformado fora do canal, sem derrubar a rodada com um cast de UUID.
+ * Compartilhado com o watchdog para o claim não voltar a usar outra régua.
+ */
+export const CANAL_DO_JOB_SQL = `coalesce(
+         j.payload->>'channel_session_id',
+         (select c.channel_session_id::text from conversations c
+           where c.organization_id = j.organization_id
+             and c.contact_id = j.contact_id
+             and c.id::text = j.payload #>> '{service_boundary,conversation_id}'))`;
+
+/**
+ * O watchdog retém em lotes; o claim precisa respeitar a trava também entre
+ * dois ticks. Go-live segura só o retorno que o negócio inicia. Canal fora do
+ * ar e os demais holds de saúde seguram tanto retorno quanto resposta.
+ * A mesma regra vai no relógio: job vencido mas inelegível não é motivo para
+ * abrir transações de claim sem parar enquanto se espera a liberação.
+ */
+const JOB_SEM_HOLD_DE_CANAL_SQL = `(j.kind not in ('inbound_turn', 'followup_turn')
+      or not exists (
+        select 1 from channel_sessions s
+        left join channel_session_health h
+          on h.organization_id = s.organization_id and h.channel_session_id = s.id
+        where s.organization_id = j.organization_id
+          and s.id::text = ${CANAL_DO_JOB_SQL}
+          and (s.status <> 'WORKING'
+               or (coalesce(h.health_hold_active, false)
+                   and (h.health_hold_reason is distinct from 'go_live' or j.kind = 'followup_turn')))
+      ))`;
+
 const CLAIM_SQL = `
   with dedup as (
     -- etapa (a): no máximo 1 job por lane por lote; lane sem lead = o próprio id
     select distinct on (coalesce(j.contact_id, j.id)) j.id
     from job_queue j
     where j.status = 'pending' and j.run_after <= now()
+      and ${JOB_SEM_HOLD_DE_CANAL_SQL}
       and (j.contact_id is null
            or not exists (select 1 from job_queue r
                           where r.contact_id = j.contact_id and r.status = 'running'))
@@ -158,7 +191,8 @@ const CLAIM_SQL = `
  */
 /**
  * Quantos MILISSEGUNDOS faltam até o próximo job ficar claimável — `null` quando
- * não há nenhum `pending`. É o relógio que o loop consulta ANTES de abrir o claim.
+ * não há nenhum `pending` elegível pelo canal. É o relógio que o loop consulta
+ * ANTES de abrir o claim.
  *
  * Um `select` só, sem `connect`, sem `begin` e sem advisory lock: o claim custa 5
  * statements e 638 B de egress por rodada (medido no protocolo, fila vazia), e
@@ -170,9 +204,10 @@ const CLAIM_SQL = `
  * A garantia não é "o claim nunca perde um job por causa desta leitura". Ela é
  * MAIS FRACA e é a verdadeira: como a leitura é uma FOTO (o `now()` dela é o
  * instante da própria transação), um job que vence entre a foto e o despertar
- * fica esperando — mas só até a próxima foto, porque nada no produto tira uma
- * linha de `pending`+vencida. Ou seja: **a foto nunca esconde um job por mais de
- * um `QUEUE_POLL_INTERVAL_MS`**. Medido: 1.300 estados de fronteira em fuzz
+ * fica esperando — mas só até a próxima foto enquanto o canal permanece
+ * elegível. Hold ativo exclui o job das duas consultas; ao liberar, a próxima
+ * foto volta a vê-lo. Ou seja: **a foto nunca esconde um job elegível por mais
+ * de um `QUEUE_POLL_INTERVAL_MS`**. Medido: 1.300 estados de fronteira em fuzz
  * diferencial contra o `claimJobs` real, zero casos de job escondido.
  *
  * Três armadilhas, todas com caso em tests/invariants/queue-relogio.test.ts:
@@ -207,8 +242,9 @@ export async function faltaParaOProximoJob(pool: Pool): Promise<number | null> {
                      0
                    )::int
             end as falta_ms
-       from job_queue
-      where status = 'pending'`,
+       from job_queue j
+      where status = 'pending'
+        and ${JOB_SEM_HOLD_DE_CANAL_SQL}`,
   );
   return rows[0]?.falta_ms ?? null;
 }
