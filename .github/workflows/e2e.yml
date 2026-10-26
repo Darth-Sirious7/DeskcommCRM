@@ -1477,6 +1477,7 @@ jobs:
         ia-no-celular.spec.ts
         prova-painel-provedores.spec.ts
         comercial-no-celular.spec.ts
+        propostas-de-campos-do-card.spec.ts
 
       # ─── FORA_DO_CI — as que ficaram fora, e o motivo de cada uma ───
       #

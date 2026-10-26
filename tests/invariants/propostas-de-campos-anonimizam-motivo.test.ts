@@ -9,7 +9,7 @@ import { sql } from "./psql-transporte";
  * Não modifica os invariantes herdados do PR #3471.
  */
 describe("propostas de campos: anonimização do motivo de recusa", () => {
-  it("redige conteúdo pelos dois vínculos, preserva decisão e não alcança vizinhos", () => {
+  it.each(["pedido", "ficha"] as const)("%s: redige pelos dois vínculos, preserva decisão e poupa vizinhos", (via) => {
     const saida = sql(`
       begin;
       create temporary table prova_motivos_de_proposta (fase text, dados jsonb);
@@ -23,11 +23,16 @@ describe("propostas de campos: anonimização do motivo de recusa", () => {
         outro uuid := gen_random_uuid(); outra_org uuid := gen_random_uuid();
         p_direta uuid := gen_random_uuid(); p_vinculada uuid := gen_random_uuid();
         p_vizinha uuid := gen_random_uuid(); p_outra_org uuid := gen_random_uuid();
+        operador uuid := gen_random_uuid();
+        repeticao jsonb;
         antes timestamptz := '2026-10-20 10:00:00+00';
       begin
         insert into public.organizations (id, slug, legal_name, display_name) values
           (org_a, 'proposta-' || org_a, 'Organização sintética A', 'Prova A'),
           (org_b, 'proposta-' || org_b, 'Organização sintética B', 'Prova B');
+        insert into auth.users (id, email) values (operador, operador || '@invariant.test');
+        insert into public.user_organizations (user_id, organization_id, role, accepted_at)
+          values (operador, org_a, 'admin', now());
         insert into public.contacts (id, organization_id, name, display_name) values
           (titular, org_a, 'Pessoa Sintética Alvo', 'Pessoa Sintética Alvo'),
           (vizinho, org_a, 'Pessoa Sintética Vizinha', 'Pessoa Sintética Vizinha');
@@ -64,7 +69,17 @@ describe("propostas de campos: anonimização do motivo de recusa", () => {
           'motivos_alvo', (select count(*) from public.lead_field_proposals
                             where id in (p_direta, p_vinculada) and motivo_recusa like '%Pessoa Sintética Alvo%')
         ));
-        perform public.fn_lgpd_cascade_redact_contact(org_a, titular, null);
+        perform set_config('request.jwt.claims', jsonb_build_object('sub', operador, 'aal', 'aal2')::text, true);
+        if '${via}' = 'ficha' then
+          execute 'set local role authenticated';
+          perform public.fn_lgpd_anonymize_contact(org_a, titular);
+          select public.fn_lgpd_anonymize_contact(org_a, titular) into repeticao;
+        else
+          execute 'set local role service_role';
+          perform public.fn_lgpd_cascade_redact_contact(org_a, titular, null);
+          select public.fn_lgpd_cascade_redact_contact(org_a, titular, null) into repeticao;
+        end if;
+        execute 'reset role';
         insert into prova_motivos_de_proposta values ('depois', jsonb_build_object(
           'alvos_redigidos', (select count(*) from public.lead_field_proposals p
             join public.contacts c on c.id = titular
@@ -73,7 +88,8 @@ describe("propostas de campos: anonimização do motivo de recusa", () => {
           'decisoes_preservadas', (select count(*) from public.lead_field_proposals
             where id in (p_direta, p_vinculada) and status = 'dismissed' and decided_at = antes),
           'vizinho_preservado', (select motivo_recusa from public.lead_field_proposals where id = p_vizinha),
-          'outra_org_preservada', (select motivo_recusa from public.lead_field_proposals where id = p_outra_org)
+          'outra_org_preservada', (select motivo_recusa from public.lead_field_proposals where id = p_outra_org),
+          'repeticao_sem_efeito', repeticao->'already_anonymized'
         ));
       end $prova$;
       select jsonb_object_agg(fase, dados) from prova_motivos_de_proposta;
@@ -88,6 +104,7 @@ describe("propostas de campos: anonimização do motivo de recusa", () => {
         decisoes_preservadas: 2,
         vizinho_preservado: "Motivo vizinho",
         outra_org_preservada: "Motivo outra org",
+        repeticao_sem_efeito: true,
       },
     });
   });
