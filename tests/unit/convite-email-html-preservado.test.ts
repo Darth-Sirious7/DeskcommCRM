@@ -27,7 +27,9 @@ describe("limpeza dos e-mails preserva a identidade distribuída", () => {
 
   it("a URL do convite não vira atributo nem elemento HTML, e continua copiável", () => {
     const acceptUrl = 'https://crm.example.test/aceitar?a=1&b="><img src=x onerror=alert(1)>';
-    const marca = fixture.casos[0].marca as MarcaDeSaida;
+    const caso = fixture.casos[0];
+    if (!caso) throw new Error("Falta o caso sintético de convite no fixture da main.");
+    const marca = caso.marca as MarcaDeSaida;
     const { html, text } = buildInviteEmail({ ...opcoes, marca, acceptUrl });
     const doc = new DOMParser().parseFromString(html, "text/html");
     expect(doc.querySelector("a")?.getAttribute("href")).toBe(acceptUrl);
