@@ -1,0 +1,41 @@
+{
+  "source_repository": "https://github.com/melgarafael/DeskcommCRM",
+  "source_commit": "de3c3739298242b9eac8ff7442028ee8d8510c1b",
+  "catalog_sha256": "732fa4d6c1d3ef9d0237e00b1dcb25899d809d90c48add2f5f56654e713460f7",
+  "catalog_revision": 1,
+  "catalog_origin": "https://extensoes.deskcomm.com.br",
+  "catalog_history": [
+    {
+      "revision": 1,
+      "source_commit": "6b2144991b2fcea032c8c5766fbc8235df561796",
+      "sha256": "732fa4d6c1d3ef9d0237e00b1dcb25899d809d90c48add2f5f56654e713460f7"
+    }
+  ],
+  "packages_retained": 3,
+  "current_packages": [
+    {
+      "publisher": "deskcomm",
+      "name": "carrinho-abandonado",
+      "version": "1.0.0",
+      "sha256": "54e78e246a2c7a9e788cfafe4347c66e7bd38e30a5daf80c6515a177acd94174",
+      "source_path": "extensoes/pacotes/deskcomm/carrinho-abandonado-1.0.0.json",
+      "history_url": "https://github.com/melgarafael/DeskcommCRM/commits/de3c3739298242b9eac8ff7442028ee8d8510c1b/extensoes/pacotes/deskcomm/carrinho-abandonado-1.0.0.json"
+    },
+    {
+      "publisher": "deskcomm",
+      "name": "primeira-semana",
+      "version": "1.0.0",
+      "sha256": "a501e34fbeee4dbe5beaee0249f6440602edee1975638f0c4ad69480903ba4ad",
+      "source_path": "extensoes/pacotes/deskcomm/primeira-semana-1.0.0.json",
+      "history_url": "https://github.com/melgarafael/DeskcommCRM/commits/de3c3739298242b9eac8ff7442028ee8d8510c1b/extensoes/pacotes/deskcomm/primeira-semana-1.0.0.json"
+    },
+    {
+      "publisher": "deskcomm",
+      "name": "retorno-de-paciente",
+      "version": "1.0.0",
+      "sha256": "fb65a77b8420899b16b059ffd954b597864df23b2f1827bcd11913e56f56cc3e",
+      "source_path": "extensoes/pacotes/deskcomm/retorno-de-paciente-1.0.0.json",
+      "history_url": "https://github.com/melgarafael/DeskcommCRM/commits/de3c3739298242b9eac8ff7442028ee8d8510c1b/extensoes/pacotes/deskcomm/retorno-de-paciente-1.0.0.json"
+    }
+  ]
+}
