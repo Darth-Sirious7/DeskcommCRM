@@ -10,10 +10,10 @@
  * Este teste RODA o script do passo (extraído do e2e.yml, sem cópia) com um
  * `supabase` e um `sleep` falsos no PATH, e mede o comportamento:
  *   - pull recusado duas vezes e depois aceito → verde, com `stop` entre elas
- *     e alternando ghcr.io ↔ public.ecr.aws (a espera sozinha não bastou:
+ *     e alternando nativo → public.ecr.aws → ghcr.io (a espera sozinha não bastou:
  *     o ghcr.io recusou por 4,5 min seguidos no run 35910532729);
- *   - GHCR e ECR limitados → a última tentativa libera o fallback nativo do
- *     CLI, mesmo com o GHCR herdado do setup-cli;
+ *   - nativo disponível → usa o fallback do CLI já na PRIMEIRA tentativa,
+ *     mesmo com o GHCR herdado do setup-cli, sem esperas nem pulls forçados;
  *   - falha que não é de registro → vermelho NA HORA, sem esperar;
  *   - registro recusando sempre → vermelho depois da 4ª tentativa, com `::error::`.
  *
@@ -115,7 +115,7 @@ describe("e2e.yml — supabase start resiste ao limite do registro", () => {
     const r = rodar([LIMITE, LIMITE, { texto: "Started supabase local development setup.", falha: false }]);
     expect(r.status, r.saida).toBe(0);
     expect(r.chamadas).toEqual([
-      "@ghcr.io start -x studio,postgres-meta",
+      "@ start -x studio,postgres-meta",
       "stop --no-backup",
       "sleep 20",
       "@public.ecr.aws start -x studio,postgres-meta",
@@ -126,22 +126,22 @@ describe("e2e.yml — supabase start resiste ao limite do registro", () => {
     expect(r.saida).toContain("::warning");
   });
 
-  it("GHCR e ECR limitados: a última tentativa libera o nativo e fica verde quando ele consegue puxar", () => {
+  it("o nativo disponível é usado primeiro, sem esperar três registros forçados antes dele", () => {
     const r = rodar([LIMITE, LIMITE_ECR, LIMITE, LIMITE_ECR], { nativoDisponivel: true });
     expect(r.status, r.saida).toBe(0);
-    expect(r.chamadas).toEqual([
-      "@ghcr.io start -x studio,postgres-meta",
-      "stop --no-backup",
-      "sleep 20",
-      "@public.ecr.aws start -x studio,postgres-meta",
-      "stop --no-backup",
-      "sleep 60",
-      "@ghcr.io start -x studio,postgres-meta",
-      "stop --no-backup",
-      "sleep 120",
-      "@ start -x studio,postgres-meta",
+    expect(r.chamadas).toEqual(["@ start -x studio,postgres-meta"]);
+  });
+
+  it("a quarta tentativa ainda pode recuperar uma falha transitória das três primeiras", () => {
+    const r = rodar([LIMITE, LIMITE_ECR, LIMITE, {
+      texto: "Started supabase local development setup.",
+      falha: false,
+    }]);
+    expect(r.status, r.saida).toBe(0);
+    expect(r.chamadas.filter((c) => c.startsWith("@")).map((c) => c.split(" ")[0])).toEqual([
+      "@", "@public.ecr.aws", "@ghcr.io", "@",
     ]);
-    expect(r.saida).toContain("fallback nativo");
+    expect(r.chamadas.filter((c) => c.startsWith("sleep"))).toEqual(["sleep 20", "sleep 60", "sleep 120"]);
   });
 
   it("falha que não é de registro fica vermelha na hora, sem esperar", () => {
@@ -149,7 +149,7 @@ describe("e2e.yml — supabase start resiste ao limite do registro", () => {
       { texto: "failed to bind host port for 0.0.0.0:54322: address already in use", falha: true },
     ]);
     expect(r.status, r.saida).toBe(1);
-    expect(r.chamadas).toEqual(["@ghcr.io start -x studio,postgres-meta"]);
+    expect(r.chamadas).toEqual(["@ start -x studio,postgres-meta"]);
     expect(r.saida).toContain("::error");
   });
 
@@ -160,7 +160,7 @@ describe("e2e.yml — supabase start resiste ao limite do registro", () => {
     }]);
     expect(r.status, r.saida).toBe(1);
     expect(r.chamadas.filter((c) => c.startsWith("@")).map((c) => c.split(" ")[0])).toEqual([
-      "@ghcr.io",
+      "@",
       "@public.ecr.aws",
       "@ghcr.io",
       "@",
