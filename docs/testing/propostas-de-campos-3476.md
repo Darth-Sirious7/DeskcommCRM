@@ -84,7 +84,8 @@ Dois casos usam uma trava de linha real para eliminar a sorte do escalonamento:
 dois pedidos HTTP leem `pending` antes de disputar o UPDATE; só um pode vencer.
 No outro, `vencePropostasDeCampo` executa de verdade numa transação enquanto o
 POST ainda enxerga a versão anterior; ao liberar a expiração, confirmar dá 409.
-As capturas vão ao output do Playwright e contêm apenas fixtures sintéticas.
+As capturas ficam em `evidence/propostas-3476/`, e o CI as preserva também quando
+a parte passa. Elas contêm apenas fixtures sintéticas.
 Não se afirma prova de modelo lendo PDF; o seam medido é a entrada MCP.
 
 ## Tipos gerados e verificação completa

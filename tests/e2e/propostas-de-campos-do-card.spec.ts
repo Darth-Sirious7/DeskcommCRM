@@ -146,7 +146,7 @@ async function gravado(leadId: string): Promise<unknown> {
   return data!.custom_fields;
 }
 
-test("manager confere origem, salva o número mostrado e descarta o outro campo", async ({ page }, info) => {
+test("manager confere origem, salva o número mostrado e descarta o outro campo", async ({ page }) => {
   await login(page, "manager");
   const c = await cenario(page);
   const dialog = await abrir(page, c.titulo);
@@ -155,7 +155,7 @@ test("manager confere origem, salva o número mostrado e descarta o outro campo"
   await expect(campoDoCard).toHaveValue("0");
   await expect(numero).toContainText("Medida no documento sintético: 1,234");
   await expect(numero.getByRole("textbox", { name: "Corrigir Medida do documento" })).toHaveValue("1.234");
-  await page.screenshot({ path: info.outputPath("01-revisao-sintetica.png"), fullPage: true });
+  await page.screenshot({ path: "evidence/propostas-3476/01-revisao-sintetica.png", fullPage: true });
   await numero.getByRole("button", { name: "Está certo, salvar", exact: true }).click();
   await expect(numero).toHaveCount(0);
   await expect.poll(() => gravado(c.leadId)).toEqual({ medida: 1.234, localizador: "ANTES" });
@@ -164,7 +164,7 @@ test("manager confere origem, salva o número mostrado e descarta o outro campo"
   await dialog.locator('[data-proposta="localizador"]').getByRole("button", { name: "Descartar", exact: true }).click();
   await expect(dialog.locator('[data-peca="revisao-do-documento"]')).toHaveCount(0);
   await expect.poll(() => gravado(c.leadId)).toEqual({ medida: 1.234, localizador: "ANTES" });
-  await page.screenshot({ path: info.outputPath("02-decidida-sintetica.png"), fullPage: true });
+  await page.screenshot({ path: "evidence/propostas-3476/02-decidida-sintetica.png", fullPage: true });
 });
 
 test("correção digitada é confirmada pelo formulário real", async ({ page }) => {
@@ -177,7 +177,7 @@ test("correção digitada é confirmada pelo formulário real", async ({ page })
   await expect.poll(() => gravado(c.leadId)).toEqual({ medida: 9.876, localizador: "ANTES" });
 });
 
-test("viewer lê a proposta, sem ação na tela nem autorização para decidir", async ({ page }, info) => {
+test("viewer lê a proposta, sem ação na tela nem autorização para decidir", async ({ page }) => {
   await login(page, "viewer");
   const c = await cenario(page);
   const dialog = await abrir(page, c.titulo);
@@ -189,7 +189,7 @@ test("viewer lê a proposta, sem ação na tela nem autorização para decidir",
   });
   expect(r.status()).toBe(403);
   await expect.poll(() => gravado(c.leadId)).toEqual({ medida: 0, localizador: "ANTES" });
-  await page.screenshot({ path: info.outputPath("03-leitura-sintetica.png"), fullPage: true });
+  await page.screenshot({ path: "evidence/propostas-3476/03-leitura-sintetica.png", fullPage: true });
 });
 
 test("revisão antiga recebe 409 após outra pessoa decidir e preserva o card", async ({ page }) => {
