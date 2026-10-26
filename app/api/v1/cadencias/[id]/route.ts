@@ -226,12 +226,18 @@ export async function DELETE(
     return fail("cadencia_nao_editavel", t("A cadência está no ar. Pause antes de excluir."), 409, { requestId });
   }
 
-  const { error } = await supabase
+  const { data: historico, error: erroHistorico } = await supabase.from("email_cadence_enrollments")
+    .select("id").eq("organization_id", org.orgId).eq("cadence_id", id).limit(1);
+  if (erroHistorico) return fail("internal_error", t("Não foi possível carregar as inscrições."), 500, { requestId });
+  if (historico?.length) return fail("cadencia_nao_editavel", t("Esta cadência tem inscrições. Pause para preservar o histórico e os descadastros."), 409, { requestId });
+
+  const { data: excluida, error } = await supabase
     .from("email_cadences")
     .delete()
     .eq("organization_id", org.orgId)
-    .eq("id", id);
+    .eq("id", id).eq("status", atual.status).select("id").maybeSingle();
   if (error) return fail("internal_error", error.message, 500, { requestId });
+  if (!excluida) return fail("cadencia_estado_invalido", t("O estado da cadência mudou. Recarregue a tela."), 409, { requestId });
 
   void audit({
     action: "cadencia.deleted",

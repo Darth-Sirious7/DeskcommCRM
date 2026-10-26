@@ -16,7 +16,7 @@ O cron anda a fila a cada minuto. E-mail só sai dentro da janela e dos dias con
 
 ## Paradas e preservação
 
-Pausar a cadência ou desligar o uso na empresa preserva os dados e impede os próximos envios. Retirar uma inscrição a encerra, sem apagar histórico. A montagem dos passos não muda enquanto houver inscrição ativa, mesmo em cadência pausada: termine ou retire as inscrições primeiro.
+Pausar a cadência ou desligar o uso na empresa preserva os dados e impede os próximos envios. Retirar uma inscrição a encerra, sem apagar histórico. Cadência com inscrições não é excluída: pause para preservar histórico e supressões. A montagem dos passos não muda enquanto houver inscrição ativa, mesmo em cadência pausada: termine ou retire as inscrições primeiro.
 
 Todo e-mail tem descadastro assinado, sem sessão e sem expiração artificial. A abertura e o descadastro usam finalidades HMAC distintas. Descadastrar interrompe as inscrições ativas desse contato na empresa e registra supressão na inscrição de origem, inclusive quando ela já estava concluída ou a empresa desligada. Clique repetido é idempotente. A reinscrição comum não remove a supressão.
 

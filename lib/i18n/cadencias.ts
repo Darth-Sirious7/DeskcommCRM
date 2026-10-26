@@ -1,5 +1,6 @@
 /** Textos da adaptação como módulo oficial opcional (doc75B). */
 export const TEXTOS_CADENCIAS = {
+  "Esta cadência tem inscrições. Pause para preservar o histórico e os descadastros.": { es: "Esta cadencia tiene inscripciones. Pásala a pausa para conservar el historial y las bajas." },
   "Este contato não pode receber cadências pelas preferências registradas.": { es: "Este contacto no puede recibir cadencias por sus preferencias registradas." },
   "Retire as variáveis indisponíveis antes de ativar.": { es: "Retira las variables no disponibles antes de activar." },
   "Ex.: {{primeiro_nome}}, uma ideia para você": { es: "Ej.: {{primeiro_nome}}, una idea para ti" },
