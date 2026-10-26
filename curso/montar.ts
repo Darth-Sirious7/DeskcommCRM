@@ -62,11 +62,18 @@ if (modulosComFalha.length) {
 const pastaJornadas = path.join(RAIZ, "demonstracoes");
 const todosNichos = existsSync(pastaJornadas) ? readdirSync(pastaJornadas).filter((f) => f.endsWith(".json")).sort()
   .map((f) => Nicho.parse(JSON.parse(readFileSync(path.join(pastaJornadas, f), "utf8")))) : [];
-validarJornadas(todosNichos, todosModulos, manifesto);
 // Recorte de desenvolvimento: não publicar histórias com links para lições omitidas.
 const nichos = todosNichos.map((n) => ({ ...n, jornadas: n.jornadas.filter((j) =>
   j.montagem.every((ref) => modulos.some((m) => m.id === ref.modulo)),
 ) })).filter((n) => n.jornadas.length > 0);
+// A montagem completa valida tudo; um recorte não depende das fotos omitidas.
+validarJornadas(soEstes.length === 0 ? todosNichos : nichos, todosModulos, manifesto);
+const cenasPendentes = nichos.flatMap((n) => n.jornadas.flatMap((j) => j.cenas
+  .filter((c) => falhas.includes(c.captura)).map((c) => c.captura),
+));
+if (cenasPendentes.length) {
+  throw new Error(`capturas pendentes nas jornadas publicadas: ${cenasPendentes.join(", ")} — recapture antes de montar`);
+}
 const referenciadas = new Set([
   ...modulos.flatMap((m) => m.licoes.flatMap((l) => l.passos.map((p) => chaveDoPasso(m.id, l.id, p.id)))),
   ...nichos.flatMap((n) => n.jornadas.flatMap((j) => j.cenas.map((c) => c.captura))),

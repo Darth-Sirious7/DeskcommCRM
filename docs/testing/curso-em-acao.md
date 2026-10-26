@@ -42,7 +42,9 @@ As receitas declaram a ação humana por cena (`acao_humana`) e a situação da 
 
 A agenda usa o `starts_at`, fuso e situação efetivos do compromisso. Lê os dias desenhados na grade, navega pelos botões de período anterior/seguinte e abre a aba correta, inclusive “Passados”. Não usa `?data=`, que a tela não consome. Isso permite voltar à semana histórica de 27/10 após ela ter passado, sem alterar o produto ou a data da prova.
 
-Falha de seletor ou medição interrompe a execução. O manifesto é salvo após cada foto bem-sucedida, preservando capturas antigas e permitindo retomar pelo filtro da história. A conta e a sessão autenticada não entram no manifesto. Importar os helpers não lê contas, exige credenciais ou abre conexão.
+Antes de abrir o contexto da bancada, autenticar ou iniciar o navegador, o capturador salva em `falhas[]` as chaves canônicas de **todas** as cenas selecionadas. Cada chave só sai dessa lista depois de medição, JPEG e registro de metadados concluídos. Falha de contexto, login, seletor ou medição interrompe a execução e mantém pendentes as cenas ainda não concluídas, mesmo com entrada e JPEG de uma rodada anterior. As fotos anteriores permanecem em disco; não comprovam a recaptura. Falhas de captura/revogação das lições e pendências fora do recorte são preservadas. A conta, a sessão autenticada e o texto cru de erros não entram no registro das jornadas nem na saída do CLI. Importar os helpers não lê contas, exige credenciais ou abre conexão.
+
+Ao salvar uma rodada posterior de lições, `curso/capturar.ts` conserva as chaves canônicas pendentes das jornadas. Fotografar uma lição não libera uma jornada: só a recaptura da própria cena faz isso. A contagem de falhas e o código de saída do capturador de lições continuam referentes à sua rodada; o montador verifica também as pendências herdadas antes de publicar.
 
 ## Pilotos e alcance da evidência
 
@@ -62,11 +64,13 @@ Nos exemplos de seguros, contabilidade e assistência técnica, a tela de Dados 
 ## Verificação e montagem
 
 ```bash
-pnpm exec vitest run curso/receitas-jornadas.test.ts curso/navegar-agenda.test.ts curso/jornada.test.ts curso/licoes.test.ts
+pnpm exec vitest run curso/manifesto-jornadas.test.ts curso/receitas-jornadas.test.ts curso/navegar-agenda.test.ts curso/jornada.test.ts curso/licoes.test.ts
 CURSO_BASE=/curso/ pnpm exec tsx curso/montar.ts
 ```
 
 O teste de unidade deriva as fotos esperadas do catálogo versionado: roda em clone fresco sem `curso/saida`. O montador exige o manifesto e a existência física de cada foto referenciada. Os arquivos em `curso/saida/` são saída privada ignorada e não devem ser commitados. A prova visual final precisa percorrer catálogo, cenas e montagem em desktop/celular, conferir imagens decodificadas e erros do navegador; sucesso de unidade não substitui essa prova.
+
+O montador recusa, antes de sobrescrever o HTML, qualquer chave pendente de uma jornada que seria publicada. Um recorte de módulos que omita essa jornada continua utilizável, inclusive quando ela ainda não tem entrada de captura; montar tudo exige recapturá-la. A montagem completa valida todo o catálogo; no recorte, só as jornadas publicadas exigem fotos. Manifestos legados sem `falhas` continuam aceitos. `curso/manifesto-jornadas.test.ts` reproduz o CLI real em árvore temporária, sem contas e com ambiente isolado sem segredos: parte de entradas/arquivos anteriores, provoca falha antes da primeira foto e verifica a pendência persistida, a recusa da montagem seguinte e a preservação do índice anterior. Também exercita o registro individual com operação de fotografia controlada, falha após uma cena concluída, recuperação e preservação das falhas das lições. Os arquivos inertes dessa fixture verificam o contrato do manifesto e de existência; não são prova visual do aplicativo, não usam HTML que o imita e não alteram a saída real.
 
 A rodada de 26/10/2026 produziu 120 fotos dedicadas com 120 hashes distintos e destaques medidos dentro do quadro. A montagem completa preservou as 1097 fotos das lições e incluiu as novas: 61 módulos, 1217 fotos. Após a integração, os quatro arquivos de testes focados passaram (98 casos); a conferência de arquivos físicos e a montagem foram repetidas após a sincronização final.
 

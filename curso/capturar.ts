@@ -126,6 +126,13 @@ export async function entrar(page: Page, papel: string, urlBase = URL_BASE) {
   await page.waitForURL((u) => !u.pathname.startsWith("/login"), { timeout: 20_000 });
 }
 
+/** Uma rodada de lições não conclui as recapturas pendentes das jornadas. */
+export function salvarManifestoDasLicoes(arquivo: string, capturas: Record<string, Captura>, falhas: string[]) {
+  const anteriores: string[] = existsSync(arquivo) ? JSON.parse(readFileSync(arquivo, "utf8")).falhas ?? [] : [];
+  const jornadasPendentes = anteriores.filter((chave) => /^demo-[a-z0-9-]+--historia--[a-z0-9-]+$/.test(chave));
+  writeFileSync(arquivo, JSON.stringify({ largura: LARGURA, altura: ALTURA, capturas, falhas: [...jornadasPendentes, ...falhas] }, null, 2));
+}
+
 async function main() {
   const filtro = process.argv[2];
   const soLicao = process.argv[3]; // depuração: uma lição só
@@ -223,10 +230,7 @@ async function main() {
     }
   }
   await browser.close();
-  writeFileSync(
-    arquivoCapturas,
-    JSON.stringify({ largura: LARGURA, altura: ALTURA, capturas, falhas }, null, 2),
-  );
+  salvarManifestoDasLicoes(arquivoCapturas, capturas, falhas);
   console.info(`\n${Object.keys(capturas).length} fotos, ${falhas.length} falhas`);
   if (falhas.length) process.exit(1);
 }

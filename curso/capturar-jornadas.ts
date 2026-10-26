@@ -14,6 +14,22 @@ import { navegarAgendaAte } from "./navegar-agenda";
 const SAIDA = path.join(path.dirname(new URL(import.meta.url).pathname), "saida");
 type Estado = Awaited<ReturnType<typeof semearCena>>;
 
+/** Invalida a rodada antes de abrir a bancada; fotos anteriores não provam recaptura. */
+export function abrirManifestoDaRodada(arquivo: string, chaves: string[]) {
+  const manifesto: { largura: number; altura: number; capturas: Record<string, Captura>; falhas?: string[] } = existsSync(arquivo)
+    ? JSON.parse(readFileSync(arquivo, "utf8")) : { largura: 1440, altura: 900, capturas: {} };
+  manifesto.falhas = [...(manifesto.falhas ?? [])];
+  for (const chave of chaves) if (!manifesto.falhas.includes(chave)) manifesto.falhas.push(chave);
+  writeFileSync(arquivo, JSON.stringify(manifesto, null, 2));
+  return async (chave: string, fotografar: () => Promise<Captura>) => {
+    const captura = await fotografar(); // Inclui medição, JPEG e metadados; qualquer falha conserva a pendência.
+    manifesto.capturas[chave] = captura;
+    // Somente a chave concluída é liberada; captura/revogação de lições e outros recortes permanecem.
+    manifesto.falhas = manifesto.falhas!.filter((falha) => falha !== chave);
+    writeFileSync(arquivo, JSON.stringify(manifesto, null, 2));
+  };
+}
+
 async function mostrar(page: Page, base: string, historia: Historia, receita: Receita, indice: number, estado: Estado): Promise<Alvo> {
   const superficie = receita.cenas[indice]!.superficie;
   if (["conversa", "nota", "passagem"].includes(superficie)) {
@@ -126,10 +142,10 @@ async function main() {
   const base = exigirHttpLocal(process.env.CURSO_URL ?? "http://127.0.0.1:3460");
   const historias = lerHistorias().filter((h) => !process.argv[2] || h.id === process.argv[2] || h.id.startsWith(`${process.argv[2]}-`));
   if (!historias.length) throw new Error("filtro sem jornadas");
-  const ctx = await contextoDaBancada();
   mkdirSync(path.join(SAIDA, "capturas"), { recursive: true });
   const arquivo = path.join(SAIDA, "capturas.json");
-  const manifesto = existsSync(arquivo) ? JSON.parse(readFileSync(arquivo, "utf8")) : { largura: 1440, altura: 900, capturas: {} };
+  const registrar = abrirManifestoDaRodada(arquivo, historias.flatMap((h) => h.cenas.map((c) => chaveDaCena(h.id, c.id))));
+  const ctx = await contextoDaBancada();
   const browser = await chromium.launch({ channel: process.env.CURSO_BROWSER_CHANNEL || undefined, args: ["--lang=pt-BR"] });
   const contexto = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1.5, locale: "pt-BR", timezoneId: "America/Sao_Paulo" });
   const pagina = await contexto.newPage();
@@ -139,31 +155,31 @@ async function main() {
       const receita = receitas.find((r) => r.jornada === historia.id)!;
       for (const [indice, cena] of historia.cenas.entries()) {
         const chave = chaveDaCena(historia.id, cena.id);
-        const estado = await semearCena(ctx, historia, receita, indice);
-        const alvo = await mostrar(pagina, base, historia, receita, indice, estado);
-        await esperarCarregar(pagina);
-        // O helper legado só avisa quando há skeleton: fotografia nova deve falhar.
-        // As esperas de identidade acima evitam aceitar o vazio anterior à consulta.
-        // A bolinha da sidebar pode pulsar por canal parado: é saúde da conexão,
-        // não carregamento. A exceção só vale para esse span no link de Conexões.
-        const pulsoDeConexao = "a[href='/app/connections'] > span[aria-label='Uma conexão caiu'][title='Uma conexão caiu']";
-        await expect(pagina.locator(`[data-esqueleto]:visible, .animate-pulse:visible:not(${pulsoDeConexao}), [aria-busy='true']:visible`)).toHaveCount(0, { timeout: 15_000 });
-        await expect(pagina.getByText(/^Carregando(?:\b|…|\.{3})/).filter({ visible: true })).toHaveCount(0, { timeout: 15_000 });
-        await pagina.addStyleTag({ content: CSS_DE_FOTO });
-        await tirarFocoDeClique(pagina);
-        await pagina.mouse.move(0, 899);
-        const caixa = await medir(pagina, alvo);
-        const foto = `capturas/${chave}.jpg`;
-        await pagina.screenshot({ path: path.join(SAIDA, foto), type: "jpeg", quality: 72 });
-        const captura: Captura = { foto, clicar: null, destaques: [{ ...caixa, rotulo: cena.titulo, tipo: "caixa" }], versao, capturado_em: new Date().toISOString() };
-        manifesto.capturas[chave] = captura;
-        // Uma falha posterior conserva as fotos concluídas e nunca registra a que falhou.
-        writeFileSync(arquivo, JSON.stringify(manifesto, null, 2));
+        await registrar(chave, async () => {
+          const estado = await semearCena(ctx, historia, receita, indice);
+          const alvo = await mostrar(pagina, base, historia, receita, indice, estado);
+          await esperarCarregar(pagina);
+          // O helper legado só avisa quando há skeleton: fotografia nova deve falhar.
+          // As esperas de identidade acima evitam aceitar o vazio anterior à consulta.
+          // A bolinha da sidebar pode pulsar por canal parado: é saúde da conexão,
+          // não carregamento. A exceção só vale para esse span no link de Conexões.
+          const pulsoDeConexao = "a[href='/app/connections'] > span[aria-label='Uma conexão caiu'][title='Uma conexão caiu']";
+          await expect(pagina.locator(`[data-esqueleto]:visible, .animate-pulse:visible:not(${pulsoDeConexao}), [aria-busy='true']:visible`)).toHaveCount(0, { timeout: 15_000 });
+          await expect(pagina.getByText(/^Carregando(?:\b|…|\.{3})/).filter({ visible: true })).toHaveCount(0, { timeout: 15_000 });
+          await pagina.addStyleTag({ content: CSS_DE_FOTO });
+          await tirarFocoDeClique(pagina);
+          await pagina.mouse.move(0, 899);
+          const caixa = await medir(pagina, alvo);
+          const foto = `capturas/${chave}.jpg`;
+          await pagina.screenshot({ path: path.join(SAIDA, foto), type: "jpeg", quality: 72 });
+          const captura: Captura = { foto, clicar: null, destaques: [{ ...caixa, rotulo: cena.titulo, tipo: "caixa" }], versao, capturado_em: new Date().toISOString() };
+          return captura;
+        });
         console.info(`ok ${chave}`);
       }
     }
   } finally { await contexto.close(); await browser.close(); }
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname)) {
-  main().catch((e: unknown) => { console.error(e instanceof Error ? e.message.split("\n")[0] : "Falha na captura"); process.exitCode = 1; });
+  main().catch(() => { console.error("Falha na captura das jornadas; confira a bancada local e recapture as cenas pendentes."); process.exitCode = 1; });
 }
