@@ -47,6 +47,7 @@ import {
 } from "@/lib/schemas/mostrar-quando";
 import { irAoDesafioDeMfa } from "@/lib/auth/ir-ao-desafio-de-mfa";
 import { CaretDown, Plus, Trash } from "@/lib/ui/icons";
+import { entradaDoInboxDeclarada } from "@/lib/leads/entrada-do-inbox";
 import { AgentMappingSection, ancoraDoMapeamento } from "./_mapping";
 import { StagesSection, ancoraDasEtapas } from "./_stages";
 
@@ -58,6 +59,8 @@ export interface PipelineRow {
   settings: Record<string, unknown> | null;
   /** Opcional só para os testes; a página sempre manda (ver `ehFunilPadrao`). */
   is_default?: boolean;
+  /** O funil de clientes (#0262): o servidor também lê `entrada_do_inbox` nele. */
+  is_client_pipeline?: boolean;
 }
 
 /**
@@ -97,6 +100,38 @@ export interface EtapaDoFunil {
   id: string;
   name: string;
   is_archived: boolean;
+  /**
+   * Etapa de fechamento. Opcional porque o editor de `obrigatorio_em` (#1536)
+   * não distingue fechamento de abertura — ele mostra TODAS as etapas, e a
+   * marca que alguém já fez não pode sumir por causa de um filtro. Quem
+   * ESCOLHE a etapa de entrada do Inbox (#3011) filtra por eles: card não
+   * nasce em "Ganho". A página sempre manda os dois.
+   */
+  is_won?: boolean;
+  is_lost?: boolean;
+}
+
+/**
+ * O item do seletor da entrada do Inbox que significa "a primeira etapa do
+ * funil" — o comportamento de sempre, e o valor que DESLIGA o ajuste (#3011).
+ *
+ * Radix recusa `value=""` em `<SelectItem>`, e "não quero escolher etapa" precisa
+ * ser um item como os outros — não um placeholder que some quando a pessoa
+ * escolhe algo.
+ */
+export const ENTRADA_DO_INBOX_PADRAO = "__primeira_etapa__";
+
+/**
+ * As etapas que PODEM receber a conversa nova (#3011): abertas, e nem ganho nem
+ * perdido.
+ *
+ * É a mesma lista que `etapaDeEntrada` consulta no banco antes de aceitar a
+ * etapa declarada. Oferecer uma etapa que a gravação recusaria faria a tela
+ * prometer uma escolha que o fallback desfaz em silêncio — o defeito que este
+ * controle existe para acabar.
+ */
+export function etapasQueRecebemConversa(etapas: EtapaDoFunil[]): EtapaDoFunil[] {
+  return etapas.filter((e) => !e.is_archived && e.is_won !== true && e.is_lost !== true);
 }
 
 /**
@@ -697,6 +732,21 @@ function PipelineEditor({
   const [diasDosEncerrados, setDiasDosEncerrados] = useState(
     diasRelidos !== null ? String(diasRelidos) : String(DIAS_PADRAO_DO_RECORTE),
   );
+  /**
+   * A ENTRADA DAS CONVERSAS DO INBOX (#3011) — quantas fatias da tela o ajuste
+   * tem.
+   *
+   * O ajuste nasceu no banco, com leitura e fallback provados, e sem lugar
+   * nenhum para ser ligado: a doutrina (`docs/doctrine/sistema-vivo.md`,
+   * invariante 6) pede tela para ver, tela para mudar e aviso visível quando
+   * falha. São DOIS estados porque o ajuste tem duas decisões: se ele vale
+   * (`ativa`) e QUAL etapa foi escolhida (`stage_id`). Desligar NÃO apaga a
+   * etapa — quem desliga e depois religa não escolhe de novo, e é por isso que
+   * o valor lembrado é guardado mesmo com o seletor na primeira etapa.
+   */
+  const entradaInicial = entradaDoInboxDeclarada(pipeline.settings);
+  const [entradaAtiva, setEntradaAtiva] = useState(entradaInicial.ativa);
+  const [entradaEtapaId, setEntradaEtapaId] = useState<string | null>(entradaInicial.stage_id);
   // O texto CSV de importação de opções (#2521), por chave de campo — vive só
   // enquanto a pessoa cola; "Importar" o transforma em opções e o limpa.
   const [csvDeOpcoes, setCsvDeOpcoes] = useState<Record<string, string>>({});
@@ -794,6 +844,24 @@ function PipelineEditor({
       won_reason_required: wonRequired,
       comanda_no_ganho: comandaNoGanho,
       reabertura: retomaComoNovo ? "novo_negocio" : "mesmo_registro",
+      // A ENTRADA DAS CONVERSAS DO INBOX (#3011) vai no MESMO patch, pela
+      // MESMA porta de escrita do settings — a gravação no banco já existe
+      // (`updatePipelineConfig`), e a tela só passa a mandar a chave.
+      //
+      // A chave SÓ entra quando há o que dizer: um funil que nunca declarou
+      // etapa nenhuma continua idêntico ao de antes deste ajuste, em vez de
+      // ganhar `{ ativa: false }` morto em toda gravação. Quem JÁ declarou e
+      // desliga manda a escolha junto (`stage_id` preservado), porque o
+      // desligado é uma decisão com memória: religar não obriga a escolher de
+      // novo.
+      ...(entradaLigada || entradaInicial.ativa || entradaInicial.stage_id
+        ? {
+            entrada_do_inbox: {
+              ativa: entradaLigada,
+              ...(entradaEtapaId ? { stage_id: entradaEtapaId } : {}),
+            },
+          }
+        : {}),
       ocultar_encerrados_dias: ocultarEncerrados ? diasDigitados : 0,
     };
     startTransition(async () => {
@@ -809,6 +877,25 @@ function PipelineEditor({
     .split(",")
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
+
+  // ─── A ENTRADA DAS CONVERSAS DO INBOX (#3011) ──────────────────────────
+  // Quem pode ser escolhido, o que está escolhido hoje, e o que fazer quando a
+  // escolha deixou de valer. A escolha inválida CONTINUA à mostra no seletor
+  // (marcada como indisponível) e o aviso diz para onde as conversas estão indo
+  // — é o "aviso visível quando falha" que a doutrina pede, e é o que impede a
+  // queda para a primeira etapa de virar silêncio.
+  const etapasDeEntrada = etapasQueRecebemConversa(etapas);
+  // "Ligado" é terceiro estado: sem etapa escolhida não há o que declarar —
+  // um ajuste ligado apontando para lugar nenhum cairia na primeira etapa de
+  // qualquer forma, e o seletor diz isso mostrando o item padrão.
+  const entradaLigada = entradaAtiva && entradaEtapaId !== null;
+  const etapaDeclarada = entradaInicial.stage_id;
+  const declaradaVale = etapaDeclarada !== null && etapasDeEntrada.some((e) => e.id === etapaDeclarada);
+  const escolhaPerdida = entradaInicial.ativa && !declaradaVale;
+  const etapaForaDaLista = etapaDeclarada !== null && !declaradaVale;
+  const nomeDaEtapaPerdida = etapaForaDaLista
+    ? `${etapas.find((e) => e.id === etapaDeclarada)?.name ?? t("Etapa removida")} (${t("indisponível")})`
+    : "";
 
   return (
     <div className="space-y-4" data-testid={`editor-${pipeline.id}`}>
@@ -914,6 +1001,88 @@ function PipelineEditor({
           )}
         </p>
       </div>
+
+      {/* ─── A ENTRADA DAS CONVERSAS DO INBOX (#3011) ─────────────────────
+          O ajuste existia só no BANCO: a etapa declarada já valia, o fallback
+          já era provado — e ninguém conseguia ligar, porque nenhum ponto da
+          interface mandava a chave. A doutrina
+          (`docs/doctrine/sistema-vivo.md`, invariante 6) pede tela para ver,
+          tela para mudar e aviso visível quando falha; a issue #3011 pede a
+          escolha na edição do funil.
+
+          A escolha sai daqui no patch de `updatePipelineConfig` — a MESMA porta
+          de escrita do resto do settings. A gravação no banco não é reescrita
+          aqui: a tela só passa a mandar `entrada_do_inbox`.
+
+          SÓ NO FUNIL QUE O SERVIDOR LÊ: `funilDeEntrada`
+          (`lib/leads/nascimento-do-lead.ts`) consulta a chave apenas no funil
+          `is_default` e no `is_client_pipeline`. Num funil secundário a escolha
+          seria salva e nunca usada, e o aviso diria que as conversas caem numa
+          etapa dele, onde elas não entram. Não é `ehFunilPadrao`: ele cai em
+          `pipelines[0]` sem padrão, e o servidor ali devolve
+          `sem_funil_de_entrada`. */}
+      {(pipeline.is_default === true || pipeline.is_client_pipeline === true) && (
+      <div className="space-y-1">
+        <Label className="text-xs">{t("Novas conversas do Inbox entram em…")}</Label>
+        <Select
+          value={entradaLigada && entradaEtapaId ? entradaEtapaId : ENTRADA_DO_INBOX_PADRAO}
+          onValueChange={(valor) => {
+            if (valor === ENTRADA_DO_INBOX_PADRAO) {
+              // DESLIGAR NÃO ESQUECE A ETAPA: o identificador fica no estado (e
+              // vai no patch), então religar é um clique — não uma escolha nova.
+              setEntradaAtiva(false);
+              return;
+            }
+            setEntradaAtiva(true);
+            setEntradaEtapaId(valor);
+          }}
+        >
+          <SelectTrigger
+            aria-label={t("Etapa de entrada das conversas do Inbox")}
+            className="h-8 w-72 text-xs"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ENTRADA_DO_INBOX_PADRAO}>
+              {t("Primeira etapa do funil (padrão)")}
+            </SelectItem>
+            {/* A etapa declarada que DEIXOU DE VALER continua na lista, marcada.
+                Tirá-la da tela apagaria a escolha por baixo de quem a fez — e o
+                admin não teria como ver onde ela apontava. Ela some no dia em
+                que outra etapa é escolhida. */}
+            {etapaForaDaLista && (
+              <SelectItem value={etapaDeclarada!}>{nomeDaEtapaPerdida}</SelectItem>
+            )}
+            {etapasDeEntrada.map((e) => (
+              <SelectItem key={e.id} value={e.id}>
+                {e.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "A conversa nova do Inbox vira card nesta etapa. Sem escolha, ela nasce na primeira etapa do funil — o comportamento de sempre.",
+          )}
+        </p>
+        {/* O AVISO VISÍVEL QUANDO FALHA: a etapa gravada deixou de valer e as
+            conversas estão caindo na primeira etapa. O fallback do servidor
+            já decide isso (e loga `logger.warn`); o que faltava era quem
+            configurou FICAR SABENDO. */}
+        {escolhaPerdida && (
+          <p role="alert" className="text-xs font-medium text-amber-600 dark:text-amber-400">
+            {etapaDeclarada === null
+              ? t(
+                  "Nenhuma etapa escolhida: as conversas novas estão entrando na primeira etapa do funil.",
+                )
+              : t(
+                  "A etapa escolhida não está mais disponível (arquivada, apagada ou fechada): as conversas novas estão entrando na primeira etapa do funil. Escolha outra para voltar a decidir.",
+                )}
+          </p>
+        )}
+      </div>
+      )}
 
       {/* ─── O RECORTE DE ENCERRADOS ANTIGOS (#2995) ──────────────────────
           O quadro traz TODO negócio não arquivado — ganhos e perdas de meses
