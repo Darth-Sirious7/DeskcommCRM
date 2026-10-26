@@ -11029,6 +11029,9 @@ export const DICIONARIO: Traducoes = {
   "Prepara no compositor — você revisa e envia": {
     es: "Prepara en el compositor — tú revisas y envías",
   },
+  "A resposta rápida substitui o texto do campo. Envie ou apague o rascunho antes.": {
+    es: "La respuesta rápida reemplaza el texto del campo. Envía o borra el borrador antes.",
+  },
   // ── "Mostrar na barra do Inbox" #3282 ──────────────────────────────────────
   "Mostrar na barra do Inbox": { es: "Mostrar en la barra del Inbox" },
   "Desmarcado, a resposta sai da barra do Inbox e continua no atalho /.": {
