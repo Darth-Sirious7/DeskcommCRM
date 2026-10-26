@@ -74,9 +74,10 @@
   "types": {
     "cli": "2.122.0",
     "raw_sha256": "91675e73e22d49b7797665339e297bf23de08acb497b7281436acf786d10dda5",
-    "formatted_sha256": "adc0c8497856db006965d127fb9cbeebecf3fa72c64fa48390bc193b16e7cca3"
+    "formatted_sha256": "adc0c8497856db006965d127fb9cbeebecf3fa72c64fa48390bc193b16e7cca3",
+    "scope": "Saída usada no head0a5238538; a geração integrada abaixo a substitui no candidato final."
   },
-  "post_run_product_delta": "Somente o retorno do catch inesperado em field-proposals/[pid]/route.ts: throw err passa a fail internal_error500; arquivos de interface mantêm os blobs medidos.",
+  "post_run_product_delta": "Nesta contribuição: catch de erro inesperado retorna fail JSON500. Depois também entrou origin/main63dfc0fda, incluindo0793. Os três componentes de revisão/dossiê/formulário abaixo mantêm os blobs da provaUI; o candidato integrado exige novamente os cinco checks.",
   "post_run_test_delta": "A captura02 passa a rolar até o campoMedida antes da imagem. A imagem preservada neste manifesto ainda mostra o topo do formulário.",
   "unexpected_error_unit_proof": {
     "file": "tests/unit/api-fila-de-campos-do-negocio.test.ts",
@@ -89,5 +90,53 @@
       "passed": 16,
       "exit": 0
     }
+  },
+  "baseline_scope": "baseline_sha256 identifica somente a execução UI no head0a5238538.",
+  "component_ui_blobs_equal_after_integration": [
+    {
+      "path": "components/kanban/RevisaoDoDocumento.tsx",
+      "ui_source_blob": "acd89f9036c2690802db3ccae54575f05abdc3a4",
+      "integrated_index_blob": "acd89f9036c2690802db3ccae54575f05abdc3a4"
+    },
+    {
+      "path": "components/kanban/LeadDossier.tsx",
+      "ui_source_blob": "21d2fd297a9e8eb6cef603ebd9f12ee08ddb68a5",
+      "integrated_index_blob": "21d2fd297a9e8eb6cef603ebd9f12ee08ddb68a5"
+    },
+    {
+      "path": "components/kanban/LeadFieldsForm.tsx",
+      "ui_source_blob": "384d648e645632481386f49b973b46e511171bed",
+      "integrated_index_blob": "384d648e645632481386f49b973b46e511171bed"
+    }
+  ],
+  "integrated_candidate_typegen": {
+    "head_before_merge": "b6471fa38378c3a862b640c932522919c954de8c",
+    "main_merge_head": "63dfc0fdabd02cf1450dfae4ba680fbeb7cff8c3",
+    "index_tree_before_typegen": "f68bd98aab2658f9e51876f5646dee4b6f7912c4",
+    "baseline_sha256": "1807cf2be3195d1f642adbc151af35079bb8fa50d1b876a701cad905d2c67197",
+    "prelude_sha256": "62afc1fa29248f8c5d9318b882489894aab92adb1d6716d7b2e39e4e06d3eb3c",
+    "postgres": "17.11",
+    "image_id": "sha256:ac08538c6f8b9904c33c8224c5e5706dbe760aca29db1d096972b4052c22a75d",
+    "memory_limit_bytes": 1073741824,
+    "cpu_limit": 1,
+    "cli": "2.122.0",
+    "fresh_container": "codex3476-types-01a178b3",
+    "port_localhost": 57502,
+    "prelude": "extraído sem alterações do bloco canônico de scripts/test-db.sh",
+    "baseline_install_on_error_stop": true,
+    "baseline_update_on_error_stop": true,
+    "raw_sha256_pass1": "09839121c61af8d5788da5c2dcd095eddb8e99933f83d0ddadbb615a37f413e5",
+    "raw_sha256_pass2": "09839121c61af8d5788da5c2dcd095eddb8e99933f83d0ddadbb615a37f413e5",
+    "formatted_sha256": "d629f5f97ddd145211e43041949852069aa065553242a19c66a53408adf318ea",
+    "public_tables": 206,
+    "public_functions": 248,
+    "delta_generated": "Somente a assinatura de fn_go_live_solta_numero_formado, adicionada pela0793 da main. Nenhum tipo editado à mão.",
+    "new_function_acl": {
+      "anon_execute": false,
+      "authenticated_execute": false,
+      "service_role_execute": false
+    },
+    "own_container_removed": true,
+    "no_next_or_full_supabase_stack": true
   }
 }

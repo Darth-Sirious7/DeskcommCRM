@@ -15186,6 +15186,7 @@ export type Database = {
       };
       fn_followup_turno_descartado: { Args: { p_job: string; p_org: string }; Returns: boolean };
       fn_gasto_de_ia_do_mes: { Args: { p_org: string }; Returns: number };
+      fn_go_live_solta_numero_formado: { Args: Record<PropertyKey, never>; Returns: number };
       fn_google_appointment: {
         Args: { p_action: string; p_args?: Json; p_id: string; p_org: string };
         Returns: Json;

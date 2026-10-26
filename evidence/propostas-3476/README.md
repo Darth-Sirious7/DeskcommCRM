@@ -34,10 +34,21 @@ de três PNGs. IDs, hashes, dimensões e linhas do log estão no [manifesto](man
 
 Depois dessa execução, somente o ramo de erro inesperado do handler de decisão
 mudou no produto: ele conserva o rollback para pendente e retorna JSON 500
-genérico. Os arquivos da interface mantêm os blobs medidos. A prova complementar
+genérico. `RevisaoDoDocumento`, `LeadDossier` e `LeadFieldsForm` mantêm os blobs
+medidos. A prova complementar
 é unitária: o caso novo falhou com a exceção escapando (1 falha/15 sucessos) e
 passou com o retorno canônico (16 sucessos), incluindo o controle de `ApiError`
 422. Os cinco checks do candidato final continuam obrigatórios antes do merge.
+
+Depois também entrou a `main` em `63dfc0fda`, incluindo a migration 0793. O
+conflito do baseline foi resolvido preservando integralmente os blocos 0793 e
+0797 antes da varredura de funções; a policy final 0807 permaneceu. Isso exigiu
+nova geração de tipos num Postgres 17.11 vazio, limitado a 1 GiB e um processador:
+prelude canônico, instalação e reaplicação do baseline com `ON_ERROR_STOP=1`,
+duas gerações idênticas pelo CLI 2.122.0 e Prettier. A única diferença gerada é a
+assinatura de `fn_go_live_solta_numero_formado`; ela permanece sem execução para
+`anon`, `authenticated` ou `service_role`. O banco temporário foi removido. O
+manifesto separa os hashes da prova UI dos hashes desse candidato integrado.
 
 A prova mede MCP → fila → revisão → edição canônica. Não mede modelo lendo PDF,
 upload/anexo nem entrega externa. O motivo livre de recusa não alimenta

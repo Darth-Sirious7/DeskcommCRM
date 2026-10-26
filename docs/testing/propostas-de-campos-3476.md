@@ -20,6 +20,15 @@ tentativa de build na VPS foi interrompida por pressão de recursos e não conta
 como prova de build ou UI. Os processos, contêineres, rede e listeners próprios
 foram encerrados; os serviços alheios do curso foram preservados.
 
+A integração posterior da `main` em `63dfc0fda` trouxe a 0793. O único conflito
+era a inserção dos blocos 0793 e 0797 no mesmo ponto; ambos foram preservados,
+nessa ordem e antes da varredura de funções. A policy 0807 permaneceu intacta.
+O baseline integrado tem SHA256
+`1807cf2be3195d1f642adbc151af35079bb8fa50d1b876a701cad905d2c67197` e recebeu
+nova prova de instalação e reaplicação com `ON_ERROR_STOP=1`, num Postgres 17.11
+vazio e próprio, sem reaproveitar o volume anterior. Nenhum Next ou stack
+Supabase completo foi iniciado nessa rodada; o contêiner de 1 GiB foi removido.
+
 ## Banco
 
 O CI existente aplica o baseline em instalação e reaplicação e mede pg15 e pg17.
@@ -105,7 +114,9 @@ escapava da borda API. A rota agora conserva a volta para pendente e devolve
 de contatos. A reprodução ficou vermelha (1 falha/15 sucessos); o reparo ficou
 verde (16 sucessos), incluindo controle do `ApiError` 422. Nenhum arquivo de
 interface mudou; essa linha do handler não foi executada na prova de UI acima.
-O candidato final precisa dos cinco checks obrigatórios antes do merge.
+Os três componentes `RevisaoDoDocumento`, `LeadDossier` e `LeadFieldsForm` também
+mantiveram os blobs após integrar a `main`; outras partes do produto mudaram.
+O candidato integrado precisa dos cinco checks obrigatórios antes do merge.
 
 ## Tipos gerados e verificação completa
 
@@ -125,8 +136,21 @@ Comparar a saída e substituir `lib/database.types.ts` pelo resultado do gerador
 com formatação mecânica pelo Prettier já instalado. A saída bruta permanece
 guardada para comparação. Não montar tipos da nova tabela à mão nem gerar do
 projeto remoto. A regeneração alcança a defasagem do arquivo anterior: 170 tabelas
-descritas passam a 206 no schema real, e 146 funções passam a 247. O delta inclui
+descritas passam a 206 no schema real, e 146 funções passam a 248. O delta inclui
 estruturas anteriores à proposta e requer avaliação na tipagem integral.
+
+Depois de integrar a `main`, as duas passadas sobre o baseline integrado
+produziram o mesmo SHA256 bruto
+`09839121c61af8d5788da5c2dcd095eddb8e99933f83d0ddadbb615a37f413e5`.
+Com formatação mecânica, o arquivo publicado tem SHA256
+`d629f5f97ddd145211e43041949852069aa065553242a19c66a53408adf318ea`.
+A diferença contra a primeira geração é somente a assinatura da função 0793;
+nenhum tipo foi montado à mão. O manifesto registra o baseline, o prelude e o
+snapshot do índice usados para a geração antes de concluir o merge.
+
+Após a integração, passaram 112 casos em quatro arquivos dirigidos (API da
+fila, baseline sem versão intermediária, tipo da view e evidência citada), além
+do ESLint dos seis arquivos TypeScript alcançados e da conferência do diff.
 
 O CI mede typecheck integral, lint, suíte completa, banco nas majors suportadas
 e build. Antes de sair do draft, reconciliar os resultados reais do HEAD medido,
