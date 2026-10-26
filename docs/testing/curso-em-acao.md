@@ -77,8 +77,10 @@ O circuito de correção é explícito: captura falha → não publica entrada d
 
 ## Integração e conferência final de 26/10/2026
 
-O trabalho foi empilhado sobre a branch de infraestrutura do PR #3481, em
-`366b9ef88`, que já contém o curso anterior e a proteção de captura/revogação.
+O trabalho foi empilhado sobre a branch de infraestrutura do PR #3481, primeiro
+em `366b9ef88` e depois em `0d33c2a4a`, que já contém o curso anterior e a proteção
+de captura/revogação. A atualização do parent acrescentou somente documentação e
+um ajuste da fixture de um teste, sem mudar runtime.
 O único conflito foi em `curso/montar.ts`. A resolução preserva a recusa quando
 `falhas` aponta para um módulo selecionado, mesmo que o manifesto ainda tenha
 fotos antigas, junto da validação das jornadas, existência física das fotos e
@@ -94,12 +96,15 @@ de falha de captura, falha de revogação, foto física ausente e referência de
 ausente; confirmou também a filtragem de uma captura não referenciada e o recorte
 de desenvolvimento sem histórias com links para módulos omitidos.
 
-**CONFIRMADO nas provas de navegador da bancada:** após recapturar as 20 cenas das
-cinco histórias corrigidas, a rodada final percorreu os dez nichos, 30 jornadas,
-120 cenas e 30 montagens, com as 120 imagens decodificadas e sem erro de navegador,
-requisição falha ou imagem inválida. Busca, zoom, tela cheia, teclado, restauração
-de scroll, recuperação de hash inválido e celular passaram. A cópia de link teve
-sucesso real no Chrome do Mac; no navegador Linux sem permissão de clipboard,
+**CONFIRMADO na rodada definitiva do navegador Linux:** após recapturar todas as
+120 cenas com as esperas de conteúdo, a rodada final percorreu os dez nichos,
+30 jornadas e 30 montagens, com as 120 imagens decodificadas e sem erro de
+navegador, requisição falha ou imagem inválida. Busca, zoom, tela cheia, teclado,
+restauração de scroll, recuperação de hash inválido e celular passaram. Catálogo
+e cena no celular não tiveram overflow; o menu fechou corretamente. A prova de
+celular usou um contexto de navegador independente para evitar uma falha do
+protocolo ao redimensionar imediatamente a janela que estava saindo de tela cheia.
+A cópia de link teve sucesso real no Chrome do Mac; no navegador Linux sem permissão de clipboard,
 a interface mostrou corretamente a mensagem de falha. A rodada do curso anterior
 percorreu os 61 módulos, 259 lições e 1097 imagens, incluindo busca, zoom,
 progresso das 259 lições e celular.
@@ -111,7 +116,9 @@ A tentativa inicial do helper da prova precisou ser corrigida porque a âncora d
 semana vem do servidor e a UI mostra o nome do contato; somente a execução final
 bem-sucedida compõe esta evidência.
 
-O site passou seus 33 testes, typecheck e build em Linux. A suíte global do produto,
+O site definitivo, sobre a base `7f6667d` com os assets recapturados, passou seus
+33 testes, typecheck e build em Linux. O produto com o capturador corrigido passou
+typecheck, lint sem erros e build em Linux. A suíte global do produto,
 executada separadamente, passou 2698 arquivos e 28903 testes, com duas falhas de
 ffmpeg no mesmo arquivo também reproduzidas no controle da main `028b40c11`, além
 de um teste de falha esperada e um ignorado. Isso registra um limite do gate,
@@ -122,11 +129,25 @@ continuam sendo exigidos antes da publicação.
 ### Correção das esperas de fotografia
 
 A revisão dos JPEGs encontrou cenas de ação da agenda com o drawer ainda em
-“Carregando…”. O aceite de navegação e decodificação acima não detectava essa
-incompletude visual. O capturador agora exige o título do compromisso, data e
+“Carregando…”. A rodada inicial de navegação e decodificação não havia detectado
+essa incompletude visual. O capturador agora exige o título do compromisso, data e
 horário no fuso real e sua situação antes de medir. Casos exigem contato, vínculo
 da conversa, resumo e painel de decisão; dossiês de negócio exigem o contato
 carregado; edição de tarefas exige os valores da tarefa. Na Inbox, a espera fixa
 foi substituída pela conversa e mensagem da cena. Skeletons e textos de carregamento
 visíveis interrompem a fotografia, mesmo que o helper legado apenas avise.
-As fotos afetadas precisam ser recapturadas e revistas antes da publicação.
+A auditoria integral das fotos anteriores identificou oito drawers ainda em
+carregamento, todos na superfície agenda. As 120 cenas foram recapturadas com as
+esperas corrigidas, gerando 120 JPEGs com hashes distintos. A conferência local
+confirmou os metadados do manifesto, o HTML idêntico à montagem e os 1097 JPEGs
+anteriores preservados. O OCR das 120 fotos terminou com texto não vazio em
+todas, nenhuma ocorrência de “Carregando” e nenhum erro de leitura. A navegação
+final descrita acima foi repetida contra este lote definitivo.
+
+O pulso “Uma conexão caiu” da barra lateral permanece visível quando o canal
+fictício está parado. Ele representa a saúde da conexão e não um carregamento;
+a guarda exclui somente esse indicador identificado no link de Conexões, mantendo
+as âncoras de skeleton, busy, texto de carregamento e as esperas de conteúdo.
+Uma rodada parou ao tentar rolar até uma tarefa de seguros; a inspeção da UI
+confirmou a linha correta e a repetição isolada das histórias restantes passou,
+sem nova alteração de código.
