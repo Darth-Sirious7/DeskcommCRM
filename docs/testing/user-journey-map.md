@@ -3937,3 +3937,35 @@ Capturas dos dois casos e traces foram inspecionados; evidência local em
 iniciais com nome completo, um nome e fallback pelo e-mail: 8 vermelhos antes,
 8 verdes depois. **Não medido:** reconhecimento de voz em aparelho real e o
 fluxo inteiro em espanhol (a cobertura em espanhol aqui é do componente).
+
+## Atendimento e follow-ups — integração #3475 (2026-10-26)
+
+**Medido em bancada sintética real:** build de produção `20f335eae` /
+`cyznjcUkNaQa9Fn5H6iU4`, Supabase próprio com baseline install/update
+`ON_ERROR_STOP=1`, GoTrue e Realtime. [Relatório e limites](../../evidence/atendimento-followups-3475/README.md).
+Os seis cenários passaram em rodadas dirigidas, sem reivindicar a suíte inteira:
+
+| Caso | Resultado observado |
+| --- | --- |
+| Cancelar dormente/coletando no dossiê | PASS: fila → dossiê → estado/timeline imediato, banco/evento, reload e tick sem despertar; viewer403 e outra org404 |
+| Parar dormente pelo Inbox | PASS: botão antes, inscrição cancelled/sem relógio, reload carregado sem Parar e com seletor para Iniciar |
+| Enviar por integração em nome de atendente | PASS: transporte e pausa de cinco minutos reais; token puro não pausa, sem escopo403, retorno automático na tela após o prazo |
+| Assinatura de automação e Prospecção | PASS: produtores reais, provider HTTP controlado, assinatura exata no receiver WAHA, mensagem persistida e corpo no Inbox |
+| Filtro/âncora dos avisos | PASS no recorte INSERT/Realtime, toast, rota autenticada e decisão do job Web Push: palavra recusada/aceita, mídia sem texto e agente já engajado |
+| ACK fora de ordem e recuperação | PASS: UI → receiver; webhook HMAC, read não regride por2/1/-1; failed não recupera por1, recupera por2/3; indicador/reload e isolamento tenant |
+| Bolha invisível no turno real | PASS da guarda: webhook HMAC → pós-entrada → drain/claim/fronteira/handler; U+200E recusado com corpo_vazio observado no HTTP do provider e traço canônico não dry-run, sem outbound/HTTP WAHA. Controle legível completou com assinatura e bolha |
+
+**Limites:** a tentativa invisível termina por HTTP400 intencional do provider
+depois da recusa, para limitar a prova; não mede reescrita autônoma. O sandbox
+intercepta a tool antes dessa guarda e não foi aceito como prova. Nos quatro
+controles de avisos não foi medido o despacho completo da IA pela pós-entrada/handler;
+a âncora é histórico sintético persistido. Entrega de Push/FCM não foi medida
+(envelope não recebido), nem modelo/WhatsApp externos. PG15 foi usado na bancada
+Supabase; os invariantes PG17 são do CI.
+
+**Achados da bancada:** preflight confundia UUID reservado do candidato com envio;
+Prospecção exige admin, ferramenta e funil publicados; INSERT anterior ao JOIN
+Realtime perdia o toast; ausência de botão durante reload ainda vazio não prova
+estado. O runner foi corrigido e as tentativas/capturas antigas foram conservadas
+com esses limites. O manager original não foi promovido, os guards do produto
+não foram alterados e os recursos exclusivos foram removidos ao fim.

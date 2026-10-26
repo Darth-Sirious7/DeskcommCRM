@@ -26,6 +26,11 @@
       "email": "qa3475-other@example.test",
       "password_env": "QA_3475_OTHER_PASSWORD",
       "organization_id": "00000000-0000-4000-8000-000000000005"
+    },
+    "admin": {
+      "id": "00000000-0000-4000-8000-000000000006",
+      "email": "qa3475-admin@example.test",
+      "password_env": "QA_3475_ADMIN_PASSWORD"
     }
   },
   "enrollments": {

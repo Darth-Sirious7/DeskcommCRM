@@ -15,7 +15,7 @@ import { chromium, expect, request, type APIRequestContext, type Browser, type B
 import pg from "pg";
 import { z } from "zod";
 
-import { esperarARevelacao } from "../../tests/e2e/helpers/test";
+import { esperarARevelacao } from "../e2e/helpers/test";
 import { ehServicoDePushConhecido } from "../../lib/notifications/servicos-de-push";
 
 const NOMES = ["dossie", "inbox", "pausa", "assinatura", "avisos", "ack"] as const;
@@ -29,7 +29,7 @@ const manifestoSchema = z.object({
   environment_id: z.string().min(8),
   build: z.object({ sha: z.string().regex(/^[0-9a-f]{40}$/), id: z.string().min(5) }),
   organization: z.object({ id: uuid, slug: z.string().regex(/^qa-3475-[a-z0-9-]+$/) }),
-  users: z.object({ manager: ator, viewer: ator, other_tenant: ator.extend({ organization_id: uuid }) }),
+  users: z.object({ admin: ator.optional(), manager: ator, viewer: ator, other_tenant: ator.extend({ organization_id: uuid }) }),
   enrollments: z.object({ dossie_dormente: acompanhamento, dossie_coletando: acompanhamento, inbox_dormente: acompanhamento }),
   human: z.object({ conversation_id: uuid, pure_conversation_id: uuid, user_id: uuid, token_env: z.string().min(1), no_scope_token_env: z.string().min(1) }),
   signatures: z.object({
@@ -71,7 +71,7 @@ interface ReciboPush { id: string; conversation_id: string; user_id: string }
 interface Resultado { scenario: Nome; state: "passed" | "failed" | "not_run"; checks: string[]; error?: string }
 interface LinhaAck extends pg.QueryResultRow { id: string; external_id: string; status: string; ack: number | null; delivered_at: string | null; read_at: string | null; error_code: string | null }
 
-const AJUDA = `Uso: pnpm exec tsx scripts/qa/provar-atendimento-followups-3475.ts --manifest <json> [--only ${NOMES.join(",")}] [--evidence <pasta>]
+const AJUDA = `Uso: pnpm exec tsx tests/qa/provar-atendimento-followups-3475.ts --manifest <json> [--only ${NOMES.join(",")}] [--evidence <pasta>]
 
 Lê apenas process.env e o manifesto explícito. --help não abre arquivo, conexão ou browser.
 Requer bancada sintética existente, app de produção já compilado, PG e receiver exclusivos.
@@ -79,7 +79,7 @@ A pausa humana é medida por cinco minutos reais; não altera o relógio nem o c
 Sem LLM/transporte de envio real, o cenário correspondente falha.
 Push entregue e a tool de bolha invisível são subprovas separadas; RC 0 pode ser parcial.
 Consulte complete, core_complete e subproofs em relatorio.json antes de declarar aceite.
-Veja scripts/qa/provar-atendimento-followups-3475.md para o contrato completo.
+Veja tests/qa/provar-atendimento-followups-3475.md para o contrato completo.
 `;
 
 function ambiente(nome: string): string {
@@ -155,13 +155,19 @@ class Prova {
     const org = await this.query<{ slug: string; settings: Record<string, unknown>; status: string }>("select slug,settings,status from organizations where id=$1", [f.organization.id]);
     assert.equal(org[0]?.slug, f.organization.slug, "precondition:synthetic_org");
     assert.equal(org[0]?.status, "active", "precondition:org_operante");
-    const atores = this.nomes.includes("dossie") ? Object.entries(f.users) : [["manager", f.users.manager] as const];
+    const atores: Array<[string, Ator | undefined]> = this.nomes.includes("dossie") ? Object.entries(f.users).filter(([, user]) => user !== undefined) : [["manager", f.users.manager]];
+    if (this.nomes.includes("assinatura")) {
+      assert(f.users.admin, "precondition:admin_fixture_required_for_prospecting");
+      if (!atores.some(([papel]) => papel === "admin")) atores.push(["admin", f.users.admin]);
+    }
     for (const [papel, user] of atores) {
+      assert(user, "precondition:actor_required");
       ambiente(user.password_env);
       const orgId = papel === "other_tenant" ? f.users.other_tenant.organization_id : f.organization.id;
       const membros = await this.query<{ role: string }>("select role from user_organizations where organization_id=$1 and user_id=$2 and revoked_at is null", [orgId, user.id]);
       assert.equal(membros.length, 1, `precondition:membership:${papel}`);
       if (papel === "manager") assert(["manager", "admin"].includes(membros[0]!.role), "precondition:manager_role");
+      if (papel === "admin") assert.equal(membros[0]!.role, "admin", "precondition:admin_role");
       if (papel === "viewer") assert.equal(membros[0]!.role, "viewer", "precondition:viewer_role");
     }
     if (this.nomes.includes("dossie")) assert.notEqual(f.users.other_tenant.organization_id, f.organization.id, "precondition:two_tenants");
@@ -206,7 +212,7 @@ class Prova {
       const regras = await this.query<{ actions: Array<{ type: string; config?: Record<string, unknown> }>; trigger_event: string }>("select actions,trigger_event from automation_rules where organization_id=$1 and id=$2 and is_active=true", [f.organization.id, f.signatures.automation.rule_id]);
       assert.equal(regras[0]?.trigger_event, f.signatures.automation.event_type, "precondition:real_automation_trigger");
       assert(regras[0]!.actions.some((a) => a.type === "send_ai_message" && a.config?.agent_id === f.signatures.agent_id), "precondition:real_send_ai_message_action");
-      const candidatos = await this.query("select p.id from prospecting_candidates p join prospecting_campaigns c on c.organization_id=p.organization_id and c.id=p.campaign_id where p.organization_id=$1 and p.id=$2 and p.campaign_id=$3 and p.selected=true and p.message_id is null", [f.organization.id, f.signatures.prospecting.candidate_id, f.signatures.prospecting.campaign_id]);
+      const candidatos = await this.query("select p.id from prospecting_candidates p join prospecting_campaigns c on c.organization_id=p.organization_id and c.id=p.campaign_id where p.organization_id=$1 and p.id=$2 and p.campaign_id=$3 and p.selected=true and p.status='new' and not exists (select 1 from messages m where m.organization_id=p.organization_id and m.id=p.message_id)", [f.organization.id, f.signatures.prospecting.candidate_id, f.signatures.prospecting.campaign_id]);
       assert.equal(candidatos.length, 1, "precondition:unsent_prospecting_candidate");
     }
     if (this.nomes.includes("avisos")) {
@@ -346,6 +352,9 @@ class Prova {
     await expect(secao.getByTestId("parar-followup")).toHaveCount(0);
     await this.cancelado(e);
     await page.reload(); await esperarARevelacao(page);
+    await expect(page.getByTestId("comando-da-conversa")).toBeVisible();
+    await expect(page.getByTestId("inbox-followup")).toBeVisible();
+    await expect(page.getByTestId("escolher-fluxo-followup")).toBeVisible();
     await expect(page.getByTestId("parar-followup")).toHaveCount(0);
     await this.captura(page, "inbox-dormente-parado");
     this.check("Parar no Inbox: cancelled/evento persistidos; reload e tick não devolvem a espera");
@@ -397,7 +406,8 @@ class Prova {
 
   async assinatura(): Promise<void> {
     const f = this.fixture;
-    const page = await this.pagina();
+    assert(f.users.admin, "precondition:admin_fixture_required_for_prospecting");
+    const page = await this.pagina(f.users.admin);
     const inicio = new Date().toISOString();
     const a = f.signatures.automation;
     await this.query("select emit_event($1,$2,$3,$4::jsonb,'{}'::jsonb,$5)", [a.event_type, a.entity_type, a.entity_id, JSON.stringify(a.payload), f.organization.id]);
@@ -435,11 +445,32 @@ class Prova {
     return schema.parse(await res.json()).deliveries;
   }
 
+  /** Aguarda o JOIN confirmado pelo servidor, antes de produzir o INSERT medido. */
+  async abrirQuadroComAvisos(page: Page): Promise<void> {
+    let temporizador: ReturnType<typeof setTimeout> | undefined;
+    const inscrito = new Promise<void>((resolve, reject) => {
+      temporizador = setTimeout(() => reject(new Error("precondition:alerts_realtime_subscription_timeout")), 30_000);
+      page.on("websocket", (socket) => {
+        socket.on("framereceived", ({ payload }) => {
+          try {
+            const frame = JSON.parse(String(payload)) as { topic?: string; event?: string; payload?: { status?: string } } | unknown[];
+            const topic = Array.isArray(frame) ? frame[2] : frame.topic;
+            const event = Array.isArray(frame) ? frame[3] : frame.event;
+            const status = (Array.isArray(frame) ? frame[4] as { status?: string } : frame.payload)?.status;
+            if (event === "phx_reply" && status === "ok" && typeof topic === "string" && topic.startsWith(`realtime:alerts-messages-${this.fixture.organization.id}:`)) resolve();
+          } catch { /* Heartbeat ou frame não JSON não confirma a inscrição. */ }
+        });
+      });
+    });
+    try { await Promise.all([inscrito, this.goto(page, "/app/kanban")]); }
+    finally { clearTimeout(temporizador); }
+    await page.bringToFront();
+  }
+
   async avisos(): Promise<void> {
     const f = this.fixture;
     const page = await this.pagina();
-    await this.goto(page, "/app/kanban");
-    await page.bringToFront();
+    await this.abrirQuadroComAvisos(page);
     for (const c of f.notices.cases) {
       const contatos = await this.query<{ name: string }>("select coalesce(display_name,name) as name from contacts where organization_id=$1 and id=$2", [f.organization.id, c.contact_id]);
       assert(contatos[0]?.name, "precondition:notice_contact_name");
@@ -475,7 +506,7 @@ class Prova {
       await this.captura(page, `avisos-${c.name}`);
       this.check(`${c.name}: realtime/toast, decisão autenticada e branch do consumidor Web Push concordam; transporte registrado em subprova separada`);
       // Navega para remover o toast anterior antes do próximo caso, sem editar o sistema de avisos.
-      await this.goto(page, "/app/kanban");
+      await this.abrirQuadroComAvisos(page);
     }
     if (f.notices.push_transport) this.subprovas.pushTransport = { state: "passed", reason: "Envelope Web Push real recebido/decifrado e correlacionado nos controles positivos e negativos." };
   }
