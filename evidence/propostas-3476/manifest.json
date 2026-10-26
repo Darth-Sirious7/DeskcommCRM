@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "pull_request": 3476,
+  "head_sha": "0a52385384baf59f9bc0135789c91168bf9f91bc",
+  "checkout_sha": "111bbf7581aeedca43a5525692683a9259b51b81",
+  "run": {
+    "id": 40400799649,
+    "url": "https://github.com/melgarafael/DeskcommCRM/actions/runs/40400799649"
+  },
+  "job": {
+    "id": 121847899398,
+    "url": "https://github.com/melgarafael/DeskcommCRM/actions/runs/40400799649/job/121847899398",
+    "conclusion": "success",
+    "tests_passed_total": 42,
+    "test_summary": "42 passed (16.5m)"
+  },
+  "artifact": {
+    "id": 12690158434,
+    "name": "evidencia-parte-7",
+    "digest": "sha256:c1b4d03a3ce25e6aa84b6715748ed9ced21948d5a7d5f841b66ff21e885ca4fc"
+  },
+  "production_and_test_paths_equal_checkout_to_head": [
+    "app",
+    "components",
+    "lib",
+    "hooks",
+    "workers",
+    "proxy.ts",
+    "next.config.ts",
+    "package.json",
+    "pnpm-lock.yaml",
+    "postcss.config.mjs",
+    "tsconfig.json",
+    "playwright.config.ts",
+    "supabase/baseline.sql",
+    "supabase/config.toml",
+    "tests/e2e/propostas-de-campos-do-card.spec.ts",
+    "tests/e2e/helpers",
+    "tests/pg-como-supabase.ts",
+    "scripts/seed-e2e-credentials.ts",
+    "scripts/seed-e2e-agente-mcp.ts",
+    "scripts/lib/env-de-teste.ts",
+    ".github/workflows/e2e.yml"
+  ],
+  "cases_passed_log": [
+    "2026-10-26T21:33:43.4395413Z   ✓  28 [chromium] › tests/e2e/propostas-de-campos-do-card.spec.ts:149:5 › manager confere origem, salva o número mostrado e descarta o outro campo (7.4s)",
+    "2026-10-26T21:33:49.7189691Z   ✓  29 [chromium] › tests/e2e/propostas-de-campos-do-card.spec.ts:170:5 › correção digitada é confirmada pelo formulário real (6.3s)",
+    "2026-10-26T21:33:55.0435014Z   ✓  30 [chromium] › tests/e2e/propostas-de-campos-do-card.spec.ts:180:5 › viewer lê a proposta, sem ação na tela nem autorização para decidir (5.3s)",
+    "2026-10-26T21:34:01.2007253Z   ✓  31 [chromium] › tests/e2e/propostas-de-campos-do-card.spec.ts:195:5 › revisão antiga recebe 409 após outra pessoa decidir e preserva o card (6.1s)",
+    "2026-10-26T21:34:05.0260093Z   ✓  32 [chromium] › tests/e2e/propostas-de-campos-do-card.spec.ts:229:5 › duas decisões que leram pending disputam a mesma linha: só uma grava (3.8s)",
+    "2026-10-26T21:34:08.8323279Z   ✓  33 [chromium] › tests/e2e/propostas-de-campos-do-card.spec.ts:256:5 › expiração vence entre a leitura e a gravação da confirmação (3.7s)"
+  ],
+  "screenshots": [
+    {
+      "path": "evidence/propostas-3476/01-revisao-sintetica.png",
+      "sha256": "8cf39e0c7dc8b0180a546ad049a9213e1835093291211ab6ca810cefe1072be5",
+      "width": 1280,
+      "height": 720
+    },
+    {
+      "path": "evidence/propostas-3476/02-decidida-sintetica.png",
+      "sha256": "42aecfe89dceeb0c36d06d191d09346763810d95c753fad62e4191d8d683ceb6",
+      "width": 1280,
+      "height": 720
+    },
+    {
+      "path": "evidence/propostas-3476/03-leitura-sintetica.png",
+      "sha256": "20e53790eb112c38281b63a181d8f43ce4d7293aa34b793065bc08c4d800f64a",
+      "width": 1280,
+      "height": 720
+    }
+  ],
+  "baseline_sha256": "04651de6660552895f88858ae8ffc608c90f4272be77a896ae733db0c4a98345",
+  "types": {
+    "cli": "2.122.0",
+    "raw_sha256": "91675e73e22d49b7797665339e297bf23de08acb497b7281436acf786d10dda5",
+    "formatted_sha256": "adc0c8497856db006965d127fb9cbeebecf3fa72c64fa48390bc193b16e7cca3"
+  },
+  "post_run_product_delta": "Somente o retorno do catch inesperado em field-proposals/[pid]/route.ts: throw err passa a fail internal_error500; arquivos de interface mantêm os blobs medidos.",
+  "post_run_test_delta": "A captura02 passa a rolar até o campoMedida antes da imagem. A imagem preservada neste manifesto ainda mostra o topo do formulário.",
+  "unexpected_error_unit_proof": {
+    "file": "tests/unit/api-fila-de-campos-do-negocio.test.ts",
+    "red": {
+      "failed": 1,
+      "passed": 15,
+      "exit": 1
+    },
+    "green": {
+      "passed": 16,
+      "exit": 0
+    }
+  }
+}

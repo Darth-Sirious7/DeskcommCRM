@@ -357,7 +357,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     if (err instanceof ApiError) {
       return fail(err.code, err.message, err.status, { requestId });
     }
-    throw err;
+    return fail("internal_error", t("Não foi possível gravar o dado."), 500, { requestId });
   }
 
   await audit({

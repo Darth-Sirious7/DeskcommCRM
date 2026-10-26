@@ -24,6 +24,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
+import { ApiError } from "@/lib/api/types";
+
 type Linha = Record<string, unknown>;
 interface Resultado {
   data: unknown;
@@ -38,6 +40,7 @@ const h = vi.hoisted(() => {
     /** O funil de hoje — o teste pode trocá-lo antes de decidir. */
     funil: null as unknown,
     erroProfundo: null as { message: string; code?: string } | null,
+    erroNaGravacao: null as Error | null,
   };
   return estado;
 });
@@ -126,6 +129,7 @@ vi.mock("@/lib/audit", () => ({
 vi.mock("@/lib/leads/campos-exigidos", () => ({ settingsDoFunil: async () => h.funil }));
 vi.mock("@/app/api/v1/leads/_handler", () => ({
   updateLeadHandler: async (_db: unknown, _ctx: unknown, leadId: string, patch: unknown) => {
+    if (h.erroNaGravacao) throw h.erroNaGravacao;
     h.gravacoesNoCard.push({ leadId, patch });
     return { id: leadId };
   },
@@ -174,6 +178,7 @@ beforeEach(() => {
   h.gravacoesNoCard = [];
   h.funil = FUNIL;
   h.erroProfundo = null;
+  h.erroNaGravacao = null;
 });
 
 describe("a confirmação conserva o número que a revisão mostrou", () => {
@@ -299,6 +304,46 @@ describe("POST da decisão: expiração vale ANTES de qualquer gravação (#3316
       { leadId: LEAD, patch: { custom_fields: { localizador: VALOR_PESSOAL } } },
     ]);
     expect(h.db.lead_field_proposals[0]!.status).toBe("accepted");
+  });
+});
+
+describe("falha ao gravar o card mantém a proposta pendente e o protocolo da API", () => {
+  it("erro inesperado devolve JSON 500 genérico sem copiar conteúdo pessoal", async () => {
+    h.db.lead_field_proposals = [proposta()];
+    h.erroNaGravacao = new Error(`Falha inesperada com ${VALOR_PESSOAL}`);
+
+    const r = await POST(requisicao({ decision: "accept" }), ctx());
+    const corpo = await r.json();
+
+    expect(r.status).toBe(500);
+    expect(r.headers.get("content-type")).toContain("application/json");
+    expect(r.headers.get("x-request-id")).toBeTruthy();
+    expect(corpo).toEqual({
+      error: { code: "internal_error", message: "Não foi possível gravar o dado." },
+    });
+    expect(JSON.stringify(corpo)).not.toContain(VALOR_PESSOAL);
+    expect(h.db.lead_field_proposals[0]).toMatchObject({
+      status: "pending", decided_at: null, decided_by_user_id: null,
+    });
+    expect(h.auditados).toHaveLength(0);
+  });
+
+  it("ApiError conserva o código, a mensagem e o status esperados", async () => {
+    h.db.lead_field_proposals = [proposta()];
+    h.erroNaGravacao = new ApiError(
+      422, "custom_field_pattern_mismatch", undefined, "pedido-da-prova", "Valor fora do padrão.",
+    );
+
+    const r = await POST(requisicao({ decision: "accept" }), ctx());
+
+    expect(r.status).toBe(422);
+    expect(await r.json()).toEqual({
+      error: { code: "custom_field_pattern_mismatch", message: "Valor fora do padrão." },
+    });
+    expect(h.db.lead_field_proposals[0]).toMatchObject({
+      status: "pending", decided_at: null, decided_by_user_id: null,
+    });
+    expect(h.auditados).toHaveLength(0);
   });
 });
 

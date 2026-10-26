@@ -164,6 +164,7 @@ test("manager confere origem, salva o número mostrado e descarta o outro campo"
   await dialog.locator('[data-proposta="localizador"]').getByRole("button", { name: "Descartar", exact: true }).click();
   await expect(dialog.locator('[data-peca="revisao-do-documento"]')).toHaveCount(0);
   await expect.poll(() => gravado(c.leadId)).toEqual({ medida: 1.234, localizador: "ANTES" });
+  await campoDoCard.scrollIntoViewIfNeeded();
   await page.screenshot({ path: "evidence/propostas-3476/02-decidida-sintetica.png", fullPage: true });
 });
 
