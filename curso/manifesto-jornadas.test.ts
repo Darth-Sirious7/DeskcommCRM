@@ -51,7 +51,7 @@ function fixture() {
   const cli = (nome: string, ...args: string[]) => spawnSync(process.execPath, [path.join(raiz, "node_modules/tsx/dist/cli.mjs"), path.join(pasta, "curso", nome), ...args], {
     cwd: pasta, encoding: "utf8", timeout: 20_000,
     // Não herda credenciais, NODE_OPTIONS, dotenv ou configuração da bancada.
-    env: { PATH: process.env.PATH, CURSO_BASE: "/curso/", CURSO_URL: "http://127.0.0.1:1", CURSO_VERSAO_FOTOS: "2.0.0", NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:1", SUPABASE_SERVICE_ROLE_KEY: "fixture-sem-credencial" },
+    env: { PATH: process.env.PATH, NODE_ENV: "test", CURSO_BASE: "/curso/", CURSO_URL: "http://127.0.0.1:1", CURSO_VERSAO_FOTOS: "2.0.0", NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:1", SUPABASE_SERVICE_ROLE_KEY: "fixture-sem-credencial" },
   });
   return { pasta, saida, arquivo, manifesto, salvar, cli };
 }
