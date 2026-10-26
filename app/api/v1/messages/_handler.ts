@@ -662,9 +662,26 @@ export async function sendMessageHandler(
       // ENVIOU (`ai_agents.name`) — com dois agentes no mesmo número, o cliente
       // lia o nome de um e a conversa seguia com outro. `nome_ia` fica como
       // reserva (mensagem sem agente, leitura que falhou). Desligado, nem lê.
+      //
+      // #3373: o id do agente NÃO é o `id` do ator em todo caminho. O motor do
+      // turno põe o agente no `id` (`lib/agent-engine/edge/crm/send-message.ts`),
+      // mas a Prospecção põe o CANDIDATO no `id` e o agente em `agent_id`
+      // (`lib/prospecting/worker.ts`), e a ação "Mensagem escrita pela IA"
+      // dispara com um ator da regra cujo `id` é a própria regra
+      // (`lib/automation/actions/send-ai-message.ts`). Ler o `id` em todos eles
+      // assinava com o `nome_ia` — no primeiro caminho o id até casava com um
+      // `ai_agents.id` por acaso, mas não era a coluna que diz quem enviou. A
+      // coluna certa é `agent_id`; `?? id` é só a ponte do caminho do motor,
+      // que ainda não manda `agent_id`.
+      const idDoAgente =
+        ctx.actor.type === "ai_agent"
+          ? (ctx.actor.agent_id ?? ctx.actor.id)
+          : ctx.actor.type === "webhook_source"
+            ? (ctx.actor.agent_id ?? null)
+            : null;
       const nomeDoAgente =
-        origemDoEmissor === "ai" && configAss.porAgente && ctx.actor.type === "ai_agent"
-          ? await nomeDoAgenteDeIA(supabase, ctx.organization_id, ctx.actor.id)
+        origemDoEmissor === "ai" && configAss.porAgente && idDoAgente !== null
+          ? await nomeDoAgenteDeIA(supabase, ctx.organization_id, idDoAgente)
           : null;
       assinatura = linhaDeAssinatura(configAss, origemDoEmissor, nomeDoAtendente, nomeDoAgente);
     }
