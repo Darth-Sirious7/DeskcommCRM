@@ -60,6 +60,9 @@ async function extrairErro(res: Response): Promise<string> {
 export function useCadencias() {
   const [lista, setLista] = useState<Cadencia[]>([]);
   const [erro, setErro] = useState(false);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [carregandoMais, setCarregandoMais] = useState(false);
+  const [erroMais, setErroMais] = useState(false);
   const [recarga, setRecarga] = useState(0);
   const [carregando, setCarregando] = useState(true);
 
@@ -69,8 +72,8 @@ export function useCadencias() {
       try {
         const res = await fetch("/api/v1/cadencias");
         if (!res.ok) throw new Error();
-        const { data } = (await res.json()) as { data: LinhaDaApi[] };
-        if (vivo) { setLista(data.map(linhaParaCadencia)); setErro(false); }
+        const { data, meta } = (await res.json()) as { data: LinhaDaApi[]; meta: { cursor: string | null } };
+        if (vivo) { setLista(data.map(linhaParaCadencia)); setCursor(meta.cursor); setErro(false); setErroMais(false); }
       } catch { if (vivo) setErro(true); } finally {
         if (vivo) setCarregando(false);
       }
@@ -99,8 +102,20 @@ export function useCadencias() {
     setLista((atual) => atual.filter((c) => c.id !== id));
   }, []);
 
+  const carregarMais = async () => {
+    if (!cursor || carregandoMais) return;
+    setCarregandoMais(true);
+    try {
+      const res = await fetch(`/api/v1/cadencias?cursor=${encodeURIComponent(cursor)}`);
+      if (!res.ok) throw new Error();
+      const corpo = await res.json() as { data: LinhaDaApi[]; meta: { cursor: string | null } };
+      setLista((atual) => [...atual, ...corpo.data.map(linhaParaCadencia).filter((c) => !atual.some((a) => a.id === c.id))]);
+      setCursor(corpo.meta.cursor); setErroMais(false);
+    } catch { setErroMais(true); }
+    finally { setCarregandoMais(false); }
+  };
   const recarregar = () => { setCarregando(true); setErro(false); setRecarga((n) => n + 1); };
-  return { lista, criar, excluir, carregando, erro, recarregar };
+  return { lista, criar, excluir, carregando, erro, recarregar, carregarMais, temMais: cursor !== null, carregandoMais, erroMais };
 }
 
 const ESPERA_DO_DEBOUNCE_MS = 700;
@@ -110,16 +125,19 @@ export function useCadencia(id: string) {
   const [cadencia, setCadencia] = useState<Cadencia | null>(null);
   const [carregando, setCarregando] = useState(true);
   const atual = useRef<Cadencia | null>(null);
+  const [mudandoStatus, setMudandoStatus] = useState(false);
+  const transicao = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendente = useRef<{ name?: string; configuracao?: ConfiguracaoDaCadencia; passos?: Passo[] }>({});
   const revisoes = useRef<Record<string, number>>({});
   const fila = useRef<Promise<boolean>>(Promise.resolve(true));
-  const gravar = useCallback(async (corpo: object): Promise<boolean> => {
+  const gravar = useCallback(async (corpo: object): Promise<LinhaDaApi | null> => {
     try {
       const res = await fetch(`/api/v1/cadencias/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo) });
-      if (!res.ok) { toast.error(await extrairErro(res)); return false; }
-      return true;
-    } catch { toast.error(t("Não foi possível salvar a cadência. Suas alterações continuam nesta tela.")); return false; }
+      if (!res.ok) { toast.error(await extrairErro(res)); return null; }
+      const resposta = await res.json() as { data: LinhaDaApi };
+      return resposta.data;
+    } catch { toast.error(t("Não foi possível salvar a cadência. Suas alterações continuam nesta tela.")); return null; }
   }, [id, t]);
   const descarregar = useCallback((): Promise<boolean> => {
     if (timer.current) clearTimeout(timer.current);
@@ -128,7 +146,7 @@ export function useCadencia(id: string) {
     pendente.current = {};
     if (Object.keys(corpo).length === 0) return fila.current;
     fila.current = fila.current.then(async () => {
-      const salvo = await gravar(corpo);
+      const salvo = Boolean(await gravar(corpo));
       if (!salvo) {
         // Uma falha velha não recoloca texto sobre uma edição mais nova já
         // enfileirada. Só restaura a chave que ainda tem a mesma revisão.
@@ -155,13 +173,26 @@ export function useCadencia(id: string) {
   const salvar = useCallback(async (nova: Cadencia): Promise<boolean> => {
     const anterior = atual.current;
     if (!anterior) return false;
+    if (transicao.current) return false;
     if (nova.status !== anterior.status) {
-      // O último texto precisa estar confirmado ANTES de a API validar/ativar.
-      if (!(await descarregar())) return false;
-      if (!(await gravar({ status: nova.status }))) return false;
-      atual.current = nova; setCadencia(nova);
-      return true;
+      transicao.current = true; setMudandoStatus(true);
+      try {
+        if (anterior.status === "ativa" && nova.status === "pausada") {
+          // Pausar é uma ação de contenção. Conteúdo recusado enquanto ativa
+          // não pode bloquear a pausa nem ser reaplicado depois dela.
+          if (timer.current) clearTimeout(timer.current);
+          await fila.current;
+          pendente.current = {};
+        } else if (!(await descarregar())) return false;
+        const confirmada = await gravar({ status: nova.status });
+        if (!confirmada) return false;
+        atual.current = linhaParaCadencia(confirmada); setCadencia(atual.current);
+        return true;
+      } finally { transicao.current = false; setMudandoStatus(false); }
     }
+    // Mesmo que algum consumer antigo tente editar pelo nome, não cria fila
+    // inválida que dependa de reload para permitir a pausa.
+    if (anterior.status === "ativa") return false;
     atual.current = nova; setCadencia(nova);
     const alteracoes = {
       ...(nova.nome !== anterior.nome ? { name: nova.nome } : {}),
@@ -174,5 +205,5 @@ export function useCadencia(id: string) {
     timer.current = setTimeout(() => { void descarregar(); }, ESPERA_DO_DEBOUNCE_MS);
     return true;
   }, [descarregar, gravar]);
-  return { cadencia, salvar, carregando };
+  return { cadencia, salvar, carregando, mudandoStatus };
 }

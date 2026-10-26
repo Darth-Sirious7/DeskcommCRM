@@ -33,7 +33,7 @@ type Aba = "fluxo" | "configuracoes" | "atividade";
 
 export function Construtor({ id }: { id: string }) {
   const t = useT();
-  const { cadencia, salvar, carregando } = useCadencia(id);
+  const { cadencia, salvar, carregando, mudandoStatus } = useCadencia(id);
   const [aba, setAba] = useState<Aba>("fluxo");
   const [selecionado, setSelecionado] = useState<string | null>(null);
 
@@ -60,7 +60,7 @@ export function Construtor({ id }: { id: string }) {
   const ativa = cadencia.status === "ativa";
   // Cadência no ar não se edita pelo canvas: mudar um passo com lead no meio
   // do caminho é decisão que o backend vai tratar (versão nova). Pausa primeiro.
-  const somenteLeitura = ativa;
+  const somenteLeitura = ativa || mudandoStatus;
   const passoAberto = selecionado ? encontrarPasso(cadencia.passos, selecionado) : null;
   const mudar = (patch: Partial<Cadencia>) => salvar({ ...cadencia, ...patch });
 
@@ -104,6 +104,7 @@ export function Construtor({ id }: { id: string }) {
         <input
           aria-label={t("Nome da cadência")}
           value={cadencia.nome}
+          disabled={somenteLeitura}
           onChange={(e) => mudar({ nome: e.target.value })}
           className="min-w-0 flex-1 rounded-sm bg-transparent px-1.5 py-1 text-sm font-semibold outline-hidden hover:bg-surface-elevated focus:bg-surface-elevated"
           data-testid="nome-cadencia"
@@ -118,6 +119,7 @@ export function Construtor({ id }: { id: string }) {
           <Button
             size="sm"
             variant="secondary"
+            disabled={mudandoStatus}
             onClick={async () => {
               if (!(await mudar({ status: "pausada" }))) return;
               toast(t("Cadência pausada. Nenhum e-mail novo sai até você ativar de novo."));
@@ -126,7 +128,7 @@ export function Construtor({ id }: { id: string }) {
             <Pause size={14} aria-hidden className="mr-1.5" /> {t("Pausar")}
           </Button>
         ) : (
-          <Button size="sm" onClick={ativar} data-testid="ativar-cadencia">
+          <Button size="sm" disabled={mudandoStatus} onClick={ativar} data-testid="ativar-cadencia">
             <Play size={14} aria-hidden className="mr-1.5" /> {t("Revisar e ativar")}
           </Button>
         )}

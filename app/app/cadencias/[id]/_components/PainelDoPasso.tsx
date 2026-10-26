@@ -127,7 +127,7 @@ export function PainelDoPasso(props: Props) {
                   className="w-32"
                 />
                 <p className="text-xs text-text-muted">
-                  {t("A tarefa vai para o dono do lead. Sem dono, vai para quem administra a cadência.")}
+                  {t("A tarefa vai para o dono do negócio. Sem dono, vai para quem fez a inscrição.")}
                 </p>
               </div>
             </>

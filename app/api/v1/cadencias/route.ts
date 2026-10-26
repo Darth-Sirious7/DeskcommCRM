@@ -10,6 +10,7 @@
  * `campaigns`.
  */
 import { randomUUID } from "node:crypto";
+import { codificarPagina, lerPagina } from "@/lib/cadencias/paginacao";
 import { cadenciasLigadas } from "@/lib/cadencias/modulo";
 
 import type { NextRequest } from "next/server";
@@ -28,19 +29,6 @@ export const dynamic = "force-dynamic";
 
 const COLUNAS_DA_LISTA =
   "id, name, status, configuracao, versao, created_at, updated_at, created_by, updated_by";
-
-function codificarCursor(row: { updated_at: string; id: string }): string {
-  return Buffer.from(JSON.stringify(row)).toString("base64url");
-}
-
-function decodificarCursor(cursor: string): { updated_at: string; id: string } | null {
-  try {
-    const v = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
-    return typeof v?.updated_at === "string" && typeof v?.id === "string" ? v : null;
-  } catch {
-    return null;
-  }
-}
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
@@ -67,9 +55,9 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   if (q.status) query = query.eq("status", q.status);
   if (q.cursor) {
-    const c = decodificarCursor(q.cursor);
+    const c = lerPagina(q.cursor);
     if (!c) return fail("invalid_cursor", t("Cursor inválido."), 400, { requestId });
-    query = query.or(`updated_at.lt.${c.updated_at},and(updated_at.eq.${c.updated_at},id.lt.${c.id})`);
+    query = query.or(`updated_at.lt.${c.instante},and(updated_at.eq.${c.instante},id.lt.${c.id})`);
   }
 
   const { data, error } = await query;
@@ -82,7 +70,7 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   return ok(pagina, {
     requestId,
-    meta: { cursor: temMais && ultima ? codificarCursor(ultima) : null, has_more: temMais },
+    meta: { cursor: temMais && ultima ? codificarPagina(ultima.updated_at, ultima.id) : null, has_more: temMais },
   });
 }
 

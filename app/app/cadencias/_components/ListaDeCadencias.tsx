@@ -50,7 +50,7 @@ export function ListaDeCadencias() {
   const t = useT();
   const idioma = useTagDeIdioma();
   const router = useRouter();
-  const { lista, criar, excluir, carregando, erro, recarregar } = useCadencias();
+  const { lista, criar, excluir, carregando, erro, recarregar, carregarMais, temMais, carregandoMais, erroMais } = useCadencias();
   const [novaAberta, setNovaAberta] = useState(false);
   const [paraExcluir, setParaExcluir] = useState<Cadencia | null>(null);
 
@@ -131,6 +131,9 @@ export function ListaDeCadencias() {
           })}
         </Card>
       )}
+
+      {erroMais && <p role="alert">{t("Não foi possível carregar mais cadências.")}</p>}
+      {temMais && <Button variant="outline" disabled={carregandoMais} onClick={() => void carregarMais()}>{t("Carregar mais cadências")}</Button>}
 
       <NovaCadenciaDialog
         aberto={novaAberta}

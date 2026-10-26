@@ -11,6 +11,7 @@
  * worker do cron, agendado no scheduler da instalação.
  */
 import { randomUUID } from "node:crypto";
+import { codificarPagina, lerPagina, paginaSchema } from "@/lib/cadencias/paginacao";
 import { cadenciasLigadas } from "@/lib/cadencias/modulo";
 
 import type { NextRequest } from "next/server";
@@ -36,10 +37,14 @@ export async function GET(
   if (!(await cadenciasLigadas(createAdminClient(), authz.org.orgId))) return fail("not_found", "Módulo indisponível.", 404, { requestId });
   const { id } = await ctx.params;
 
-  const limit = Math.min(Math.max(Number(new URL(req.url).searchParams.get("limit")) || 50, 1), 200);
+  const pagina = paginaSchema.safeParse(Object.fromEntries(new URL(req.url).searchParams));
+  if (!pagina.success) return fail("validation_failed", "Query inválida.", 422, { requestId });
+  const { limit, cursor } = pagina.data;
+  const depois = cursor ? lerPagina(cursor) : null;
+  if (cursor && !depois) return fail("invalid_cursor", "Cursor inválido.", 400, { requestId });
 
   const supabase = await createClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from("email_cadence_enrollments")
     .select(
       "id, lead_id, contact_id, status, motivo_parada, origem, passo_atual_id, proximo_em, " +
@@ -47,11 +52,17 @@ export async function GET(
     )
     .eq("organization_id", authz.org.orgId)
     .eq("cadence_id", id)
-    .order("created_at", { ascending: false })
-    .limit(limit);
+    .order("created_at", { ascending: false }).order("id", { ascending: false })
+    .limit(limit + 1);
+  if (depois) query = query.or(`created_at.lt.${depois.instante},and(created_at.eq.${depois.instante},id.lt.${depois.id})`);
+  const { data, error } = await query;
   if (error) return fail("internal_error", error.message, 500, { requestId });
 
-  return ok(data ?? [], { requestId });
+  const linhas = data ?? [];
+  const temMais = linhas.length > limit;
+  const resultado = linhas.slice(0, limit);
+  const ultima = resultado.at(-1) as unknown as { created_at: string; id: string } | undefined;
+  return ok(resultado, { requestId, meta: { cursor: temMais && ultima ? codificarPagina(ultima.created_at, ultima.id) : null, has_more: temMais } });
 }
 
 export async function POST(
