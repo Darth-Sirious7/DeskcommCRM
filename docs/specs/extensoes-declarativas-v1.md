@@ -95,7 +95,7 @@ protegida pela autorização da conversa. Atividades `extension_turn_assumed` e
 `extension_turn_returned` registram identidade, fluxo e motivo, sem respostas coletadas.
 
 O estado temporário em `conversations.metadata.gancho_de_extensao` guarda as revisões
-já existentes da instalação e do vínculo da organização. Troca de versão, reversão,
+já existentes da instalação e do vínculo da organização, junto ao id da instalação. Troca de versão, reversão,
 reinstalação ou configuração do vínculo invalidam a coleta em andamento: a próxima
 mensagem volta à IA, o estado é apagado e a devolução é registrada. Estado legado sem
 revisão também é invalidado. Leituras normais não aumentam revisões. Desligar a última

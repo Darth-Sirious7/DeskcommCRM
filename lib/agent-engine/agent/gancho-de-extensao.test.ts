@@ -11,7 +11,6 @@ import {
   lerFluxosAtivosDaOrganizacao,
   prepararGanchoDoTurno,
   type DecisaoDoTurno,
-  type FluxoAtivoDaOrganizacao,
 } from "./gancho-de-extensao";
 
 /**

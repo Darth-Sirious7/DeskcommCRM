@@ -108,7 +108,7 @@ const JANELA_DE_CLAIM = 20;
 export interface FluxoAtivoDaOrganizacao {
   /** `publisher/name` — o estado morre quando o vínculo some. */
   extensao: string;
-  /** Revisões já mantidas pelo host: instalação + vínculo da organização. */
+  /** Id da instalação + revisões já mantidas: instalação e vínculo da organização. */
   revisao: string;
   fluxo: FluxoDoTurno;
   /** `manifest.permissions` da versão vigente. */
@@ -209,7 +209,7 @@ export async function lerFluxosAtivosDaOrganizacao(
             a.manifest->'contributions'->'turn_flow' as fluxo,
             a.manifest->'permissions' as permissoes,
             oe.accepted_permissions as aceitas,
-            i.revision::text || ':' || oe.revision::text as revisao
+            i.id::text || ':' || i.revision::text || ':' || oe.revision::text as revisao
        from organization_extensions oe
        join extension_installations i on i.id = oe.installation_id
        join extension_artifacts a on a.id = i.artifact_id
