@@ -263,10 +263,19 @@ function splitItens(texto: string, tipo: CustomFieldDef["type"]): string[] {
  */
 export function confereCampoLido(
   campo: CustomFieldDef,
-  valorBruto: string,
+  valorBruto: string | number,
   testa = testaComPrazo,
 ): { ok: true; valor: unknown } | { ok: false; motivo: MotivoSemPropostaDeCampo } {
-  const forma = valorDoTipoAceitavel(campo, valorBruto);
+  // A proposta já guarda número em jsonb. Na confirmação, convertê-lo de
+  // novo pelo leitor de texto regional fazia 1.234 virar 1234. A correção
+  // digitada continua string; o número persistido conserva a escala e passa
+  // pelo MESMO padrão atual do funil abaixo.
+  const forma: ReturnType<typeof valorDoTipoAceitavel> =
+    typeof valorBruto === "number" && (campo.type === "number" || campo.type === "currency")
+      ? Number.isFinite(valorBruto)
+        ? { ok: true, valor: valorBruto }
+        : { ok: false, motivo: "valor_invalido" }
+      : valorDoTipoAceitavel(campo, String(valorBruto));
   if (!forma.ok) return forma;
   const veredito = validaPadraoDoCampo(campo, forma.valor, testa);
   if (!veredito.ok) return { ok: false, motivo: veredito.motivo };

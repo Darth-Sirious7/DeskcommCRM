@@ -133,6 +133,7 @@ vi.mock("@/app/api/v1/leads/_handler", () => ({
 
 import { GET } from "@/app/api/v1/leads/[id]/field-proposals/route";
 import { POST } from "@/app/api/v1/leads/[id]/field-proposals/[pid]/route";
+import { confereCampoLido } from "@/lib/leads/proposta-de-campos-por-documento";
 
 function ctx(id = LEAD, pid = PID) {
   return { params: Promise.resolve({ id, pid }) };
@@ -173,6 +174,55 @@ beforeEach(() => {
   h.gravacoesNoCard = [];
   h.funil = FUNIL;
   h.erroProfundo = null;
+});
+
+describe("a confirmação conserva o número que a revisão mostrou", () => {
+  it.each([
+    { tipo: "number", documento: "1,234", esperado: 1.234 },
+    { tipo: "number", documento: "1.234,567", esperado: 1234.567 },
+    { tipo: "currency", documento: "-1,234", esperado: -1.234 },
+    { tipo: "number", documento: "1234.56", esperado: 1234.56 },
+  ] as const)("$tipo: $documento não muda de escala ao salvar", async ({ tipo, documento, esperado }) => {
+    const campo = { key: "medida", label: "Medida", type: tipo };
+    // A mesma leitura que cria a proposta: o jsonb guarda um NÚMERO, não o
+    // texto regional do documento. A decisão usa esse dado já tipado.
+    const leitura = confereCampoLido(campo, documento);
+    expect(leitura).toEqual({ ok: true, valor: esperado });
+    if (!leitura.ok) return;
+    h.funil = { fields: [campo] };
+    h.db.lead_field_proposals = [proposta({ campo: campo.key, valor_proposto: leitura.valor })];
+
+    const r = await POST(requisicao({ decision: "accept" }), ctx());
+
+    expect(r.status).toBe(200);
+    expect(h.gravacoesNoCard).toEqual([
+      { leadId: LEAD, patch: { custom_fields: { medida: esperado } } },
+    ]);
+    expect((await r.json()).data.valor).toBe(esperado);
+  });
+
+  it("correção digitada continua sendo lida como texto do formulário", async () => {
+    h.funil = { fields: [{ key: "medida", label: "Medida", type: "number" }] };
+    h.db.lead_field_proposals = [proposta({ campo: "medida", valor_proposto: 1.234 })];
+
+    const r = await POST(requisicao({ decision: "accept", valor: "9,876" }), ctx());
+
+    expect(r.status).toBe(200);
+    expect(h.gravacoesNoCard).toEqual([
+      { leadId: LEAD, patch: { custom_fields: { medida: 9.876 } } },
+    ]);
+  });
+
+  it("número já tipado continua sujeito ao padrão atual do funil", async () => {
+    h.funil = { fields: [{ key: "medida", label: "Medida", type: "number", padrao: "^[0-9]+$" }] };
+    h.db.lead_field_proposals = [proposta({ campo: "medida", valor_proposto: 1.234 })];
+
+    const r = await POST(requisicao({ decision: "accept" }), ctx());
+
+    expect(r.status).toBe(422);
+    expect(h.gravacoesNoCard).toHaveLength(0);
+    expect(h.db.lead_field_proposals[0]!.status).toBe("pending");
+  });
 });
 
 // ─── A LEITURA ──────────────────────────────────────────────────────────────

@@ -73,7 +73,7 @@ const Body = z.object({
   motivo: z.string().max(300).optional(),
   /**
    * O valor CORRIGIDO pela pessoa, quando ela corrige em vez de aceitar como
-   * está. String, porque é o que um input de formulário devolve — e a conversão
+ * está. String, porque é o que um input de formulário devolve — e a conversão
    * para o tipo do funil é da MESMA régua do nascimento (número, booleano,
    * lista), nunca do formulário.
    */
@@ -84,16 +84,20 @@ const Body = z.object({
  * O valor que vai ser gravado, já na forma do TIPO do funil.
  *
  * Com correção, é a correção passada pela régua. Sem correção, é o valor da
- * proposta RE-CONVERTIDO pela mesma régua — o jsonb gravado na fila (número,
- * booleano, lista) volta a ser texto e passa pela mesma porta, para o veredito
- * ser o do funil de hoje, não o do dia da proposta.
+ * proposta passado pela mesma régua. Número do jsonb permanece número: reler
+ * 1.234 como texto regional o multiplicava por mil. O padrão do funil de hoje
+ * continua sendo cobrado, tanto do valor persistido quanto da correção.
  */
 function valorConfirmado(
   def: CustomFieldDef,
   proposto: unknown,
   correcao: string | undefined,
 ): { ok: true; valor: unknown } | { ok: false; recusa: RecusaDePadrao } {
-  const entrada = correcao ?? (Array.isArray(proposto) ? proposto.join(", ") : String(proposto ?? ""));
+  const entrada = correcao ?? (
+    typeof proposto === "number"
+      ? proposto
+      : Array.isArray(proposto) ? proposto.join(", ") : String(proposto ?? "")
+  );
   const veredito = confereCampoLido(def, entrada);
   if (veredito.ok) return veredito;
   return {
