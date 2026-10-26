@@ -516,6 +516,15 @@ export interface ProspectingCandidateRow {
   updated_at: string;
 }
 
+/** O clique do próprio titular e o resultado do envio à plataforma de anúncios. */
+export interface MetaCtwaClickRow {
+  ctwa_clid: string;
+  captured_at: string;
+  status: string;
+  attempted_at: string | null;
+  created_at: string;
+}
+
 /**
  * Uma campanha que falou com este titular (migration 0374).
  *
@@ -686,6 +695,12 @@ export interface ExportPayload {
    */
   voice_calls: VoiceCallRow[];
   prospecting_candidates: ProspectingCandidateRow[];
+  /**
+   * O registro por clique é apagado na anonimização (0806), então também entra
+   * no acesso. Ausente quando vazio para preservar a cópia anterior de quem
+   * não tem cliques; tokens de claim e detalhes internos não são coletados.
+   */
+  meta_ctwa_click_dispatches?: MetaCtwaClickRow[];
   /**
    * Casos, linha do tempo do caso e demandas (migration 0280).
    *
@@ -1842,6 +1857,25 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
+  // O clique liga o titular ao anúncio. A 0806 o apaga na anonimização; no
+  // acesso ele precisa aparecer, inclusive além da primeira página. A chave
+  // id ordena empates sem entregar o identificador interno no arquivo.
+  const meta_ctwa_click_dispatches: MetaCtwaClickRow[] = [];
+  if (contactId) {
+    for (let offset = 0; ; offset += 500) {
+      const { data, error } = await admin
+        .from("meta_ctwa_click_dispatches")
+        .select("ctwa_clid, captured_at, status, attempted_at, created_at")
+        .eq("organization_id", organizationId)
+        .eq("contact_id", contactId)
+        .order("id")
+        .range(offset, offset + 499);
+      if (error) throw error;
+      meta_ctwa_click_dispatches.push(...(data ?? []));
+      if (!data || data.length < 500) break;
+    }
+  }
+
   // Audit log extract (best-effort: rows where metadata.contact_id matches).
   let audit_log_extract: AuditRow[] = [];
   if (contactId) {
@@ -2325,6 +2359,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     appointment_notices,
     voice_calls,
     prospecting_candidates,
+    ...(meta_ctwa_click_dispatches.length > 0 ? { meta_ctwa_click_dispatches } : {}),
     cases,
     case_events,
     demandas,

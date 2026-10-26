@@ -163,6 +163,11 @@ a **0806** aplica a decisão de LGPD do doc 199. As quatro propostas foram renum
 Os componentes de entrada preservam o registro de anúncio e demais metadados acrescentados
 na `main` depois da v1.73; a prova CTWA é acrescentada na mesma mensagem.
 
+O acesso LGPD coleta os cliques do próprio titular com filtro de organização e contato,
+paginação por chave estável e erro alto se a leitura falhar. A cópia inclui o identificador
+do clique, as datas e o estado do envio; tokens de processamento e detalhes internos não
+são coletados. Quem não tem clique conserva o formato anterior, sem seção vazia nova.
+
 A validação do **novo código portado** ainda depende de tipos gerados de um Supabase descartável, gates
 estáticos, testes de instalação e atualização do baseline, RLS/grants, E2E com Graph em loopback
 e revisão dos resultados do CI oficial. Os runs do fork acima são evidência histórica da regra

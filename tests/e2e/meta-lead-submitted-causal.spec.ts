@@ -13,7 +13,7 @@
  * recusar essa colisão antes de iniciar Playwright.
  */
 import { createHmac, randomInt, randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 
 import { createClient } from "@supabase/supabase-js";
@@ -605,6 +605,7 @@ test.describe("LeadSubmitted causal pelo webhook WAHA", () => {
   });
 
   test("CTWA assinado nasce e envia uma conversão com prova vinculada à mensagem", async ({
+    page,
     request,
   }) => {
     const click = `ctwa-${randomUUID()}`;
@@ -684,6 +685,52 @@ test.describe("LeadSubmitted causal pelo webhook WAHA", () => {
     expect(JSON.stringify(body)).not.toContain(adId);
     expect(body.data[0]).not.toHaveProperty("custom_data");
     expect(body).not.toHaveProperty("test_event_code");
+
+    // O coletor e a projeção reais leem o mesmo Supabase deste fio; nenhuma
+    // resposta de consulta é dublada para preencher o arquivo de acesso.
+    const { collectExportData } = await import("@/lib/lgpd/export-collector");
+    const { copiaDoTitular } = await import("@/lib/lgpd/copia-do-titular");
+    const payload = await collectExportData({
+      organizationId: creds.org_id,
+      requestId: randomUUID(),
+      contactId: message.contact_id,
+      externalCustomerId: null,
+    });
+    expect(payload.meta_ctwa_click_dispatches).toHaveLength(1);
+    expect(payload.meta_ctwa_click_dispatches?.[0]).toMatchObject({
+      ctwa_clid: click,
+      captured_at: rows[0]!.captured_at,
+      status: "sent",
+    });
+    const copia = copiaDoTitular(payload, "BR");
+    expect(copia.meta_ctwa_click_dispatches).toEqual(payload.meta_ctwa_click_dispatches);
+    for (const campo of ["claim_token", "claimed_until", "detail", "first_message_id", "event_id"])
+      expect(payload.meta_ctwa_click_dispatches?.[0]).not.toHaveProperty(campo);
+
+    await loginComoAdmin(page, lerCreds());
+    await page.goto("/app/settings/conversoes");
+    const chave = page.getByRole("switch", { name: "Enviar LeadSubmitted por clique CTWA à Meta" });
+    await expect(chave).toBeChecked();
+    const historico = page.getByTestId("historico-de-cliques-ctwa");
+    await expect(historico).toBeVisible();
+    const linha = historico.locator("li").filter({ hasText: eventId });
+    await expect(linha).toHaveCount(1);
+    await linha.locator("summary").click();
+    await expect(linha).toContainText("Entregue");
+    await expect(linha.getByText(eventId, { exact: true })).toBeVisible();
+    mkdirSync("evidence/ctwa-3128", { recursive: true });
+    await page.screenshot({ path: "evidence/ctwa-3128/clique-entregue-conversoes.png", fullPage: true });
+    await chave.click();
+    await expect(chave).not.toBeChecked();
+    await expect(chave).toBeEnabled();
+    await page.reload();
+    await expect(chave).not.toBeChecked();
+    await page.screenshot({ path: "evidence/ctwa-3128/envio-desligado-conserva-historico.png", fullPage: true });
+    await chave.click();
+    await expect(chave).toBeChecked();
+    await expect(chave).toBeEnabled();
+    await page.reload();
+    await expect(chave).toBeChecked();
   });
 
   test("mensagem comum cria lead, mas nenhuma conversão", async ({ request }) => {
