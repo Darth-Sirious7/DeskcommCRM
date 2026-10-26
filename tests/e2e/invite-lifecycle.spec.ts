@@ -589,15 +589,19 @@ test("convite novo: alternar cadastro/login, confirmar no Mailpit e entrar só n
 
     await page.goto(`/team/accept-invite/${token}`);
     await page.getByRole("link", { name: "Criar minha conta", exact: true }).click();
+    await expect(page).toHaveURL((url) => url.pathname === "/signup" && url.searchParams.get("invite") === token);
     await expect(page.getByLabel("Nome da empresa")).toHaveCount(0);
     await expect(page.getByLabel("Email")).toHaveValue(email);
     fs.mkdirSync("evidence/lote-bugfixes-01a178b3", { recursive: true });
     await page.screenshot({ path: "evidence/lote-bugfixes-01a178b3/convite-01-cadastro.png" });
     await page.getByRole("link", { name: "Entrar", exact: true }).click();
+    // O e-mail é igual nas duas telas; só seu valor não espera a navegação.
+    await expect(page).toHaveURL((url) => url.pathname === "/login" && url.searchParams.get("next") === `/team/accept-invite/${token}`);
     await expect(page.getByLabel("Email")).toHaveValue(email);
     expect(new URL(page.url()).searchParams.get("next") === `/team/accept-invite/${token}`).toBe(true);
     await page.screenshot({ path: "evidence/lote-bugfixes-01a178b3/convite-02-login-preenchido.png" });
     await page.getByRole("link", { name: "Criar conta", exact: true }).click();
+    await expect(page).toHaveURL((url) => url.pathname === "/signup" && url.searchParams.get("invite") === token);
     expect(new URL(page.url()).searchParams.get("invite") === token).toBe(true);
     await page.getByLabel("Seu nome").fill("Pessoa convidada sintética");
     await page.getByLabel("Senha", { exact: true }).fill(senha);
