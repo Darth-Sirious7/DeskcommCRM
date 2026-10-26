@@ -1788,6 +1788,7 @@ CI — a coluna abaixo diz QUEM mede, não o que foi medido.
 | J49.5 (A-5) | Gesto de voltar do sistema | devolve a lista, sem `id=` | E2E (CI) |
 | J49.6 (A-6) `[P0]` | WhatsApp desconectado | com a faixa na tela o documento não rola (`scrollY` ≤ 1 depois de `scrollTo` ao fim); aberta a conversa, topo da camada = base das faixas (±1), a faixa continua por cima (`elementFromPoint`), o composer termina ≤ 844 e a barra de voltar fica abaixo da faixa; de volta à lista e com a página rolada (espaçador de 3000px no `<main>`), o topo do `<header>` sticky = base das faixas (±1) e `elementFromPoint` no topo dele cai no header | E2E (CI, conexão `FAILED` semeada e apagada no `finally`, com a remoção conferida) + UNIT `faixas-de-cima` |
 | J49.7 (A-7) | Teclado aberto, modelo Android | janela de 500px: `data-teclado-aberto`, fileira de ações escondida, último balão dentro do fio e composer ≤ 500 | E2E (CI) + UNIT `altura-visivel` |
+| J49.8 (A-8) | A ficha do contato no celular | aberta pelo «Ficha» (folha): «Tags do contato», «Novo Lead», «Ver contato», o campo «Nova tag…» ≥ 44 de altura; «Adicionar tag» ≥ 44×44 (o gatilho da cor, só de `manager+`, não é medido: a spec entra como `agent`) — a ficha sobrescrevia os 44px do primitivo com `h-7` (28px); acima de `lg` a densidade de mouse fica (`lg:h-7`) | E2E (CI); evidência `evidence/atender-pelo-celular-20261021/a8-ficha-alvos-de-toque.png` |
 
 **NÃO MEDIDO — só o aparelho prova:** o teclado do iOS (que NÃO encolhe a
 janela: ali quem mede é o `visualViewport.offsetTop`, e a fórmula da camada com
@@ -3919,3 +3920,20 @@ código e a hora anteriores e se houve confirmação).
 **NÃO COBERTO, declarado:** que o canal de verdade entrega o reenvio (o CI não tem
 WhatsApp; o caminho termina em «Não enviada — sem conexão»); o toque num iPhone e num
 Android reais; o reenvio de mídia pela tela (coberto só pela regra e pela rota).
+
+## Controles do topo — nome acessível `[P1]` (2026-10-26, PR #3409)
+
+O seletor de idioma e o menu da pessoa incluem seus textos visíveis (PT/ES e
+iniciais) no nome acessível, sem mudar a aparência. O Axe 4.14 encontrou a ausência
+na regra `label-content-name-mismatch`, nos dois casos de `rbac-roles.spec.ts`:
+admin com MFA em API Tokens/cobrança e atendente no Inbox/Funis.
+
+**PASS pela tela:** os mesmos dois casos, sem excluir a regra do Axe, em banco
+fresco do `baseline.sql` com `ON_ERROR_STOP=1`, `bootstrap-owner.ts`, contas
+sintéticas e build de produção, no candidato `bfca6673f` sobre a base `bb7b6cb33`.
+Capturas dos dois casos e traces foram inspecionados; evidência local em
+`.superpowers/evidence/pr3409-01a178b3/`. O unitário
+`tests/unit/controles-do-topo-nome-acessivel.test.tsx` cobre os nomes em PT/ES e
+iniciais com nome completo, um nome e fallback pelo e-mail: 8 vermelhos antes,
+8 verdes depois. **Não medido:** reconhecimento de voz em aparelho real e o
+fluxo inteiro em espanhol (a cobertura em espanhol aqui é do componente).
