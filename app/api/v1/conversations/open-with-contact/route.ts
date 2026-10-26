@@ -17,6 +17,7 @@ import { openConversationWithContactSchema, validateRequest } from "@/lib/schema
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
+import { assumirConversaComEfeitos } from "@/lib/inbox/assumir-conversa";
 
 export const dynamic = "force-dynamic";
 
@@ -62,19 +63,20 @@ async function assumirConversaSeLivre(p: {
   organizationId: string;
   conversationId: string;
   userId: string;
+  role?: string;
+  requestId: string;
 }): Promise<boolean> {
   try {
-    const { data, error } = await p.supabase.rpc("fn_conversation_assign" as never, {
-      p_organization_id: p.organizationId,
-      p_conversation_id: p.conversationId,
-      p_to_user_id: p.userId,
-      p_reason: "claim",
-      p_enforce_expected: true,
-    } as never);
+    const { conversation, error } = await assumirConversaComEfeitos(p.supabase, {
+      organizationId: p.organizationId,
+      conversationId: p.conversationId,
+      actor: { type: "user", id: p.userId, role: p.role },
+      requestId: p.requestId,
+    });
     if (error) throw error;
     // Zero linhas = a conversa já tinha dono. É o caminho normal de quem abre
     // uma conversa que já é de outra pessoa: nada a fazer, nada a dizer.
-    return Boolean((data as unknown[] | null)?.[0]);
+    return conversation !== null;
   } catch (err) {
     console.error(
       "[conversations.open-with-contact] não foi possível assumir a conversa livre",
@@ -132,6 +134,8 @@ export async function POST(req: NextRequest): Promise<Response> {
         organizationId: authz.organizationId,
         conversationId: result.conversation_id,
         userId: authz.actor.id,
+        role: authz.actor.role,
+        requestId,
       });
     }
     return ok(result, { requestId });

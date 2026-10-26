@@ -5,6 +5,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { openSharedContactConversation } from "@/lib/messaging/open-shared-contact-conversation";
+import { audit } from "@/lib/audit";
+import { registrarTrocaDeComando } from "@/lib/inbox/atividade-de-comando";
+import { sincronizarNegocioAbertoDoContato } from "@/lib/inbox/negocio-aberto-do-contato";
 
 import { POST } from "./route";
 
@@ -36,6 +39,7 @@ const ORG_A = "aaaaaaaa-0000-4000-8000-000000000001";
 const USER = "aaaaaaaa-3333-4000-8000-000000000003";
 const CONV = "aaaaaaaa-1111-4000-8000-000000000001";
 const CONTATO = "aaaaaaaa-5555-4000-8000-000000000009";
+const CONVERSA_DA_ORG = { id: CONV, organization_id: ORG_A, contact_id: CONTATO };
 
 type Rpc = { nome: string; params: Record<string, unknown> };
 
@@ -48,6 +52,7 @@ function clienteFake(resposta: { data: unknown; error: { message: string } | nul
   const cliente = {
     rpc: async (nome: string, params: Record<string, unknown>) => {
       rpcs.push({ nome, params });
+      if (nome === "emit_event") return { data: null, error: null };
       return resposta;
     },
   } as unknown as SupabaseClient;
@@ -100,19 +105,24 @@ vi.mock("@/lib/api/auth-dual", () => ({
 }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }));
+vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+vi.mock("@/lib/inbox/atividade-de-comando", () => ({ registrarTrocaDeComando: vi.fn(async () => undefined) }));
+vi.mock("@/lib/inbox/negocio-aberto-do-contato", () => ({
+  sincronizarNegocioAbertoDoContato: vi.fn(async () => ({ gravou: false, motivo: "sem_negocio_aberto", abertos: 0 })),
+}));
 vi.mock("@/lib/messaging/open-shared-contact-conversation", () => ({
   openSharedContactConversation: vi.fn(),
 }));
 
 describe("#3479 — abrir a conversa assume a conversa SEM dono", () => {
   it("⭐ a sessão do navegador pede o claim da conversa que acabou de abrir", async () => {
-    const { cliente, rpcs } = clienteFake({ data: [{ id: CONV }], error: null });
+    const { cliente, rpcs } = clienteFake({ data: [CONVERSA_DA_ORG], error: null });
     mResolve.mockResolvedValue(authzDeSessao(cliente));
 
     const res = await POST(requisicao());
     expect(res.status).toBe(200);
 
-    expect(rpcs).toHaveLength(1);
+    expect(rpcs).toHaveLength(2);
     expect(rpcs[0]?.nome).toBe("fn_conversation_assign");
     expect(rpcs[0]?.params).toMatchObject({
       p_organization_id: ORG_A,
@@ -124,22 +134,26 @@ describe("#3479 — abrir a conversa assume a conversa SEM dono", () => {
     // `expected_assignee` NÃO vai: é o contrato de "assuma se estiver livre".
     // Mandá-lo (mesmo nulo) mudaria o significado do pedido para quem lê o RPC.
     expect(rpcs[0]?.params).not.toHaveProperty("p_expected_assignee");
+    expect(rpcs[1]?.nome).toBe("emit_event");
+    expect(audit).toHaveBeenCalledOnce();
+    expect(registrarTrocaDeComando).toHaveBeenCalledOnce();
+    expect(sincronizarNegocioAbertoDoContato).toHaveBeenCalledOnce();
   });
 
   it("o cliente é o da SESSÃO, nunca o admin que abriu a conversa", async () => {
     // Quem assume é quem clicou: o `changed_by` de
     // `conversation_assignment_events` é `auth.uid()`, e pelo admin ele seria
     // nulo — o registro perderia o autor exatamente no caminho do #3479.
-    const { cliente, rpcs } = clienteFake({ data: [{ id: CONV }], error: null });
+    const { cliente, rpcs } = clienteFake({ data: [CONVERSA_DA_ORG], error: null });
     mResolve.mockResolvedValue(authzDeSessao(cliente));
 
     await POST(requisicao());
-    expect(rpcs).toHaveLength(1);
+    expect(rpcs).toHaveLength(2);
     expect(mAbrir).toHaveBeenCalledOnce();
   });
 
   it("token de servidor NÃO assume em nome de ninguém", async () => {
-    const { cliente, rpcs } = clienteFake({ data: [{ id: CONV }], error: null });
+    const { cliente, rpcs } = clienteFake({ data: [CONVERSA_DA_ORG], error: null });
     mResolve.mockResolvedValue(authzDeToken(cliente));
 
     const res = await POST(requisicao());
