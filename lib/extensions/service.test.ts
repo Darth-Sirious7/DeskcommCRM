@@ -608,7 +608,8 @@ describe("configureExtension — o aceite das permissões de turno", () => {
   }
 
   it("ativar sem aceite que cubra o fluxo recusa ANTES da RPC, com o código que a tela vira 'Autorizar'", async () => {
-    // A versão passou a passar a conversa para humano; o aceite antigo cobre só `turn.send`.
+    // Concessão parcial não cobre passagem. A RPC de instalação segue recusando
+    // mudanças de permissões entre versões (doutrina 6-bis).
     const { instalacao, admin } = cenario(comFluxo("passar_para_humano"), ["turn.send"]);
 
     await expect(

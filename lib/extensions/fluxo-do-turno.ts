@@ -392,6 +392,8 @@ export interface EstadoDoFluxo {
   /** `publisher/name` da extensão — o estado morre quando ela é desligada. */
   extensao: string;
   fluxo: string;
+  /** Preenchida pelo host; ausente em estado legado, que não pode ser retomado. */
+  revisao?: string;
   idioma: IdiomaDoTurno;
   /** Índice da pergunta PENDENTE em `perguntas`. */
   etapa: number;

@@ -146,8 +146,8 @@ describe("sem aceite, a extensão não age (exigência 2)", () => {
   });
 });
 
-describe("atualização: permissão nova exige aceite novo (exigência 3)", () => {
-  it("versão que passa a pedir `turn.handoff` NÃO herda o aceite de `turn.send`", () => {
+describe("cobertura defensiva: efeito exige aceite, sem alterar a recusa de troca de permissões", () => {
+  it("passagem NÃO é coberta por um aceite só de `turn.send`", () => {
     // v1: só encerrava a coleta. A organização aceitou `turn.send`.
     const v1 = motivoDeRecusaDoTurno({
       declaradas: ["turn.send"],

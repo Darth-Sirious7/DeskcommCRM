@@ -80,7 +80,7 @@ const bindingRowSchema = z.object({
   revision: z.number().int(),
   deactivated_by_removal_at: z.string().nullable(),
   // O aceite do dono da organização (#3076). `text[]` chega como lista; nulo só em banco cujo
-  // schema precede a 0767, e nesse caso a leitura devolve `[]` (nada aceito) em vez de explodir.
+  // schema precede a 0798, e nesse caso a leitura devolve `[]` (nada aceito) em vez de explodir.
   accepted_permissions: z.array(z.string()).nullable().optional(),
 });
 const countRowSchema = z.object({

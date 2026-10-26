@@ -60280,8 +60280,8 @@ grant execute on function public.fn_casos_parados_para_lembrar(integer) to servi
 
 notify pgrst, 'reload schema';
 
--- ---- permissão de turno e aceite da organização (migration 0767) ----
--- Espelho de `20261026120000_0767_extensoes_permissao_de_turno.sql`. O bloco vai no FIM, e não
+-- ---- permissão de turno e aceite da organização (migration 0798) ----
+-- Espelho de `20261026190100_0798_extensoes_permissao_de_turno.sql`. O bloco vai no FIM, e não
 -- editando as cópias anteriores: o apêndice do bloco do módulo de dados (0611) tem de continuar
 -- byte a byte igual à migration dele (`apendice-do-baseline-espelha-a-migration`), e a definição
 -- que vale em runtime é a ÚLTIMA do arquivo (`apendice-do-baseline-nao-diverge-da-cadeia`).
@@ -60312,7 +60312,7 @@ revoke execute on function public.fn_extensions_permissoes_validas(jsonb) from p
 revoke execute on function public.fn_extensions_permissoes_validas(jsonb) from authenticated;
 grant execute on function public.fn_extensions_permissoes_validas(jsonb) to service_role;
 
--- A assinatura de SETE argumentos deixa de existir na 0767. O `drop` mora aqui, e não só na
+-- A assinatura de SETE argumentos deixa de existir na 0798. O `drop` mora aqui, e não só na
 -- migration, porque sem ele as duas assinaturas convivem no baseline e a chamada de sete nomes
 -- fica AMBÍGUA (`function is not unique`) — quem instalou pelo kit self-host quebraria.
 drop function if exists public.fn_extensions_configure(uuid,uuid,uuid,uuid,integer,boolean,jsonb);

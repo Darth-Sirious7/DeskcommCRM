@@ -49,6 +49,7 @@ const AMBAS: ExtensionPermission[] = ["turn.send", "turn.handoff"];
 
 interface LinhaDeExtensao {
   extensao: string;
+  revisao?: string;
   fluxo: FluxoDoTurno;
   permissoes: ExtensionPermission[];
   aceitas: ExtensionPermission[];
@@ -75,6 +76,7 @@ function bancoDeMentira(opts: {
             fluxo: linha.fluxo,
             permissoes: linha.permissoes,
             aceitas: linha.aceitas,
+            revisao: linha.revisao ?? "1:1",
           })),
         };
       }
@@ -138,7 +140,7 @@ function turno(texto: string | null, messageId: string | null = MSG) {
 }
 
 const EXTENSAO: LinhaDeExtensao = {
-  extensao: "deskcomm/laudo-do-exame",
+  extensao: "acme/laudo-do-exame",
   fluxo: fluxoDeLaudo(),
   permissoes: AMBAS,
   aceitas: AMBAS,
@@ -230,10 +232,10 @@ describe("sem ACEITE, a extensão não age (exigência 2)", () => {
   });
 });
 
-describe("atualização: permissão nova ⇒ aceite novo; removida ⇒ nada quebra (exigência 3)", () => {
-  it("versão que passa a pedir `turn.handoff` para de agir até o aceite novo", async () => {
-    // A organização aceitou o conjunto da v1 (só encerrava a coleta). A v2 vigente passou a
-    // entregar a conversa a uma pessoa — e NÃO herda o aceite antigo.
+describe("cobertura defensiva do aceite — não autoriza trocar permissões na instalação", () => {
+  it("concessão parcial não autoriza passagem até aceitar o conjunto declarado", async () => {
+    // A política recusa cobertura parcial mesmo se uma linha antiga existir no banco.
+    // A RPC de instalação continua recusando troca de permissões entre versões (6-bis).
     const v2: LinhaDeExtensao = { ...EXTENSAO, aceitas: ["turn.send"] };
     const { pool } = bancoDeMentira({ extensoes: [v2] });
     const { deps, enviadas } = dependencias(pool as never);
@@ -254,7 +256,7 @@ describe("atualização: permissão nova ⇒ aceite novo; removida ⇒ nada queb
     expect(segunda.enviadas).toHaveLength(1);
   });
 
-  it("versão que REMOVE uma permissão continua agindo: o aceite antigo cobre o que sobrou", async () => {
+  it("aceite maior cobre o subconjunto do fluxo, sem conceder efeito extra", async () => {
     // Manifesto vigente pede só `turn.send` (desfecho que encerra a coleta); a organização
     // aceitou um conjunto maior no passado. Exigir igualdade aqui pararia a conversa de quem
     // não mudou nada — é o lado da exigência 3 que o hash do conjunto quebraria.
@@ -282,7 +284,7 @@ describe("reversão: desligar/desinstalar devolve o turno à IA (exigência 4)",
     // A conversa está no meio do fluxo (etapa 1) e a extensão deixou de dirigir — mas OUTRA
     // extensão com fluxo segue ativa, então o leitor roda e o estado órfão é recolhido.
     const outra: LinhaDeExtensao = {
-      extensao: "deskcomm/outra",
+      extensao: "acme/outra",
       fluxo: fluxoDeLaudo({ id: "outra", gatilhos: [{ idioma: "pt-BR", texto: "outra-coisa" }] }),
       permissoes: AMBAS,
       aceitas: AMBAS,
@@ -292,6 +294,7 @@ describe("reversão: desligar/desinstalar devolve o turno à IA (exigência 4)",
       estado: {
         extensao: EXTENSAO.extensao,
         fluxo: "laudo",
+        revisao: "1:1",
         idioma: "pt-BR",
         etapa: 1,
         campos: { exame: "sangue" },
@@ -381,6 +384,7 @@ describe("as atividades de assumir e devolver (exigência 6)", () => {
       estado: {
         extensao: EXTENSAO.extensao,
         fluxo: "laudo",
+        revisao: "1:1",
         idioma: "pt-BR",
         etapa: 1,
         campos: {},
@@ -448,6 +452,7 @@ describe("a jornada completa: gatilho, perguntas e passagem com os campos", () =
       estado: {
         extensao: EXTENSAO.extensao,
         fluxo: "laudo",
+        revisao: "1:1",
         idioma: "pt-BR",
         etapa: 1,
         campos: { exame: "sangue" },
@@ -505,5 +510,116 @@ describe("a posição no turno é o contrato", () => {
     expect(CHAVE_DO_GANCHO).toBe("gancho_de_extensao");
     const bloco = fonte.slice(fonte.indexOf("prepararGanchoDoTurno("));
     expect(bloco.slice(0, 4000)).toContain("lerFluxosAtivosDaOrganizacao(pool, tenantId, runLog)");
+  });
+});
+
+
+describe("o estado acompanha a instalação e a decisão da organização", () => {
+  const estadoDaColeta = () => ({
+    extensao: EXTENSAO.extensao,
+    fluxo: "laudo",
+    revisao: "1:1",
+    idioma: "pt-BR",
+    etapa: 1,
+    campos: { exame: "dado sintético" },
+    sem_progresso: 0,
+    mensagens: [],
+    iniciado_em: "2026-10-26T11:00:00Z",
+  });
+
+  it("atualização válida de quatro para uma pergunta devolve à IA sem interpretar a resposta antiga", async () => {
+    const { pool, estado } = bancoDeMentira({
+      extensoes: [{ ...EXTENSAO, revisao: "2:1", fluxo: fluxoDeLaudo({
+        perguntas: [{ campo: "exame", texto: { "pt-BR": "Qual exame?" } }],
+      }) }],
+      estado: { ...estadoDaColeta(), etapa: 3 },
+    });
+    const { deps, enviadas, passagens, atividades } = dependencias(pool as never);
+    expect(await prepararGanchoDoTurno(deps, turno("Dado da pergunta antiga"))).toEqual({
+      tipo: "nao_e_comigo", porque: "fluxo_atualizado",
+    });
+    expect(estado.valor).toBeNull();
+    expect(enviadas).toEqual([]);
+    expect(passagens).toEqual([]);
+    expect(atividades).toEqual([{
+      tipo: "extension_turn_returned", extensao: EXTENSAO.extensao,
+      fluxo: "laudo", motivo: "revisao_alterada",
+    }]);
+  });
+
+  it("mesmo número de perguntas com outro significado também invalida a coleta", async () => {
+    const { pool, estado } = bancoDeMentira({
+      extensoes: [{ ...EXTENSAO, revisao: "2:1", fluxo: fluxoDeLaudo({
+        perguntas: [
+          { campo: "exame", texto: { "pt-BR": "Qual exame?" } },
+          { campo: "data", texto: { "pt-BR": "Qual data?" } },
+        ],
+      }) }], estado: estadoDaColeta(),
+    });
+    const { deps, passagens } = dependencias(pool as never);
+    expect(await prepararGanchoDoTurno(deps, turno("Nome sintético"))).toEqual({
+      tipo: "nao_e_comigo", porque: "fluxo_atualizado",
+    });
+    expect(estado.valor).toBeNull();
+    expect(passagens).toEqual([]);
+  });
+
+  it("desligar a última extensão recolhe o estado e registra devolução sem valores coletados", async () => {
+    const { pool, estado } = bancoDeMentira({ extensoes: [], estado: estadoDaColeta() });
+    const { deps, atividades, enviadas } = dependencias(pool as never);
+    expect(await prepararGanchoDoTurno(deps, turno("Novo assunto"))).toEqual({
+      tipo: "nao_e_comigo", porque: "fluxo_sumiu",
+    });
+    expect(estado.valor).toBeNull();
+    expect(enviadas).toEqual([]);
+    expect(atividades).toEqual([{
+      tipo: "extension_turn_returned", extensao: EXTENSAO.extensao,
+      fluxo: "laudo", motivo: "extensao_nao_dirige_mais",
+    }]);
+    expect(JSON.stringify(atividades)).not.toContain("dado sintético");
+  });
+
+  it("desligar e reativar sem mensagem no intervalo não retoma a coleta antiga", async () => {
+    // Configure aumenta a revisão do vínculo tanto ao desligar quanto ao reativar.
+    const { pool, estado } = bancoDeMentira({
+      extensoes: [{ ...EXTENSAO, revisao: "1:3" }], estado: estadoDaColeta(),
+    });
+    const { deps, enviadas, atividades } = dependencias(pool as never);
+    expect(await prepararGanchoDoTurno(deps, turno("Nome sintético"))).toEqual({
+      tipo: "nao_e_comigo", porque: "fluxo_atualizado",
+    });
+    expect(estado.valor).toBeNull();
+    expect(enviadas).toEqual([]);
+    expect(atividades[0]?.motivo).toBe("revisao_alterada");
+    expect(await prepararGanchoDoTurno(deps, turno("Preciso do meu laudo", "novo"))).toEqual({
+      tipo: "assumido", fluxo: "laudo", porque: "comecou",
+    });
+    expect(estado.valor).toMatchObject({ revisao: "1:3", etapa: 0, campos: {} });
+  });
+
+  it("estado legado sem revisão é encerrado antes de coletar ou passar", async () => {
+    const { revisao: _revisao, ...legado } = estadoDaColeta();
+    const { pool, estado } = bancoDeMentira({ extensoes: [EXTENSAO], estado: legado });
+    const { deps, enviadas, passagens, atividades } = dependencias(pool as never);
+    expect(await prepararGanchoDoTurno(deps, turno("Nome sintético"))).toEqual({
+      tipo: "nao_e_comigo", porque: "fluxo_atualizado",
+    });
+    expect(estado.valor).toBeNull();
+    expect(enviadas).toEqual([]);
+    expect(passagens).toEqual([]);
+    expect(atividades[0]?.motivo).toBe("revisao_alterada");
+  });
+
+  it("perder concessão encerra a coleta mesmo quando nenhuma extensão ficou elegível", async () => {
+    const { pool, estado } = bancoDeMentira({
+      extensoes: [{ ...EXTENSAO, aceitas: [] }], estado: estadoDaColeta(),
+    });
+    const { deps, enviadas, atividades } = dependencias(pool as never);
+    expect(await prepararGanchoDoTurno(deps, turno("Nome sintético"))).toEqual({
+      tipo: "nao_e_comigo", porque: "fluxo_sumiu",
+    });
+    expect(estado.valor).toBeNull();
+    expect(enviadas).toEqual([]);
+    expect(atividades[0]?.motivo).toBe("extensao_nao_dirige_mais");
   });
 });

@@ -24,15 +24,16 @@ import { decidirDoFluxo, type FluxoDoTurno } from "@/lib/extensions/fluxo-do-tur
  * a nota do mantenedor descreveu.
  */
 const RAIZ = process.cwd();
-const PACOTE = join(RAIZ, "extensoes/pacotes/deskcomm/laudo-do-exame-1.0.0.json");
-
-const bytes = new Uint8Array(readFileSync(PACOTE));
 const catalogo = parseCatalog(new Uint8Array(readFileSync(join(RAIZ, "extensoes/catalogo.json"))));
 const entrada = catalogo.entries.find(
-  (item) => item.publisher === "deskcomm" && item.name === "laudo-do-exame",
+  (item) => item.name === "laudo-do-exame",
 );
 
+if (entrada === undefined) throw new Error("Pacote de exemplo ausente do catálogo");
+const PACOTE = join(RAIZ, "extensoes/pacotes", entrada.publisher, `${entrada.name}-${entrada.version}.json`);
+const bytes = new Uint8Array(readFileSync(PACOTE));
 const manifest = parseManifest(bytes);
+const IDENTIDADE_DO_PACOTE = `${manifest.publisher}/${manifest.name}`;
 const fluxo = manifest.contributions.turn_flow as FluxoDoTurno;
 
 /**
@@ -41,7 +42,7 @@ const fluxo = manifest.contributions.turn_flow as FluxoDoTurno;
  * Devolve as bolhas na ordem em que sairiam e o estado final, que é o que o gancho grava.
  */
 function jornada(textoDoGatilho: string, respostas: string[]) {
-  const primeiro = decidirDoFluxo(fluxo, "deskcomm/laudo-do-exame", null, {
+  const primeiro = decidirDoFluxo(fluxo, IDENTIDADE_DO_PACOTE, null, {
     texto: textoDoGatilho,
     agora: "2026-10-26T12:00:00Z",
   });
@@ -50,7 +51,7 @@ function jornada(textoDoGatilho: string, respostas: string[]) {
   let estado = primeiro.acao === "perguntar" ? primeiro.estado : null;
   let ultimo = primeiro;
   for (const resposta of respostas) {
-    ultimo = decidirDoFluxo(fluxo, "deskcomm/laudo-do-exame", estado, {
+    ultimo = decidirDoFluxo(fluxo, IDENTIDADE_DO_PACOTE, estado, {
       texto: resposta,
       agora: "2026-10-26T12:00:00Z",
     });
@@ -95,7 +96,7 @@ describe("o pacote consumidor é o artefato ADMITIDO, não uma cópia do teste",
       "turn.send",
       "turn.handoff",
     ]);
-    // Aceite só do envio (o caso da v1 que só encerrava a coleta) não cobre a passagem.
+    // Aceite parcial do envio (política defensiva, sem autorizar troca de permissões) não cobre a passagem.
     expect(
       motivoDeRecusaDoTurno({
         declaradas: manifest.permissions,
@@ -176,13 +177,13 @@ describe("a jornada completa, nos três idiomas do pacote", () => {
 
 describe("a jornada tem saída: a conversa volta para a IA", () => {
   it("mensagem fora do fluxo devolve o turno em vez de prender a coleta", () => {
-    const abertura = decidirDoFluxo(fluxo, "deskcomm/laudo-do-exame", null, {
+    const abertura = decidirDoFluxo(fluxo, IDENTIDADE_DO_PACOTE, null, {
       texto: "Preciso do meu laudo",
       agora: "2026-10-26T12:00:00Z",
     });
     expect(abertura.acao).toBe("perguntar");
     if (abertura.acao !== "perguntar") return;
-    const fora = decidirDoFluxo(fluxo, "deskcomm/laudo-do-exame", abertura.estado, {
+    const fora = decidirDoFluxo(fluxo, IDENTIDADE_DO_PACOTE, abertura.estado, {
       texto: "quanto custa o exame?",
       agora: "2026-10-26T12:05:00Z",
     });
@@ -190,7 +191,7 @@ describe("a jornada tem saída: a conversa volta para a IA", () => {
   });
 
   it("o teto de turnos sem progresso também devolve, em vez de insistir para sempre", () => {
-    const abertura = decidirDoFluxo(fluxo, "deskcomm/laudo-do-exame", null, {
+    const abertura = decidirDoFluxo(fluxo, IDENTIDADE_DO_PACOTE, null, {
       texto: "Preciso do meu laudo",
       agora: "2026-10-26T12:00:00Z",
     });
@@ -201,7 +202,7 @@ describe("a jornada tem saída: a conversa volta para a IA", () => {
     // pacote é `passar_para_humano`, então o teto entrega a conversa a uma pessoa (com os campos
     // que houver) em vez de insistir — a saída do fluxo é uma pessoa, não o silêncio.
     for (let i = 0; i <= (fluxo.teto_de_turnos_sem_progresso ?? 3); i += 1) {
-      desfecho = decidirDoFluxo(fluxo, "deskcomm/laudo-do-exame", estado, {
+      desfecho = decidirDoFluxo(fluxo, IDENTIDADE_DO_PACOTE, estado, {
         texto: "",
         agora: "2026-10-26T12:10:00Z",
       });

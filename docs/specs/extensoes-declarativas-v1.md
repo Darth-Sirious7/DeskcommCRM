@@ -74,6 +74,41 @@ Uma função compartilhada verifica compatibilidade na instalação, ativação,
 
 ## Versões: atualizar, desfazer a última troca e remover
 
+### Gancho antes da IA (host API 2, #3076)
+
+`contributions.turn_flow` declara gatilhos por idioma, perguntas por campo e desfecho
+(`assumir`, que conclui a coleta, ou `passar_para_humano`). O contrato executável é
+`lib/extensions/fluxo-do-turno.ts`; a lista fechada de capacidades está em
+`lib/extensions/capacidades.ts`. O host exige `turn.send` e, para passagem, também
+`turn.handoff`, derivadas do desfecho e validadas no parse do manifesto.
+
+Instalar não concede esses efeitos. `organization_extensions.accepted_permissions`
+nasce vazio; o administrador da organização concede o conjunto explicitamente pela
+gestão de extensões. Serviço e `fn_extensions_configure` revalidam a cobertura. Salvar
+sem concessão nova preserva o aceite; desligar continua permitido. A cobertura por
+subconjunto é uma defesa adicional: **não muda** a recusa de trocar permissões entre
+versões descrita abaixo e na doutrina 6-bis.
+
+O gancho roda depois dos silenciadores e antes do roteiro e da IA. Os envios passam
+pela cadeia habitual e a passagem usa `performHumanHandoff`, com campos na passagem
+protegida pela autorização da conversa. Atividades `extension_turn_assumed` e
+`extension_turn_returned` registram identidade, fluxo e motivo, sem respostas coletadas.
+
+O estado temporário em `conversations.metadata.gancho_de_extensao` guarda as revisões
+já existentes da instalação e do vínculo da organização. Troca de versão, reversão,
+reinstalação ou configuração do vínculo invalidam a coleta em andamento: a próxima
+mensagem volta à IA, o estado é apagado e a devolução é registrada. Estado legado sem
+revisão também é invalidado. Leituras normais não aumentam revisões. Desligar a última
+extensão recolhe estado no próximo turno; reativar sem mensagem no intervalo também
+não retoma a coleta, pois a revisão do vínculo mudou.
+
+O pacote de laudo herdado do #3474 demonstra este contrato linear, mas ainda **não
+equivale ao #3063**: faltam a passagem imediata de patologia, os ramos de coleta e o
+reaproveitamento de dados já presentes. A adaptação do consumidor segue os docs de
+decisão 139/167 (opção A); este host não prova essa jornada nem encerra o #3063.
+
+### Troca de artefato
+
 O perfil é declarativo e a configuração segue um esquema do host, então não existe dado de domínio do pacote para migrar. "Atualizar" é trocar o ponteiro do artefato da instalação; "desfazer" é trocar de volta. Artefatos continuam imutáveis e nunca são apagados.
 
 **Precondição.** Toda troca de ponteiro exige `expected_installation_revision`, a revisão da linha de `extension_installations` que a tela exibiu (`null` quando a tela não viu linha para a identidade). A revisão sobe em toda conclusão de instalação e atualização, em desfazer e em remover; configurar não mexe nela, porque é estado da organização. Divergência é `409 extension_version_changed`, e a tela recarrega. A revisão pega o que a comparação por artefato não pega: remover e reinstalar a mesma versão, ou ir de A para C e voltar a A.

@@ -164,6 +164,27 @@
       "col": 17,
       "type": "ui",
       "label": "Auditoria da organização /app/audit"
+    },
+    {
+      "id": "turn_hook",
+      "lane": "app",
+      "col": 18,
+      "type": "service",
+      "label": "Gancho antes da IA · permissões e aceite atuais"
+    },
+    {
+      "id": "turn_state",
+      "lane": "db",
+      "col": 19,
+      "type": "database",
+      "label": "metadata.gancho_de_extensao · revisões + claim temporário"
+    },
+    {
+      "id": "turn_timeline",
+      "lane": "human",
+      "col": 20,
+      "type": "ui",
+      "label": "Timeline · assumir/devolver e passagem protegida"
     }
   ],
   "edges": [
@@ -346,6 +367,31 @@
       "from": "audit_view",
       "to": "manager",
       "label": "responsável volta à gestão para desfazer, remover ou reinstalar"
+    },
+    {
+      "from": "binding",
+      "to": "turn_hook",
+      "label": "fluxo ativo com aceite; revisão da organização e instalação"
+    },
+    {
+      "from": "artifact",
+      "to": "turn_hook",
+      "label": "revalidar contrato declarativo e permissões de efeito"
+    },
+    {
+      "from": "turn_hook",
+      "to": "turn_state",
+      "label": "claim e coleta; mudança de revisão encerra estado"
+    },
+    {
+      "from": "turn_state",
+      "to": "turn_hook",
+      "label": "sem vínculo ou revisão atual: limpar e devolver à IA"
+    },
+    {
+      "from": "turn_hook",
+      "to": "turn_timeline",
+      "label": "atividade sem valores; campos somente na passagem autorizada"
     }
   ],
   "contracts": {
@@ -362,7 +408,8 @@
       "Admissão manual de catálogo não é TUF nem distribuição pública.",
       "Coordenação cobre o atualizador pelo app, não comandos externos arbitrários.",
       "Desfazer guarda um passo de histórico; versões mais antigas voltam pelo catálogo, se a revisão admitida ainda as listar.",
-      "Remoção é lógica: nenhuma linha é apagada, e reinstalar exige que cada organização ative de novo."
+      "Remoção é lógica: nenhuma linha é apagada, e reinstalar exige que cada organização ative de novo.",
+      "Gancho do turno: unidade provada nesta adaptação; banco e jornada visual fresca pendentes. Pacote linear de exemplo ainda não equivale ao fluxo do #3063."
     ]
   }
 }

@@ -31,15 +31,15 @@
  *
  * `motivoDeRecusaDoTurno` (`lib/extensions/consentimento.ts`) distingue
  * `sem_permissao_declarada`, `sem_aceite` e `aceite_desatualizado` — o terceiro é
- * a prova de ATUALIZAÇÃO: uma versão que passa a pedir permissão nova não herda o
- * aceite antigo. Permissão REMOVIDA, ao contrário, não invalida nada (a cobertura
- * é de subconjunto).
+ * defesa contra concessão parcial. A instalação continua recusando outro conjunto
+ * de permissões entre versões (doutrina 6-bis); quem precisa de outro conjunto
+ * publica outra extensão. Esta cobertura não altera aquela recusa.
  *
  * ─── Zero extensões = turno idêntico (item 7) ──────────────────────────────
  *
- * A primeira leitura é a das extensões ATIVAS da organização. Sem nenhuma, a
- * função devolve `nao_e_comigo` e o turno segue exatamente como hoje: nenhuma
- * escrita, nenhuma bolha, nenhum desvio.
+ * A leitura do estado também ocorre sem extensões ativas: desligar a última
+ * recolhe a coleta pendente e registra a devolução. Sem estado pendente, não há
+ * escrita, bolha nem desvio.
  *
  * ─── O que o HOST garante, e a extensão não precisa saber (item 4) ──────────
  *
@@ -108,6 +108,8 @@ const JANELA_DE_CLAIM = 20;
 export interface FluxoAtivoDaOrganizacao {
   /** `publisher/name` — o estado morre quando o vínculo some. */
   extensao: string;
+  /** Revisões já mantidas pelo host: instalação + vínculo da organização. */
+  revisao: string;
   fluxo: FluxoDoTurno;
   /** `manifest.permissions` da versão vigente. */
   declaradas: readonly ExtensionPermission[];
@@ -201,11 +203,13 @@ export async function lerFluxosAtivosDaOrganizacao(
     fluxo: unknown;
     permissoes: unknown;
     aceitas: unknown;
+    revisao: string;
   }>(
     `select coalesce(a.manifest->>'publisher', '?') || '/' || coalesce(a.manifest->>'name', '?') as extensao,
             a.manifest->'contributions'->'turn_flow' as fluxo,
             a.manifest->'permissions' as permissoes,
-            oe.accepted_permissions as aceitas
+            oe.accepted_permissions as aceitas,
+            i.revision::text || ':' || oe.revision::text as revisao
        from organization_extensions oe
        join extension_installations i on i.id = oe.installation_id
        join extension_artifacts a on a.id = i.artifact_id
@@ -242,7 +246,7 @@ export async function lerFluxosAtivosDaOrganizacao(
       });
       continue;
     }
-    ativos.push({ extensao: linha.extensao, fluxo, declaradas, aceitas });
+    ativos.push({ extensao: linha.extensao, revisao: linha.revisao, fluxo, declaradas, aceitas });
   }
   return ativos;
 }
@@ -320,8 +324,6 @@ export async function prepararGanchoDoTurno(
     });
     return { tipo: "nao_e_comigo", porque: "leitura_falhou" };
   }
-  // Zero extensões ativas (ou nenhuma com fluxo e concessão): o turno é o de sempre.
-  if (fluxos.length === 0) return { tipo: "nao_e_comigo", porque: "sem_extensoes" };
   if (t.conversationId === null) return { tipo: "nao_e_comigo", porque: "sem_conversa" };
 
   let estado: EstadoDoFluxo | null;
@@ -353,6 +355,20 @@ export async function prepararGanchoDoTurno(
     await registrarDevolucao(deps, estado.extensao, estado.fluxo, "extensao_nao_dirige_mais");
     return { tipo: "nao_e_comigo", porque: "fluxo_sumiu" };
   }
+  // O id do fluxo não identifica a pergunta que o cliente recebeu. Atualização,
+  // reversão e reinstalação aumentam a revisão da instalação; configurar,
+  // desligar e reativar aumentam a do vínculo. Uma resposta antiga não pode virar
+  // valor de outro campo. Estado legado sem revisão também volta à IA.
+  if (estado !== null && alvo !== null && estado.revisao !== alvo.revisao) {
+    await apagarEstado(deps.pool, t.organizationId, t.conversationId).catch((err: unknown) => {
+      deps.log.warn("gancho de extensão: não consegui recolher o estado de outra revisão", {
+        error: erroCurto(err),
+      });
+    });
+    await registrarDevolucao(deps, estado.extensao, estado.fluxo, "revisao_alterada");
+    return { tipo: "nao_e_comigo", porque: "fluxo_atualizado" };
+  }
+  if (fluxos.length === 0) return { tipo: "nao_e_comigo", porque: "sem_extensoes" };
   if (alvo === null) return { tipo: "nao_e_comigo", porque: "sem_gatilho" };
 
   // CLAIM (item 4): a mensagem já foi lida por este fluxo num turno anterior —
@@ -433,6 +449,7 @@ export async function prepararGanchoDoTurno(
   // seguinte a repete (a etapa não anda sem resposta).
   const novo: EstadoDoFluxo = {
     ...resultado.estado,
+    revisao: alvo.revisao,
     mensagens: [
       ...resultado.estado.mensagens,
       ...(t.messageId === null ? [] : [t.messageId]),
