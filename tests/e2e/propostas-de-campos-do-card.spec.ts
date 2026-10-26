@@ -86,7 +86,7 @@ async function cenario(page: Page, valor = "1,234") {
   const titulo = `Documento sintético ${Date.now()} ${Math.random().toString(36).slice(2, 6)}`;
   const { data: lead, error } = await admin.from("crm_leads").insert({
     organization_id: creds.org_id, pipeline_id: pipelineId, stage_id: stageId,
-    title: titulo, owner_user_id: creds.users.viewer!.id,
+    title: titulo,
     custom_fields: { medida: 0, localizador: "ANTES" },
   }).select("id").single();
   if (error) throw new Error(`Negócio da prova: ${error.message}`);

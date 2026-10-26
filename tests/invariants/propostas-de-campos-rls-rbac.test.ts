@@ -33,8 +33,8 @@ beforeAll(async () => {
       values ($1,$2,'Funil sintético','propostas-rls')`, [funil, org]);
     await pool.query(`insert into public.crm_stages (id,organization_id,pipeline_id,name,slug,position)
       values ($1,$2,$3,'Entrada','entrada',1000)`, [etapa, org, funil]);
-    await pool.query(`insert into public.crm_leads (id,organization_id,pipeline_id,stage_id,title,owner_user_id)
-      values ($1,$2,$3,$4,'Negócio sintético',$5)`, [lead, org, funil, etapa, viewer]);
+    await pool.query(`insert into public.crm_leads (id,organization_id,pipeline_id,stage_id,title)
+      values ($1,$2,$3,$4,'Negócio sintético')`, [lead, org, funil, etapa]);
     await pool.query(`insert into public.lead_field_proposals
       (id,organization_id,lead_id,campo,valor_proposto,trecho,expires_at)
       values ($1,$2,$3,'medida','1.234'::jsonb,'Trecho sintético',now()+interval '7 days')`,
