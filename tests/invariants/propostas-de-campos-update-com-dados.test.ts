@@ -10,7 +10,7 @@ describe("propostas: atualização sobre dados da migration original", () => {
   it("corrige o motivo legado de contato já anonimizado sem exigir nova anonimização", () => {
     const original = readFileSync(join(process.cwd(), "supabase/migrations/20261026140000_0772_fila_de_proposta_de_campos_do_negocio.sql"), "utf8");
     const correcao = readFileSync(join(process.cwd(), "supabase/migrations/20261026190000_0797_propostas_de_campos_redigem_motivo_recusa.sql"), "utf8");
-    const legado = readFileSync(join(process.cwd(), "supabase/migrations/20261026190300_0801_propostas_de_campos_vinculo_e_legado.sql"), "utf8");
+    const legado = readFileSync(join(process.cwd(), "supabase/migrations/20261026191100_0807_propostas_de_campos_vinculo_e_legado.sql"), "utf8");
     const saida = sql(`
       begin;
       ${original}

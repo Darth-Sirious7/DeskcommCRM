@@ -17,17 +17,20 @@ TEST_DB_IMAGE=pgvector/pgvector:pg17 pnpm test:db \
   tests/invariants/propostas-de-campos-update-com-dados.test.ts --maxWorkers=1
 ```
 
-Medido em 2026-10-26: antes da 0801, **2 falhas e 8 sucessos**. O INSERT sem
+Medido em 2026-10-26: antes da 0807, **2 falhas e 8 sucessos**. O INSERT sem
 RETURNING aceitou organização A com o negócio de B, e os dois motivos legados
-continuaram legíveis após a 0797. Depois da 0801: **10 sucessos em 3 arquivos**,
+continuaram legíveis após a 0797. Depois da 0807: **10 sucessos em 3 arquivos**,
 com instalação e reaplicação do baseline sem erro e as três conferências do kit
 (checkout, v1.89.0 e v1.63.0; 184 regras cada) verdes. O banco era novo e só tinha
 fixtures sintéticas; foi removido ao terminar. Não é a suíte de banco inteira.
+O mesmo SQL foi medido com o número local 0801 e renumerado para 0807 antes da
+primeira publicação, por colisão com o PR #3485. A mudança é de nome e cabeçalho;
+os comandos SQL medidos permanecem iguais.
 
-A 0801 reaplica o vínculo do USING no WITH CHECK e limpa o motivo legado pelas
+A 0807 reaplica o vínculo do USING no WITH CHECK e limpa o motivo legado pelas
 duas relações com contato já anonimizado. Não recria a cascata: a 0797 continua
 sendo a definição final com ACL exclusiva do servidor. Ambas as migrations
-anteriores permanecem intactas. O apêndice da 0801 vem depois da criação da
+anteriores permanecem intactas. O apêndice da 0807 vem depois da criação da
 tabela 0772; não cria funções e pode ficar no fim do baseline.
 
 - Anonimização: RPC formal como `service_role` e RPC da ficha como sessão

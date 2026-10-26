@@ -1,6 +1,6 @@
 -- manifest: lead_field_proposals: WITH CHECK exige negócio visível da mesma organização; motivos legados de contatos já anonimizados saem pelos vínculos direto e crm_lead_links, sem repetir a anonimização
 --
--- 0801 — duas correções forward para clones que aplicaram a 0772 (#3476).
+-- 0807 — duas correções forward para clones que aplicaram a 0772 (#3476).
 -- A 0772 e a 0797 permanecem intactas: podem ter sido aplicadas no fork.
 --
 -- Provado no Postgres 17: INSERT sem RETURNING passava com orgA + leadB,

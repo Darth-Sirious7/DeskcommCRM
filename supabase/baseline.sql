@@ -64498,10 +64498,10 @@ create index if not exists idx_crm_leads_org_pipeline_position_id
 comment on index public.idx_crm_leads_org_pipeline_position_id is
   'Página da aba Lista do funil (#3172): (organization_id, pipeline_id) por igualdade e (position_in_stage, id) na ordem da consulta. `id` é o desempate que torna a paginação determinística quando dois negócios têm a mesma position_in_stage.';
 
--- ---- vínculo e motivo legado das propostas de campos (migration 0801) ----
+-- ---- vínculo e motivo legado das propostas de campos (migration 0807) ----
 -- manifest: lead_field_proposals: WITH CHECK exige negócio visível da mesma organização; motivos legados de contatos já anonimizados saem pelos vínculos direto e crm_lead_links, sem repetir a anonimização
 --
--- 0801 — duas correções forward para clones que aplicaram a 0772 (#3476).
+-- 0807 — duas correções forward para clones que aplicaram a 0772 (#3476).
 -- A 0772 e a 0797 permanecem intactas: podem ter sido aplicadas no fork.
 --
 -- Provado no Postgres 17: INSERT sem RETURNING passava com orgA + leadB,
