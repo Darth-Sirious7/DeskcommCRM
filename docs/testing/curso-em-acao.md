@@ -68,8 +68,52 @@ CURSO_BASE=/curso/ pnpm exec tsx curso/montar.ts
 
 O teste de unidade deriva as fotos esperadas do catálogo versionado: roda em clone fresco sem `curso/saida`. O montador exige o manifesto e a existência física de cada foto referenciada. Os arquivos em `curso/saida/` são saída privada ignorada e não devem ser commitados. A prova visual final precisa percorrer catálogo, cenas e montagem em desktop/celular, conferir imagens decodificadas e erros do navegador; sucesso de unidade não substitui essa prova.
 
-A rodada de 26/10/2026 produziu 120 fotos dedicadas com 120 hashes distintos e destaques medidos dentro do quadro. A montagem completa preservou as 1097 fotos das lições e incluiu as novas: 61 módulos, 1217 fotos. Os testes focados passaram (91 casos); a conferência de arquivos físicos e a montagem foram repetidas após a sincronização final.
+A rodada de 26/10/2026 produziu 120 fotos dedicadas com 120 hashes distintos e destaques medidos dentro do quadro. A montagem completa preservou as 1097 fotos das lições e incluiu as novas: 61 módulos, 1217 fotos. Após a integração, os quatro arquivos de testes focados passaram (98 casos); a conferência de arquivos físicos e a montagem foram repetidas após a sincronização final.
 
 Na rodada de 26/10/2026, o helper de fonte foi recusado com banco/papel existentes sem marcador. Após conferência explícita de ownership dos recursos criados na própria bancada, foi executado com sucesso. A consulta de ACL confirmou SELECT permitido e INSERT/UPDATE/DELETE/TRUNCATE negados ao papel da fonte.
 
 O circuito de correção é explícito: captura falha → não publica entrada dessa cena → corrige receita/seletor → recaptura a jornada → montador valida os arquivos. Não foram adicionadas rotas, tabelas, integrações ou capacidades ao produto.
+
+
+## Integração e conferência final de 26/10/2026
+
+O trabalho foi empilhado sobre a branch de infraestrutura do PR #3481, em
+`366b9ef88`, que já contém o curso anterior e a proteção de captura/revogação.
+O único conflito foi em `curso/montar.ts`. A resolução preserva a recusa quando
+`falhas` aponta para um módulo selecionado, mesmo que o manifesto ainda tenha
+fotos antigas, junto da validação das jornadas, existência física das fotos e
+filtragem das capturas públicas. Manifestos antigos sem `falhas` continuam aceitos.
+A integração não altera runtime, SQL, testes de segurança ou CI da base.
+
+**CONFIRMADO na integração:** a montagem em `/curso/` tem 61 módulos e 1217 fotos.
+Os 120 JPEGs novos têm 120 hashes SHA256 distintos e correspondem byte a byte à
+saída local. Os 1097 JPEGs anteriores permanecem intactos. O site recebe somente
+`index.html` e os 120 JPEGs `demo-*.jpg`; manifesto, contas, sessões e provas brutas
+não fazem parte dos assets. Uma execução isolada do montador confirmou a recusa
+de falha de captura, falha de revogação, foto física ausente e referência de foto
+ausente; confirmou também a filtragem de uma captura não referenciada e o recorte
+de desenvolvimento sem histórias com links para módulos omitidos.
+
+**CONFIRMADO nas provas de navegador da bancada:** após recapturar as 20 cenas das
+cinco histórias corrigidas, a rodada final percorreu os dez nichos, 30 jornadas,
+120 cenas e 30 montagens, com as 120 imagens decodificadas e sem erro de navegador,
+requisição falha ou imagem inválida. Busca, zoom, tela cheia, teclado, restauração
+de scroll, recuperação de hash inválido e celular passaram. A cópia de link teve
+sucesso real no Chrome do Mac; no navegador Linux sem permissão de clipboard,
+a interface mostrou corretamente a mensagem de falha. A rodada do curso anterior
+percorreu os 61 módulos, 259 lições e 1097 imagens, incluindo busca, zoom,
+progresso das 259 lições e celular.
+
+A prova temporal da agenda usou relógio de navegador em 10/11/2026, partindo da
+semana de 08–14/11. A navegação voltou à semana de 25–31/10 e abriu “Passados”;
+a linha de Marina Exemplo mostrou 27/10 às 09h30, sem alterar o compromisso.
+A tentativa inicial do helper da prova precisou ser corrigida porque a âncora da
+semana vem do servidor e a UI mostra o nome do contato; somente a execução final
+bem-sucedida compõe esta evidência.
+
+O site passou seus 33 testes, typecheck e build em Linux. A suíte global do produto,
+executada separadamente, passou 2698 arquivos e 28903 testes, com duas falhas de
+ffmpeg no mesmo arquivo também reproduzidas no controle da main `028b40c11`, além
+de um teste de falha esperada e um ignorado. Isso registra um limite do gate,
+sem converter a suíte global em verde. Os checks completos e a revisão final
+continuam sendo exigidos antes da publicação.
