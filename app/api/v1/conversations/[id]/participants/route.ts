@@ -40,6 +40,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
+import { z } from "zod";
 
 import { audit, isServiceRoleConfigured } from "@/lib/audit";
 import { ok, fail } from "@/lib/api/wrappers";
@@ -67,12 +68,13 @@ interface RouteCtx {
  * tenant da leitura (a RLS isola, mas o filtro explícito é defesa em
  * profundidade, o mesmo da rota de transferência).
  */
-const COLUNAS_DA_CONVERSA = "id, organization_id, contact_id, assigned_to_user_id";
+const COLUNAS_DA_CONVERSA = "id, organization_id, contact_id, assigned_to_user_id, contacts:contact_id(is_personal)";
+
+function ehConversaPessoal(conversa: unknown): boolean {
+  return (conversa as { contacts?: { is_personal?: boolean } | null }).contacts?.is_personal === true;
+}
 
 export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
-  const supportDenied = await requireSupportWrite();
-  if (supportDenied) return supportDenied;
-
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
@@ -89,6 +91,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (!orgId) {
     return fail("no_active_org", t("No active organization."), 403, { requestId });
   }
+  if (!z.uuid().safeParse(id).success) return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
 
   if (!isServiceRoleConfigured()) {
     return fail("internal_error", t("Serviço indisponível no momento."), 503, { requestId });
@@ -107,7 +110,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     .eq("organization_id", orgId)
     .maybeSingle();
   if (convErr) return fail("internal_error", convErr.message, 500, { requestId });
-  if (!conv) return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
+  if (!conv || ehConversaPessoal(conv)) return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
 
   const { data: participantes, error } = await admin
     .from("conversation_participants")
@@ -133,6 +136,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const user = authz.user;
   const orgId = authz.org.orgId;
+  if (!z.uuid().safeParse(id).success) return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
 
   let input;
   try {
@@ -159,7 +163,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     .eq("organization_id", orgId)
     .maybeSingle();
   if (convErr) return fail("internal_error", convErr.message, 500, { requestId });
-  if (!conv) return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
+  if (!conv || ehConversaPessoal(conv)) return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
 
   // Convida o DONO da conversa ou um gestor. A segunda chamada ao `requireRole`
   // é o caminho canônico de "manager ou acima" — nada de comparar rank aqui.
@@ -236,6 +240,7 @@ export async function DELETE(req: NextRequest, ctx: RouteCtx): Promise<Response>
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const user = authz.user;
   const orgId = authz.org.orgId;
+  if (!z.uuid().safeParse(id).success) return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
 
   let input;
   try {
@@ -262,7 +267,7 @@ export async function DELETE(req: NextRequest, ctx: RouteCtx): Promise<Response>
     .eq("organization_id", orgId)
     .maybeSingle();
   if (convErr) return fail("internal_error", convErr.message, 500, { requestId });
-  if (!conv) return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
+  if (!conv || ehConversaPessoal(conv)) return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
 
   // Sair da conversa é de quem participa; REMOVER um colega é do dono ou de um
   // gestor. O `user_id` do corpo decide o caso.

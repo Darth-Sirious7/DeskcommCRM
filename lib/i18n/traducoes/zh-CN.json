@@ -1,4 +1,8 @@
 {
+  "Remover participante": "移除参与者",
+  "Sair do atendimento": "退出会话",
+  "Não foi possível remover agora. Tente de novo.": "暂时无法移除，请重试。",
+  "O convite permite responder, sem mudar o responsável ou encerrar o atendimento.": "邀请允许回复，但不能更改负责人或结束服务。",
   "Carregando colegas…": "正在加载同事…",
   "Convida um colega para atender junto — o responsável pela conversa não muda.": "邀请同事共同接待 —— 对话的负责人不变。",
   "Convidando…": "正在邀请…",

@@ -54407,9 +54407,9 @@ revoke execute on function public.fn_vocabulario_de_tags_operar(uuid, text, text
 grant  execute on function public.fn_vocabulario_de_tags_operar(uuid, text, text, text, text) to authenticated, service_role;
 
 -- ---- participantes do atendimento conjunto (migration 0661, issue #2542) ----
--- Conteúdo IDÊNTICO ao da migration 0661 (quem aplica a cadeia de migrations
--- e quem aplica SÓ o baseline têm de terminar no mesmo schema). Nasce ANTES da
--- VARREDURA anon por vizinhança, embora não crie função.
+-- Tabela introduzida pela 0661. A policy final vive na forward-fix 9016,
+-- depois do escopo em lote da 0726; cadeia e baseline terminam na mesma regra.
+-- Nasce ANTES da VARREDURA anon por vizinhança, embora não crie função.
 --
 -- A tabela, a RLS de leitura (organização + papel + a PRÓPRIA linha) e — a
 -- linha que faz o convidado VER — o ramo de participante no `conversations_select`
@@ -60116,59 +60116,10 @@ $$;
 
 revoke execute on function public.fn_enfileirar_midia_vencida(integer) from public, anon, authenticated;
 grant execute on function public.fn_enfileirar_midia_vencida(integer) to service_role;
--- ---- participantes do atendimento conjunto (migration 0655, issue #2542) ----
--- Conteúdo IDÊNTICO ao da migration 0655 (quem aplica a cadeia de migrations
--- ---- participantes do atendimento conjunto (migration 0661, issue #2542) ----
--- Conteúdo IDÊNTICO ao da migration 0661 (quem aplica a cadeia de migrations
--- e quem aplica SÓ o baseline têm de terminar no mesmo schema). Nasce ANTES da
--- VARREDURA anon por vizinhança, embora não crie função.
---
--- A tabela, a RLS de leitura (organização + papel + a PRÓPRIA linha) e — a
--- linha que faz o convidado VER — o ramo de participante no `conversations_select`
--- (o `fn_can_view_conversation` continua a régua; aqui só se ACRESCENTA a porta).
--- `messages` herda o escopo por `exists` na própria policy. O DONO único
--- (`assigned_to_user_id`) não é tocado por nada disto: entrar não é assumir.
-create table if not exists public.conversation_participants (
-  id               uuid primary key default gen_random_uuid(),
-  organization_id  uuid not null references public.organizations(id) on delete cascade,
-  conversation_id  uuid not null references public.conversations(id) on delete cascade,
-  user_id          uuid not null references auth.users(id) on delete cascade,
-  invited_by       uuid references auth.users(id) on delete set null,
-  joined_at        timestamptz not null default now(),
-  left_at          timestamptz,
-  constraint conversation_participants_unico unique (conversation_id, user_id)
-);
-
-alter table public.conversation_participants add column if not exists invited_by uuid;
-alter table public.conversation_participants add column if not exists joined_at timestamptz not null default now();
-alter table public.conversation_participants add column if not exists left_at timestamptz;
-
-create index if not exists participantes_por_usuario
-  on public.conversation_participants (organization_id, user_id)
-  where left_at is null;
-create index if not exists participantes_por_conversa
-  on public.conversation_participants (organization_id, conversation_id);
-
-alter table public.conversation_participants enable row level security;
-
-revoke all    on public.conversation_participants from anon, authenticated;
-grant  select on public.conversation_participants to authenticated;
-grant  all    on public.conversation_participants to service_role;
-
-drop policy if exists tenant_isolation_conversation_participants_select on public.conversation_participants;
-create policy tenant_isolation_conversation_participants_select
-  on public.conversation_participants
-  for select to authenticated
-  using (
-    organization_id in (select public.fn_user_org_ids())
-    and public.fn_role_at_least(organization_id, 'agent')
-    and user_id = auth.uid()
-  );
-
--- O drop e o create vão num ÚNICO bloco DO: o update.sh aplica o baseline sem
--- ON_ERROR_STOP e em autocommit. Soltos, um create que falhasse depois do drop
--- deixaria `conversations` com RLS e SEM policy de SELECT — o inbox sumiria
--- para todos. Dentro do DO, a falha desfaz o drop e a policy anterior fica.
+-- manifest: Preserva atendimento conjunto depois do escopo em lote da 0726, limita convite a leitura/resposta sem conceder controle e entrega entrada/saída pelo Realtime (#2542, integração #2848).
+-- ---- atendimento conjunto: controle e atualização da tela (migration 9016) ----
+-- A 0661 precede a 0726 na cadeia. Esta forward-fix reinstala a policy atual
+-- COM participação depois dela, sem editar nenhuma migration já publicada.
 do $conversations_select$ begin
   -- O ramo de PARTICIPANTE (conversa atendida em conjunto) fica, e a forma da
   -- main também: escopo resolvido em conjunto por fn_conversation_scope(), ANTES
@@ -60200,11 +60151,85 @@ do $conversations_select$ begin
               and cp.organization_id = conversations.organization_id
               and cp.user_id = auth.uid()
               and cp.left_at is null
+              and not exists (
+                select 1 from public.contacts pc
+                 where pc.id=conversations.contact_id
+                   and pc.organization_id=conversations.organization_id
+                   and pc.is_personal
+              )
          )
     );
 end $conversations_select$;
 
-do $f$ begin perform public.fn_aplicar_travas_de_suporte(); end $f$;
+-- O convite não amplia UPDATE/DELETE. Mantém o escopo anterior de quem já
+-- escrevia: owner, gestor e o modo de visibilidade configurado no banco.
+-- WITH CHECK true preserva a mudança de responsável que já era permitida;
+-- o USING mede a linha ANTES da escrita, não a identidade que o corpo propõe.
+drop policy if exists conversation_participant_read_is_not_control_update on public.conversations;
+create policy conversation_participant_read_is_not_control_update
+  on public.conversations as restrictive for update to authenticated
+  using (public.fn_can_view_conversation(organization_id, assigned_to_user_id))
+  with check (true);
+drop policy if exists conversation_participant_read_is_not_control_delete on public.conversations;
+create policy conversation_participant_read_is_not_control_delete
+  on public.conversations as restrictive for delete to authenticated
+  using (public.fn_can_view_conversation(organization_id, assigned_to_user_id));
+
+
+-- Responder não dá edição/exclusão do histórico de outra pessoa. Quem já
+-- tinha escopo mantém a escrita anterior; a convidada pode editar/revogar sua
+-- própria saída, como exige messages/[id], sem poder apagar linhas do histórico.
+drop policy if exists message_participant_reply_is_not_history_update on public.messages;
+create policy message_participant_reply_is_not_history_update
+  on public.messages as restrictive for update to authenticated
+  using (
+    (sent_by_user_id=auth.uid() and direction='outbound' and sent_via in ('user','crm'))
+    or exists (select 1 from public.conversations c
+      where c.id=messages.conversation_id and c.organization_id=messages.organization_id
+        and public.fn_can_view_conversation(c.organization_id,c.assigned_to_user_id))
+  ) with check (
+    exists (select 1 from public.conversations c
+      where c.id=messages.conversation_id and c.organization_id=messages.organization_id
+        and (public.fn_can_view_conversation(c.organization_id,c.assigned_to_user_id)
+          or (messages.sent_by_user_id=auth.uid() and messages.direction='outbound'
+            and messages.sent_via in ('user','crm'))))
+  );
+drop policy if exists message_participant_reply_is_not_history_delete on public.messages;
+create policy message_participant_reply_is_not_history_delete
+  on public.messages as restrictive for delete to authenticated
+  using (exists (select 1 from public.conversations c
+    where c.id=messages.conversation_id and c.organization_id=messages.organization_id
+      and public.fn_can_view_conversation(c.organization_id,c.assigned_to_user_id)));
+
+-- O vínculo só é escrito pelo servidor. O toque notifica quem já observa a
+-- conversa, sem conceder SELECT nas participações alheias e sem trocar o dono.
+create or replace function public.fn_participacao_atualiza_conversa()
+returns trigger language plpgsql set search_path=public as $$
+begin
+  update public.conversations set updated_at=clock_timestamp()
+   where id=new.conversation_id and organization_id=new.organization_id;
+  return new;
+end;
+$$;
+revoke execute on function public.fn_participacao_atualiza_conversa() from public, anon, authenticated;
+grant execute on function public.fn_participacao_atualiza_conversa() to service_role;
+drop trigger if exists participacao_atualiza_conversa on public.conversation_participants;
+create trigger participacao_atualiza_conversa
+  after insert or update on public.conversation_participants
+  for each row execute function public.fn_participacao_atualiza_conversa();
+
+-- A própria linha continua legível depois de left_at, então o removido recebe
+-- a revogação. Publication pode não existir num Postgres puro do self-host.
+do $participacoes_realtime$ begin
+  if exists (select 1 from pg_publication where pubname='supabase_realtime')
+     and not exists (select 1 from pg_publication_tables
+       where pubname='supabase_realtime' and schemaname='public' and tablename='conversation_participants') then
+    alter publication supabase_realtime add table public.conversation_participants;
+  end if;
+end $participacoes_realtime$;
+
+notify pgrst, 'reload schema';
+
 
 -- ---- leitura sensível pelo poder de plataforma pede a sessão confirmada (migration 0762) ----
 -- `decrypt_cpf` troca `fn_is_platform_admin()` por `fn_is_platform_admin_full()`

@@ -395,6 +395,8 @@ export function ConversationHeader({
         <ParticipantesDaConversa
           conversationId={conversation.id}
           podeConvidar={podeConvidar}
+          atendenteId={user.id}
+          somenteLeitura={user.support?.access_mode === "support_readonly"}
         />
         {isOpen && (
           <Button

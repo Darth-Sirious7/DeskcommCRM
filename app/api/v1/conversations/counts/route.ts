@@ -161,6 +161,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     const participadasDoUsuario = await supabase
       .from("conversation_participants")
       .select("conversation_id")
+      .eq("organization_id", org)
       .eq("user_id", user.id)
       .is("left_at", null);
     idsParticipadas = (participadasDoUsuario.data ?? []).map((r) => r.conversation_id);

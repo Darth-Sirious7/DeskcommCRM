@@ -20,6 +20,7 @@ import type { Conversation } from "@/lib/types/messaging";
 import { normalizarTermoDeBusca } from "@/lib/inbox/termo-de-busca";
 import { ORDEM_DA_ESPERA, ehAFila } from "@/lib/inbox/comando-da-conversa";
 import { aplicarMarcadores } from "@/lib/inbox/marcador-da-conversa";
+import { exigirControleDaConversa } from "@/lib/inbox/controle-da-conversa";
 
 /**
  * Prepara o termo digitado para viajar dentro de um `or=` do PostgREST.
@@ -322,6 +323,7 @@ export async function listConversationsHandler(
       const participadas = await supabase
         .from("conversation_participants")
         .select("conversation_id")
+        .eq("organization_id", ctx.organization_id)
         .eq("user_id", ctx.actor.id)
         .is("left_at", null);
       idsParticipadas = (participadas.data ?? []).map((r) => r.conversation_id);
@@ -561,6 +563,10 @@ export async function patchConversationHandler(
   input: PatchConversationInput,
 ): Promise<Conversation> {
   const update: Record<string, unknown> = {};
+  const observed = input.status !== undefined
+    ? await getConversationHandler(supabase, ctx, conversationId)
+    : null;
+  if (observed) await exigirControleDaConversa(supabase, ctx, observed);
 
   /**
    * O ATALHO `status='claimed'` PASSA PELA RPC, e não escreve o dono aqui.
@@ -596,10 +602,9 @@ export async function patchConversationHandler(
   }
 
   if (input.status !== undefined) {
-    const observed = await getConversationHandler(supabase, ctx, conversationId);
     const { error: statusError } = await createAdminClient().rpc("fn_service_status", {
       p_org: ctx.organization_id, p_conversation: conversationId, p_status: input.status,
-      p_expected: input.expected_revision ?? observed.service_revision,
+      p_expected: input.expected_revision ?? observed?.service_revision,
     });
     // PT409: revisão obsoleta (migration 0514). 40001: contato trocou no meio, ou banco anterior à 0514.
     const conflito = statusError?.code === "PT409" || statusError?.code === "40001";

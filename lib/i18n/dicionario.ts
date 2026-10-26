@@ -11244,6 +11244,10 @@ export const DICIONARIO: Traducoes = {
   // dicionário só precisa do texto da tela, que é este bloco.
   "Convidar": { es: "Invitar" },
   "Convidar colega": { es: "Invitar a un colega" },
+  "Remover participante": { es: "Quitar participante" },
+  "Sair do atendimento": { es: "Salir de la atención" },
+  "Não foi possível remover agora. Tente de novo.": { es: "No se pudo quitar ahora. Inténtalo de nuevo." },
+  "O convite permite responder, sem mudar o responsável ou encerrar o atendimento.": { es: "La invitación permite responder, sin cambiar al responsable ni cerrar la atención." },
   "Convidar para atender junto": { es: "Invitar a atender en conjunto" },
   "Convidando…": { es: "Invitando…" },
   "Carregando colegas…": { es: "Cargando colegas…" },

@@ -101,8 +101,8 @@ beforeEach(() => {
       conversa(C4, DONA),
     ],
     conversation_participants: [
-      { conversation_id: C3, user_id: CONVIDADA, left_at: null },
-      { conversation_id: C4, user_id: CONVIDADA, left_at: "2026-10-01T00:00:00Z" },
+      { organization_id: ORG, conversation_id: C3, user_id: CONVIDADA, left_at: null },
+      { organization_id: ORG, conversation_id: C4, user_id: CONVIDADA, left_at: "2026-10-01T00:00:00Z" },
     ],
   };
 });

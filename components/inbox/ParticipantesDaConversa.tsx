@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
@@ -26,6 +27,7 @@ import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import {
   useConvidarParticipante,
   useParticipantesDaConversa,
+  useRemoverParticipante,
 } from "@/hooks/inbox/useParticipantesDaConversa";
 
 /**
@@ -64,6 +66,8 @@ interface Props {
   conversationId: string;
   /** Dono da conversa ou gestor+ — o mesmo gate da rota, para não oferecer o que ela recusa. */
   podeConvidar: boolean;
+  atendenteId?: string;
+  somenteLeitura?: boolean;
 }
 
 /** Iniciais para o fallback do avatar: sem nome, cai no `?` — nunca no vazio. */
@@ -78,11 +82,12 @@ function iniciais(nome: string | null | undefined): string {
   return `${primeira}${ultima}`.toUpperCase();
 }
 
-export function ParticipantesDaConversa({ conversationId, podeConvidar }: Props) {
+export function ParticipantesDaConversa({ conversationId, podeConvidar, atendenteId, somenteLeitura = false }: Props) {
   const t = useT();
   const [aberto, setAberto] = useState(false);
   const [alvo, setAlvo] = useState("");
   const [erro, setErro] = useState<string | null>(null);
+  const [erroRemocao, setErroRemocao] = useState<string | null>(null);
 
   // A lista é lida sempre: quem participa interessa a quem vê a conversa, tenha
   // ele o poder de convidar ou não (o dono tem; o próprio convidado também). O
@@ -91,6 +96,7 @@ export function ParticipantesDaConversa({ conversationId, podeConvidar }: Props)
   // do convidado.
   const participantes = useParticipantesDaConversa(conversationId, true);
   const convidar = useConvidarParticipante(conversationId);
+  const remover = useRemoverParticipante(conversationId);
   const lista = participantes.data ?? [];
   // O diretório de pessoas serve a DOIS propósitos: nomear os avatares da lista
   // (que já está na tela) e popular o seletor. Por isso ele é buscado quando há
@@ -129,6 +135,15 @@ export function ParticipantesDaConversa({ conversationId, podeConvidar }: Props)
     }
   }
 
+  async function removerColega(userId: string) {
+    setErroRemocao(null);
+    try {
+      await remover.mutateAsync(userId);
+    } catch (err) {
+      setErroRemocao(err instanceof ApiError ? err.message : t("Não foi possível remover agora. Tente de novo."));
+    }
+  }
+
   return (
     <div className="flex min-w-0 items-center gap-1.5">
       {lista.length > 0 && (
@@ -139,7 +154,7 @@ export function ParticipantesDaConversa({ conversationId, podeConvidar }: Props)
         >
           {lista.map((p) => {
             const nome = nomeDe(p.user_id) ?? `${t("Atendente")} ${p.user_id.slice(0, 8)}`;
-            return (
+            const avatar = (
               <Avatar
                 key={p.id}
                 className="-ml-1.5 h-6 w-6 border border-background first:ml-0"
@@ -151,11 +166,27 @@ export function ParticipantesDaConversa({ conversationId, podeConvidar }: Props)
                 </AvatarFallback>
               </Avatar>
             );
+            const podeRemover = !somenteLeitura && (podeConvidar || p.user_id === atendenteId);
+            if (!podeRemover) return avatar;
+            return (
+              <DropdownMenu key={p.id}>
+                <DropdownMenuTrigger asChild>
+                  <button type="button" aria-label={`${t("Quem participa desta conversa")}: ${nome}`} disabled={remover.isPending} className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    {avatar}
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  <DropdownMenuItem onSelect={() => { void removerColega(p.user_id); }}>
+                    {p.user_id === atendenteId ? t("Sair do atendimento") : t("Remover participante")}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            );
           })}
         </div>
       )}
 
-      {podeConvidar && (
+      {podeConvidar && !somenteLeitura && (
         <Button
           size="sm"
           variant="outline"
@@ -170,6 +201,7 @@ export function ParticipantesDaConversa({ conversationId, podeConvidar }: Props)
           {t("Convidar")}
         </Button>
       )}
+      {erroRemocao && <p role="alert" className="text-xs text-destructive">{erroRemocao}</p>}
 
       <Dialog open={aberto} onOpenChange={setAberto}>
         <DialogContent className="sm:max-w-md">

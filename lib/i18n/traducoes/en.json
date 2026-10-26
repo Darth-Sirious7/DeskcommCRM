@@ -1,4 +1,8 @@
 {
+  "Remover participante": "Remove participant",
+  "Sair do atendimento": "Leave conversation",
+  "Não foi possível remover agora. Tente de novo.": "Could not remove now. Try again.",
+  "O convite permite responder, sem mudar o responsável ou encerrar o atendimento.": "The invitation allows replies without changing the owner or closing the conversation.",
   "Arquivo": "File",
   "Atualizado": "Updated",
   "Buscar por nome ou CNPJ": "Search by name or CNPJ",

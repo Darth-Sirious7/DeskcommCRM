@@ -244,6 +244,42 @@ beforeEach(async () => {
   autoriza("manager");
 });
 
+describe("leitura e efeito são autoridades distintas", () => {
+  it("id externo inválido responde como ausente, sem consultar UUID inválido no banco", async () => {
+    for (const metodo of [GET, POST, DELETE]) {
+      const resposta = await metodo(req("/api/v1/conversations/undefined/participants", metodo === GET ? "GET" : "POST", { user_id: COLEGA }), contexto("undefined"));
+      expect(resposta.status).toBe(404);
+    }
+    expect(participantes).toEqual([]);
+    expect(audit).not.toHaveBeenCalled();
+  });
+  it("conversa pessoal segue ausente também na porta de participantes", async () => {
+    conversas[0]!["contacts"] = { is_personal: true };
+    for (const metodo of [GET, POST, DELETE]) {
+      const resposta = await metodo(req(`/api/v1/conversations/${CONV_A}/participants`, metodo === GET ? "GET" : "POST", { user_id: COLEGA }), contexto());
+      expect(resposta.status).toBe(404);
+    }
+    expect(participantes).toEqual([]);
+    expect(audit).not.toHaveBeenCalled();
+  });
+  it("suporte somente leitura continua lendo a lista que a RLS admite", async () => {
+    vi.mocked(requireSupportWrite).mockResolvedValue(fail("forbidden", "somente leitura", 403));
+    const resposta = await GET(req(`/api/v1/conversations/${CONV_A}/participants`, "GET"), contexto());
+    expect(resposta.status).toBe(200);
+    expect(requireSupportWrite).not.toHaveBeenCalled();
+  });
+
+  it("o mesmo suporte não convida nem remove e não grava auditoria de efeito", async () => {
+    vi.mocked(requireSupportWrite).mockResolvedValue(fail("forbidden", "somente leitura", 403));
+    for (const metodo of [POST, DELETE]) {
+      const resposta = await metodo(req(`/api/v1/conversations/${CONV_A}/participants`, "POST", { user_id: COLEGA }), contexto());
+      expect(resposta.status).toBe(403);
+    }
+    expect(participantes).toEqual([]);
+    expect(audit).not.toHaveBeenCalled();
+  });
+});
+
 describe("POST /api/v1/conversations/[id]/participants — convidar", () => {
   it("o DONO convida um colega: 201, o vínculo nasce e o DONO não muda", async () => {
     const resposta = await POST(

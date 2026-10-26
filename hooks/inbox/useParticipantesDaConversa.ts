@@ -1,5 +1,7 @@
 "use client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback } from "react";
+import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
 
 import { apiClient } from "@/lib/api/client";
 import { usePermission } from "@/hooks/auth/AuthProvider";
@@ -50,6 +52,20 @@ export function chaveDosParticipantes(conversationId: string) {
  */
 export function useParticipantesDaConversa(conversationId: string, enabled = true) {
   const podeConsultar = usePermission("inbox.participantes.view");
+  const qc = useQueryClient();
+  const onChange = useCallback(() => {
+    void qc.invalidateQueries({ queryKey: chaveDosParticipantes(conversationId) });
+  }, [qc, conversationId]);
+  // A escrita do vínculo toca updated_at da conversa na mesma transação.
+  // Dono e gestor recebem esse evento sem ganhar SELECT na participação alheia.
+  useRealtimeChannel({
+    name: `participantes-da-conversa-${conversationId}`,
+    postgresChanges: conversationId ? {
+      event: "UPDATE", schema: "public", table: "conversations", filter: `id=eq.${conversationId}`,
+    } : undefined,
+    onChange,
+    enabled: enabled && podeConsultar && !!conversationId,
+  });
   return useQuery({
     queryKey: chaveDosParticipantes(conversationId),
     queryFn: async () =>
@@ -58,6 +74,7 @@ export function useParticipantesDaConversa(conversationId: string, enabled = tru
       ),
     enabled: enabled && podeConsultar && conversationId.length > 0,
     staleTime: 30_000,
+    refetchOnWindowFocus: true,
     select: (res) => res.data.participantes,
   });
 }
@@ -84,6 +101,22 @@ export function useConvidarParticipante(conversationId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: chaveDosParticipantes(conversationId) });
       qc.invalidateQueries({ queryKey: ["conversations"] });
+      qc.invalidateQueries({ queryKey: ["conversation-counts"] });
+    },
+  });
+}
+
+/** Saída e remoção usam a mesma porta; a autorização é revalidada no servidor. */
+export function useRemoverParticipante(conversationId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) => apiClient.delete<{ data: { removidos: number } }>(
+      `/api/v1/conversations/${conversationId}/participants`, { user_id: userId },
+    ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: chaveDosParticipantes(conversationId) });
+      void qc.invalidateQueries({ queryKey: ["conversations"] });
+      void qc.invalidateQueries({ queryKey: ["conversation-counts"] });
     },
   });
 }

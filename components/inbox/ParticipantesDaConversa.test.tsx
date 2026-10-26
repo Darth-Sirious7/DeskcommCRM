@@ -32,6 +32,14 @@ const estado = vi.hoisted(() => ({
    * `viewer` NÃO tem e um `agent` (inclusive o participante convidado) tem.
    */
   podeVerParticipantes: true,
+  canais: new Map<string, () => void>(),
+}));
+
+vi.mock("@/hooks/realtime/useRealtimeChannel", () => ({
+  useRealtimeChannel: (opts: { name: string; onChange: () => void }) => {
+    estado.canais.set(opts.name, opts.onChange);
+    return { status: "subscribed", ultimaEntrega: { current: null } };
+  },
 }));
 
 vi.mock("@/hooks/auth/AuthProvider", () => ({
@@ -62,6 +70,11 @@ vi.mock("@/lib/api/client", () => ({
       ];
       return {};
     }),
+    delete: vi.fn(async (_url: string, corpo: { user_id: string }) => {
+      if (estado.erro) throw estado.erro;
+      estado.participantes = estado.participantes.filter((p) => p.user_id !== corpo.user_id);
+      return { data: { removidos: 1 } };
+    }),
   },
 }));
 
@@ -73,13 +86,13 @@ function participar(userId: string) {
   return { id: `p-${userId}`, user_id: userId, invited_by: "u1", joined_at: "2026-10-21T12:00:00Z" };
 }
 
-function renderTela(podeConvidar = true) {
+function renderTela(podeConvidar = true, atendenteId = "u1", somenteLeitura = false) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return render(
     <QueryClientProvider client={client}>
-      <ParticipantesDaConversa conversationId="conv-1" podeConvidar={podeConvidar} />
+      <ParticipantesDaConversa conversationId="conv-1" podeConvidar={podeConvidar} atendenteId={atendenteId} somenteLeitura={somenteLeitura} />
     </QueryClientProvider>,
   );
 }
@@ -101,11 +114,20 @@ beforeEach(() => {
   estado.membros = [membro("u2", "Bruno"), membro("u3", "Carla")];
   estado.erro = null;
   estado.podeVerParticipantes = true;
+  estado.canais.clear();
   vi.clearAllMocks();
 });
 afterEach(() => cleanup());
 
 describe("ParticipantesDaConversa — a lista no cabeçalho", () => {
+  it("uma mudança em outra aba recarrega os avatares sem reabrir a conversa", async () => {
+    estado.participantes = [participar("u2")];
+    renderTela();
+    await screen.findByTestId("participante-u2");
+    estado.participantes = [participar("u2"), participar("u3")];
+    estado.canais.get("participantes-da-conversa-conv-1")!();
+    expect(await screen.findByTestId("participante-u3")).toBeInTheDocument();
+  });
   it("mostra quem participa, com o nome cruzado pelo diretório da organização", async () => {
     estado.participantes = [participar("u2"), participar("u3")];
     renderTela();
@@ -154,6 +176,36 @@ describe("ParticipantesDaConversa — a lista no cabeçalho", () => {
     expect(vi.mocked(apiClient.get)).toHaveBeenCalledWith(
       "/api/v1/conversations/conv-1/participants",
     );
+  });
+});
+
+describe("ParticipantesDaConversa — remoção e saída", () => {
+  it("o responsável remove pela tela e o avatar sai após reler o servidor", async () => {
+    estado.participantes = [participar("u2")];
+    renderTela();
+    const gatilho = await screen.findByRole("button", { name: /Quem participa desta conversa: Bruno/ });
+    fireEvent.keyDown(gatilho, { key: "Enter" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Remover participante" }));
+    await waitFor(() => expect(screen.queryByTestId("participante-u2")).toBeNull());
+    expect(apiClient.delete).toHaveBeenCalledWith("/api/v1/conversations/conv-1/participants", { user_id: "u2" });
+  });
+
+  it("a convidada pode sair, mas não recebe remoção de outra colega", async () => {
+    estado.participantes = [participar("u2"), participar("u3")];
+    renderTela(false, "u2");
+    const gatilho = await screen.findByRole("button", { name: /Quem participa desta conversa: Bruno/ });
+    expect(screen.queryByRole("button", { name: /Quem participa desta conversa: Carla/ })).toBeNull();
+    fireEvent.keyDown(gatilho, { key: "Enter" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Sair do atendimento" }));
+    await waitFor(() => expect(screen.queryByTestId("participante-u2")).toBeNull());
+  });
+
+  it("suporte somente leitura vê os nomes sem botão de convite ou remoção", async () => {
+    estado.participantes = [participar("u2")];
+    renderTela(true, "u1", true);
+    await screen.findByTestId("participante-u2");
+    expect(screen.queryByTestId("convidar-participante")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Quem participa desta conversa:/ })).toBeNull();
   });
 });
 

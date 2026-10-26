@@ -65,9 +65,10 @@ function contarComo(quem: string, consulta: string, preparar = ""): number {
 }
 
 /** Tanto zero linhas quanto uma recusa explícita de RLS são negação válida. */
-function afetarComo(quem: string, comando: string): number {
+function afetarComo(quem: string, comando: string, preparar = ""): number {
   try {
     return numero(sql(`begin;
+      ${preparar}
       ${como(quem)}
       with afetadas as (${comando} returning id)
       select 'SONDA=' || count(*)::text from afetadas;
@@ -176,6 +177,47 @@ describe("participação não herda o controle da conversa", () => {
       values ('${RESPOSTA}', '${ORG_A}', '${CONVERSA_A}', '${SESSAO_A}', '${CONTATO_A}',
               'text', 'outbound', 'queued', 'Resposta sintética', 'user', '${CONVIDADA}')`))
       .toBe(1);
+  });
+
+  it("a convidada não edita o corpo de uma mensagem alheia", () => {
+    const editar = `update public.messages set body = 'Texto alterado pela convidada'
+      where organization_id = '${ORG_A}' and id = '${MENSAGEM_A}'`;
+    expect(afetarComo(CONVIDADA, editar)).toBe(0);
+    // Também a fala de OUTRO atendente: barrar só inbound não prova autoria.
+    const falaDoDono = `update public.messages set direction = 'outbound',
+      sent_via = 'user', sent_by_user_id = '${DONO}'
+      where organization_id = '${ORG_A}' and id = '${MENSAGEM_A}';`;
+    expect(afetarComo(CONVIDADA, editar, falaDoDono)).toBe(0);
+  });
+
+  it("a convidada não apaga a mensagem alheia que passou a ler", () => {
+    expect(afetarComo(CONVIDADA, `delete from public.messages
+      where organization_id = '${ORG_A}' and id = '${MENSAGEM_A}'`)).toBe(0);
+    expect(contarComo(CONVIDADA, MENSAGEM)).toBe(1);
+  });
+
+  it("a convidada edita a própria resposta, mas não ganha hard delete", () => {
+    // Preparação server-side de uma mensagem já persistida. A escrita medida
+    // acontece depois de assumir o JWT da autora, em transação própria, e não
+    // chama a API nem o canal. A persistência pelo JWT tem caso próprio acima.
+    const respostaPersistida = `insert into public.messages
+      (id, organization_id, conversation_id, channel_session_id, contact_id,
+       type, direction, status, body, sent_via, sent_by_user_id)
+      values ('${RESPOSTA}', '${ORG_A}', '${CONVERSA_A}', '${SESSAO_A}', '${CONTATO_A}',
+              'text', 'outbound', 'queued', 'Resposta sintética', 'user', '${CONVIDADA}');`;
+    expect(afetarComo(CONVIDADA, `update public.messages set body = 'Minha resposta revisada'
+      where organization_id = '${ORG_A}' and id = '${RESPOSTA}'`, respostaPersistida)).toBe(1);
+    expect(afetarComo(CONVIDADA, `delete from public.messages
+      where organization_id = '${ORG_A}' and id = '${RESPOSTA}'`, respostaPersistida)).toBe(0);
+  });
+
+  it("marcar o contato como pessoal retira só o acesso concedido pelo convite", () => {
+    const marcarPessoal = `update public.contacts set is_personal = true
+      where organization_id = '${ORG_A}' and id = '${CONTATO_A}';`;
+    expect(contarComo(CONVIDADA, CONVERSA, marcarPessoal)).toBe(0);
+    expect(contarComo(CONVIDADA, MENSAGEM, marcarPessoal)).toBe(0);
+    // A visão raw RLS anterior do dono é preservada: a API é quem a oculta.
+    expect(contarComo(DONO, CONVERSA, marcarPessoal)).toBe(1);
   });
 
   it("a convidada não troca o dono por UPDATE direto", () => {
