@@ -22,7 +22,7 @@ window.criarDemonstracoes = function (opcoes) {
   }
   function catalogo(n) {
     return '<div class="coluna jornada-catalogo">' + trilha(n) +
-      '<header class="coluna-texto"><span class="rotulo-mono">Do primeiro contato à continuidade</span><h1 class="titulo-pagina">' + esc(n ? n.titulo : 'Deskcomm em ação') +
+      '<header class="coluna-texto"><span class="rotulo-mono">Do primeiro contato à continuidade</span><h1 class="titulo-pagina" id="demo-titulo-pagina">' + esc(n ? n.titulo : 'Deskcomm em ação') +
       '</h1><p class="subtitulo">' + esc(n ? n.resumo : 'Escolha um negócio e acompanhe uma história na tela. Depois, veja quais recursos fazem essa operação acontecer.') + '</p></header>' +
       (n ? '<div class="cartoes">' + n.jornadas.map(function (j, i) {
         return '<article class="cartao jornada-cartao"><span class="rotulo-mono">História ' + String(i + 1).padStart(2, '0') + ' · ' + tipo(j) + '</span><h2>' + esc(j.titulo) + '</h2><p>' + esc(j.contexto) + '</p><p><strong>O caminho:</strong> ' + esc(j.resultado) + '</p><div class="acoes"><a class="botao botao-primario" href="' + rota(n, j, 0) + '">Apresentar ao cliente</a><a href="#montagem.' + n.id + '.' + j.id + '">Entender a montagem</a></div></article>';
@@ -31,10 +31,9 @@ window.criarDemonstracoes = function (opcoes) {
       }).join('') + '</div>') + '</div>';
   }
   function render(r) {
-    atual = r;
     if (r.tipo === 'acao') return catalogo(r.nicho);
     var n = r.nicho, j = r.jornada;
-    var cabeca = trilha(n) + '<header><span class="rotulo-mono">' + tipo(j) + ' · ' + esc(j.empresa) + '</span><h1 class="titulo-pagina">' + esc(j.titulo) + '</h1><p class="subtitulo">' + esc(j.contexto) + '</p></header>';
+    var cabeca = trilha(n) + '<header><span class="rotulo-mono">' + tipo(j) + ' · ' + esc(j.empresa) + '</span><h1 class="titulo-pagina" id="demo-titulo-pagina">' + esc(j.titulo) + '</h1><p class="subtitulo">' + esc(j.contexto) + '</p></header>';
     var modos = '<nav class="alternador" aria-label="Modo da história"><a href="' + rota(n, j, 0) + '"' + (r.tipo === 'demo' ? ' aria-current="page"' : '') + '>Apresentar ao cliente</a><a href="#montagem.' + n.id + '.' + j.id + '"' + (r.tipo === 'montagem' ? ' aria-current="page"' : '') + '>Entender a montagem</a></nav>';
     var nota = '<aside class="dica"><strong>' + tipo(j) + '.</strong> ' + esc(j.nota) + '</aside>';
     if (r.tipo === 'montagem') {
@@ -49,7 +48,7 @@ window.criarDemonstracoes = function (opcoes) {
       '<div class="acoes jornada-ferramentas"><button class="botao botao-secundario" type="button" data-demo="tela">Tela cheia</button><button class="botao botao-secundario" type="button" data-demo="copiar">Copiar link desta cena</button><a href="#acao.' + n.id + '">Sair da apresentação</a><span role="status" id="demo-recado"></span></div>' +
       '<ol class="jornada-tempo" aria-label="Cenas da história">' + j.cenas.map(function (c, k) {
         return '<li><a href="' + rota(n, j, k) + '"' + (k === i ? ' aria-current="step"' : '') + '><span>' + String(k + 1).padStart(2, '0') + '</span>' + esc(c.titulo) + '</a></li>';
-      }).join('') + '</ol><section class="jornada-cena"><div class="jornada-narrativa"><span class="rotulo-mono">Cena ' + (i + 1) + ' de ' + j.cenas.length + '</span><h2>' + esc(c.titulo) + '</h2>' +
+      }).join('') + '</ol><section class="jornada-cena"><div class="jornada-narrativa"><span class="rotulo-mono">Cena ' + (i + 1) + ' de ' + j.cenas.length + '</span><h2 id="demo-titulo-cena"><span class="visualmente-oculto">Cena ' + (i + 1) + ' de ' + j.cenas.length + ': </span>' + esc(c.titulo) + '</h2>' +
       [['O cliente', c.cliente], ['Na operação', c.operacao], ['Por que ajuda', c.valor]].map(function (p) { return '<div class="jornada-voz"><h3>' + p[0] + '</h3><p>' + esc(p[1]) + '</p></div>'; }).join('') + '</div><div class="jornada-foto">' + opcoes.figura(cap, { alt: c.titulo, ansioso: true }) + opcoes.legenda(cap) + '</div></section>' +
       '<nav class="acoes jornada-avancos" aria-label="Avançar pela história">' + (i ? '<a class="botao botao-secundario" data-demo-anterior href="' + rota(n, j, i - 1) + '">← Anterior</a>' : '<span>Início da história</span>') +
       (i < j.cenas.length - 1 ? '<a class="botao botao-primario" data-demo-proximo href="' + rota(n, j, i + 1) + '">Próxima cena →</a>' : '<a class="botao botao-primario" href="#montagem.' + n.id + '.' + j.id + '">Entender a montagem →</a>') + '</nav>' + nota + '</div>';
@@ -59,7 +58,17 @@ window.criarDemonstracoes = function (opcoes) {
     if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(function () {});
   }
   function posRender(r) {
+    var anterior = atual;
     atual = r;
+    // O main é o contêiner rolável no fullscreen nativo e um destino estável
+    // de foco. Seu nome acessível identifica a nova cena, mesmo na mesma história.
+    if (r) vista.setAttribute('aria-labelledby', r.tipo === 'demo' ? 'demo-titulo-cena' : 'demo-titulo-pagina');
+    else vista.removeAttribute('aria-labelledby');
+    if (r || anterior) {
+      vista.focus({ preventScroll: true });
+      vista.scrollTop = 0;
+      vista.scrollLeft = 0;
+    }
     if (!r || r.tipo !== 'demo') sairTela();
     else if (document.body.classList.contains('demo-tela-cheia')) {
       var b = vista.querySelector('[data-demo="tela"]');
@@ -108,5 +117,5 @@ window.criarDemonstracoes = function (opcoes) {
     return entradas;
   }
   return { reconhecer: reconhecer, render: render, posRender: posRender, entradasBusca: entradasBusca,
-    titulo: function (r) { return r.jornada ? r.jornada.titulo : r.nicho ? r.nicho.titulo : 'Deskcomm em ação'; } };
+    titulo: function (r) { return r.tipo === 'demo' ? 'Cena ' + (r.indice + 1) + ' de ' + r.jornada.cenas.length + ': ' + r.jornada.cenas[r.indice].titulo + ' · ' + r.jornada.titulo : r.jornada ? r.jornada.titulo : r.nicho ? r.nicho.titulo : 'Deskcomm em ação'; } };
 };

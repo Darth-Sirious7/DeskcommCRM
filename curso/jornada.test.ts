@@ -41,7 +41,7 @@ import { vi } from "vitest";
 
 describe("apresentação estática", () => {
   it("recupera hashes inválidos, monta links de lição e indexa histórias", async () => {
-    document.body.innerHTML = '<main id="teste"></main>';
+    document.body.innerHTML = '<main id="teste" tabindex="-1"></main>';
     const vista = document.getElementById("teste")!;
     const criar = new Function(readFileSync(path.join(process.cwd(), "curso/site/demonstracoes.js"), "utf8") + ";return window.criarDemonstracoes;")();
     const dados = { nichos: [nicho], modulos: [{ id: "inbox", titulo: "Inbox", licoes: [{ id: "ler", titulo: "Ler conversa" }] }], capturas };
@@ -51,7 +51,13 @@ describe("apresentação estática", () => {
     expect(demo.reconhecer("acao.clinicas.excesso")).toEqual({ tipo: "acao" });
     const r = demo.reconhecer("demo.clinicas.consulta.chegada");
     vista.innerHTML = demo.render(r);
+    vista.scrollTop = 900;
     demo.posRender(r);
+    expect(vista.scrollTop).toBe(0);
+    expect(document.activeElement).toBe(vista);
+    expect(vista.getAttribute('aria-labelledby')).toBe('demo-titulo-cena');
+    expect(document.getElementById('demo-titulo-cena')?.textContent).toBe('Cena 1 de 1: Chegada');
+    expect(demo.titulo(r)).toContain('Cena 1 de 1: Chegada');
     expect(vista.textContent).toContain("O cliente");
     expect(vista.textContent).toContain("Na operação");
     expect(vista.textContent).toContain("Por que ajuda");
@@ -67,6 +73,7 @@ describe("apresentação estática", () => {
     vista.innerHTML = demo.render(r); demo.posRender(r);
     expect(vista.querySelector('[data-demo="tela"]')?.textContent).toBe("Sair da tela cheia");
     demo.posRender(null);
+    expect(vista.hasAttribute('aria-labelledby')).toBe(false);
     expect(document.body.classList.contains("demo-tela-cheia")).toBe(false);
     // Mensagens de clipboard são explícitas nos dois resultados.
     const writeText = vi.fn().mockResolvedValue(undefined);
