@@ -152,6 +152,16 @@ Após a integração, passaram 112 casos em quatro arquivos dirigidos (API da
 fila, baseline sem versão intermediária, tipo da view e evidência citada), além
 do ESLint dos seis arquivos TypeScript alcançados e da conferência do diff.
 
+O CI de `0a5238538` passou typecheck, lint, banco pg15/pg17 e as outras partes do
+verify, mas revelou uma contagem textual frágil em `reabertura-1538.test.ts`:
+o gerador descreve `retomado_de_lead_id` em `Row`, `Insert`, `Update` e também em
+`Relationships`. O teste agora valida diretamente os três tipos do cliente,
+com a nulabilidade de cada um, e preserva as verificações da migration, FK e
+MANIFEST. A reprodução tinha uma falha e 15 sucessos; o conjunto de 14 arquivos
+unitários que mencionam o artefato passou 165 casos, com um worker e heap de
+1,5 GiB. A busca também alcançou os invariantes de banco; eles não foram editados
+nem executados por essa rodada unitária. O arquivo gerado permaneceu intacto.
+
 O CI mede typecheck integral, lint, suíte completa, banco nas majors suportadas
 e build. Antes de sair do draft, reconciliar os resultados reais do HEAD medido,
 preservando o escopo autorizado das adições herdadas de invariantes: somente
