@@ -119,7 +119,13 @@ describe("conversa livre invisível: exceção restrita ao claim com CAS", () =>
         "-c",
         script,
       ]);
-      return Number(lastLine(stdout));
+      // sql() já entrega a saída sem o newline final; execFile não a corta.
+      // Number("") seria zero e esconderia inclusive uma saída inválida.
+      const ultimaLinha = lastLine(stdout.trim());
+      if (!/^\d+$/.test(ultimaLinha)) {
+        throw new Error("O claim concorrente não devolveu uma contagem inteira.");
+      }
+      return Number(ultimaLinha);
     }
     const vencedores = await Promise.all([disputar(A), disputar(B)]);
     expect(vencedores.sort()).toEqual([0, 1]);
