@@ -630,4 +630,3 @@ describe("o fluxo do turno no manifesto", () => {
     ).toThrow(ExtensionError);
   });
 });
-
