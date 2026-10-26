@@ -290,7 +290,15 @@ export function makeDb(opts: DbOpts = {}): Registro {
     let patch: Record<string, unknown> | null = null;
     let nova: Record<string, unknown> | Record<string, unknown>[] | null = null;
     let colunas: string[] | null = null;
-    let ordem: string | null = null;
+    /**
+     * Os `.order()` encadeados, na ordem em que a rota os emitiu.
+     *
+     * ACUMULA, não sobrescreve: é o comportamento do PostgREST, e é o que o
+     * desempate `.order("position_in_stage").order("id")` da lista do funil
+     * (#3172) significa. Guardando só o último, o dublê mediria uma consulta
+     * que ordena apenas por `id` — e o teste do desempate mediria o dublê.
+     */
+    const ordens: Array<{ coluna: string; desc: boolean }> = [];
     let contar = false;
     let head = false;
     let apagar = false;
@@ -320,6 +328,24 @@ export function makeDb(opts: DbOpts = {}): Registro {
         );
 
     /**
+     * Compara uma coluna de duas linhas como o Postgres compararia.
+     *
+     * Número com número compara como número (é a ordem do quadro, e a de
+     * `position`); o resto compara como texto — é assim que `id` (uuid/texto)
+     * ordena, e é o que o desempate `.order("id")` da lista do funil precisa
+     * para a página ser determinística. `null`/`undefined` viram string vazia,
+     * que é "primeiro" como o `NULLS FIRST` do PostgREST sem `ascending: false`.
+     */
+    const compararColuna = (a: Linha, b: Linha, coluna: string): number => {
+      const va = a[coluna];
+      const vb = b[coluna];
+      if (typeof va === "number" && typeof vb === "number") return va - vb;
+      const sa = va === null || va === undefined ? "" : String(va);
+      const sb = vb === null || vb === undefined ? "" : String(vb);
+      return sa < sb ? -1 : sa > sb ? 1 : 0;
+    };
+
+    /**
      * Ordena, corta e projeta como o PostgREST faria.
      *
      * `tabela(coluna)` no select é um EMBED: o PostgREST devolve a chave
@@ -328,7 +354,15 @@ export function makeDb(opts: DbOpts = {}): Registro {
      */
     const lidos = () => {
       let rows = [...casam()];
-      if (ordem) rows.sort((a, b) => Number(a[ordem!]) - Number(b[ordem!]));
+      if (ordens.length > 0) {
+        rows.sort((a, b) => {
+          for (const { coluna, desc } of ordens) {
+            const d = compararColuna(a, b, coluna);
+            if (d !== 0) return desc ? -d : d;
+          }
+          return 0;
+        });
+      }
       if (teto !== null) rows = rows.slice(desde, desde + teto);
       if (opts.maxRows !== undefined) rows = rows.slice(0, opts.maxRows);
       // `select("*")` (usado por `app/api/v1/leads/_handler.ts`) é o CURINGA do
@@ -480,8 +514,8 @@ export function makeDb(opts: DbOpts = {}): Registro {
         teto = ate - de + 1;
         return b;
       },
-      order: (col: string) => {
-        ordem = col;
+      order: (col: string, o?: { ascending?: boolean }) => {
+        ordens.push({ coluna: col, desc: o?.ascending === false });
         return b;
       },
       maybeSingle: async () => {

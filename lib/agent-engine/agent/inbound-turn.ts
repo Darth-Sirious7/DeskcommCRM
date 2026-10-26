@@ -113,6 +113,7 @@ import {
   type LeadCheckpointRow,
 } from "./abertura/checkpoint";
 import { buildOpeningMessage, ritualBlocks } from "./abertura/ritual";
+import { lerRemetenteDeGrupo, type RemetenteDeGrupo } from "@/lib/messaging/remetente-de-grupo";
 import { applySaveLeadNote, buildNotesIndexBlock, getLeadNoteBody } from './lead-notes';
 import { buildCompromissosBlock } from './compromissos-do-contato';
 import { buildOrigemBlock } from './abertura/origem-do-contato';
@@ -680,8 +681,26 @@ export async function loadInboundBodyForJob(
   db: Queryable,
   input: { tenantId: string; conversationId: string; inboundMessageId: string },
 ): Promise<string | null> {
-  const result = await db.query<CorpoDaMensagemRow>(
-    `select type, body, media_url, media_storage_path, media_derived_text
+  const linha = await loadInboundForJob(db, input);
+  return linha === null ? null : linha.body;
+}
+
+/**
+ * A linha canônica do job — corpo E autor (#2729).
+ *
+ * O corpo sai do mesmo caminho de sempre (`corpoDaMensagem`); o `sender` é o
+ * `metadata.group_sender` que o ingest de grupo grava. Numa conversa 1:1 ele é
+ * `null`: não há participante a nomear, e o autor é o próprio contato da ficha.
+ *
+ * Uma consulta só, e não duas: este é o caminho quente de abertura do turno — o
+ * `metadata` vem na mesma linha que o corpo já lia.
+ */
+export async function loadInboundForJob(
+  db: Queryable,
+  input: { tenantId: string; conversationId: string; inboundMessageId: string },
+): Promise<{ body: string; sender: RemetenteDeGrupo | null } | null> {
+  const result = await db.query<CorpoDaMensagemRow & { metadata: unknown }>(
+    `select type, body, media_url, media_storage_path, media_derived_text, metadata
        from messages
       where organization_id = $1
         and conversation_id = $2
@@ -691,7 +710,8 @@ export async function loadInboundBodyForJob(
     [input.tenantId, input.conversationId, input.inboundMessageId],
   );
   const row = result.rows[0];
-  return row === undefined ? null : corpoDaMensagem(row);
+  if (row === undefined) return null;
+  return { body: corpoDaMensagem(row), sender: lerRemetenteDeGrupo(row.metadata) };
 }
 
 /**
@@ -1574,6 +1594,12 @@ export interface AgentTurnInput {
     origemBlock?: string;
     /** Texto exato da mensagem que acordou este turno inbound. */
     currentInboundText?: string;
+    /**
+     * #2729 — quem escreveu a mensagem que acordou este turno, quando ela veio
+     * de um GRUPO. Opcional pela mesma razão de `projeta`: quem monta um ritual
+     * à mão (testes) não precisa dele, e a produção sempre o passa.
+     */
+    currentInboundSender?: RemetenteDeGrupo;
     /**
      * Projetar o contexto (spec 16 §4)? Decidido pelo turno, ver `turnoProjeta`.
      *
@@ -2668,7 +2694,7 @@ async function executarTurnoDoAgente(
   // juntos, o pico chega a 32 leituras sobre 10 conexões (default do pg, knob
   // DB_POOL_MAX). O pg enfileira e nenhuma destas leituras segura conexão, então
   // o pior caso é espera de fila no pico, não erro nem deadlock.
-  const [playbook, [skills, currentInboundText], orgMemory, [previous, leadState]] =
+  const [playbook, [skills, inboundDoJob], orgMemory, [previous, leadState]] =
     await Promise.all([
       (async () => {
         const prospectingContext =
@@ -2690,7 +2716,7 @@ async function executarTurnoDoAgente(
           await loadSkills(pool, tenantId),
           input.inboundMessageId === undefined
             ? null
-            : await loadInboundBodyForJob(pool, {
+            : await loadInboundForJob(pool, {
                 tenantId,
                 conversationId: input.conversationId,
                 inboundMessageId: input.inboundMessageId,
@@ -2706,6 +2732,10 @@ async function executarTurnoDoAgente(
           preview?.kind === 'sandbox' ? null : await getLeadState(pool, tenantId, leadId),
         ] as const)(),
     ]);
+  // A mensagem canônica do job: o TEXTO que este turno responde e, num grupo,
+  // QUEM a escreveu (#2729). As duas saem da mesma linha, numa leitura só.
+  const currentInboundText = inboundDoJob === null ? null : inboundDoJob.body;
+  const currentInboundSender = inboundDoJob === null ? null : inboundDoJob.sender;
   const skillIndex = renderSkillIndex(skills);
   const systemWithMemory = composeSystemPrompt({
     playbookPrompt: playbook.prompt,
@@ -5216,6 +5246,9 @@ async function executarTurnoDoAgente(
       compromissosBlock,
       origemBlock,
       ...(currentInboundText !== null ? { currentInboundText } : {}),
+      // #2729 — o autor da mensagem canônica, quando ela é de grupo. Vai junto
+      // do texto: sem ele o modelo ouve a voz e não sabe de quem é.
+      ...(currentInboundSender !== null ? { currentInboundSender } : {}),
     });
     // Sufixos por-lead (situacionais, voláteis — depois do prefixo cacheável F2-17): corpos de
     // skill casadas (F3-09) + hint do classificador (F3-11) + instrução de split (F4-xx, quando
@@ -6344,6 +6377,7 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
         compromissosBlock,
         origemBlock,
         currentInboundText,
+        currentInboundSender,
       }) =>
         buildOpeningMessage(
           previous,
@@ -6354,6 +6388,7 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
           entregues,
           compromissosBlock,
           currentInboundText,
+          currentInboundSender,
           origemBlock,
         ),
     });

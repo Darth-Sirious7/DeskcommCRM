@@ -176,7 +176,84 @@ describe("updatePipelineConfig — campo que vira Contato e o gatilho por data",
     h.settings = { fields: [NASCIMENTO_CONTATO] };
     h.regras = [regra("Antiga", "nascimento")];
 
-    expect(await updatePipelineConfig(FUNIL, { fields: [NASCIMENTO_CONTATO] })).toEqual({ ok: true });
+    expect(await updatePipelineConfig(FUNIL, { fields: [NASCIMENTO_CONTATO] })).toEqual({
+      ok: true,
+    });
+  });
+});
+
+/**
+ * A ENTRADA DO INBOX (issue #3011, fatia 1) — o gravador.
+ *
+ * O zod DESCARTA chave que não está no schema: sem o campo em
+ * `pipelineConfigPatchSchema`, a tela salvaria a etapa de entrada e não
+ * gravaria NADA, sem erro nenhum — o defeito que o #1477 já mediu uma vez com
+ * `comanda_no_ganho`. Aqui se prova que o bloco chega ao `settings` do funil,
+ * que ele convive com as outras chaves e que valor inválido é recusado ANTES de
+ * gravar (em vez de virar card em etapa errada no próximo ingest).
+ */
+describe("updatePipelineConfig — entrada do Inbox por funil (#3011)", () => {
+  const STAGE = "aaaaaaaa-1111-4111-8111-111111111111";
+
+  it("grava a etapa declarada no settings do funil, preservando as outras chaves", async () => {
+    h.settings = { lost_reasons: ["Preço"], entrada_do_inbox: { ativa: false } };
+
+    const r = await updatePipelineConfig(FUNIL, {
+      entrada_do_inbox: { ativa: true, stage_id: STAGE },
+    });
+
+    expect(r).toEqual({ ok: true });
+    const gravado = h.gravou as { settings: Record<string, unknown> };
+    expect(gravado.settings.entrada_do_inbox).toEqual({ ativa: true, stage_id: STAGE });
+    // O que já estava lá continua lá: o gravador mescla, não substitui o jsonb.
+    expect(gravado.settings.lost_reasons).toEqual(["Preço"]);
+  });
+
+  it("desligar a chave mantém a etapa escolhida — religar não obriga a escolher de novo", async () => {
+    h.settings = { entrada_do_inbox: { ativa: true, stage_id: STAGE } };
+
+    const r = await updatePipelineConfig(FUNIL, {
+      entrada_do_inbox: { ativa: false, stage_id: STAGE },
+    });
+
+    expect(r).toEqual({ ok: true });
+    const gravado = h.gravou as { settings: Record<string, unknown> };
+    expect(gravado.settings.entrada_do_inbox).toEqual({ ativa: false, stage_id: STAGE });
+  });
+
+  it("salvar outra coisa NÃO encosta na entrada do Inbox já configurada", async () => {
+    h.settings = { entrada_do_inbox: { ativa: true, stage_id: STAGE } };
+
+    const r = await updatePipelineConfig(FUNIL, { reabertura: "novo_negocio" });
+
+    expect(r).toEqual({ ok: true });
+    const gravado = h.gravou as { settings: Record<string, unknown> };
+    expect(gravado.settings.entrada_do_inbox).toEqual({ ativa: true, stage_id: STAGE });
+    expect(gravado.settings.reabertura).toBe("novo_negocio");
+  });
+
+  it("recusa etapa sem forma de identificador antes de gravar", async () => {
+    const r = await updatePipelineConfig(FUNIL, {
+      entrada_do_inbox: { ativa: true, stage_id: "primeira" },
+    });
+
+    expect(r.ok).toBe(false);
+    expect(!r.ok && r.error).toBe("validation_failed");
+    expect(h.gravou, "nada foi gravado").toBeNull();
+  });
+
+  it("recusa chave ligada sem booleano — a leitura só aceita o `true` explícito", async () => {
+    // `as unknown as` porque o tipo do patch já não aceita string aqui: o que se
+    // mede é o caminho de RUNTIME (uma chamada de fora do TypeScript, um JSON de
+    // script antigo), não o que o compilador deixaria alguém escrever.
+    const patch = {
+      entrada_do_inbox: { ativa: "sim", stage_id: STAGE },
+    } as unknown as Parameters<typeof updatePipelineConfig>[1];
+
+    const r = await updatePipelineConfig(FUNIL, patch);
+
+    expect(r.ok).toBe(false);
+    expect(h.gravou).toBeNull();
   });
 });
 
