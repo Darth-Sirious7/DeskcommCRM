@@ -87,6 +87,7 @@ import {
 import type { ExtensionPermission } from "@/lib/extensions/capacidades";
 import type { ActivityType } from "@/lib/leads/activity-vocabulary";
 import type { ChannelAdapter, ChannelSendResult } from "../channel-adapter";
+import type { DesfechoDoAvisoAoCliente } from "@/lib/escalacao/passagem";
 import { runBeforeSend } from "../guardrails/before-send";
 import type { Logger } from "../obs/logger";
 
@@ -600,6 +601,12 @@ function escolherPorGatilho(
   return candidatos[0] ?? null;
 }
 
+type AvisoNaoEntregue = Extract<DesfechoDoAvisoAoCliente, { avisado: false }>;
+export type ResultadoDoTextoSemModelo =
+  | { kind: "sent" | "already_sent"; aceito: true; aviso: { avisado: true } }
+  | { kind: "queued"; aceito: true; aviso: AvisoNaoEntregue }
+  | { kind: "vetoed" | "blocked" | "failed" | "unavailable"; aceito: false; aviso: AvisoNaoEntregue };
+
 /**
  * O TEXTO que a extensão fala, enviado pelo HOST sem gastar modelo.
  *
@@ -639,7 +646,7 @@ export async function enviarTextoSemModelo(
     /** Posição da bolha no turno — 1..n, o mesmo contrato do ledger do canal. */
     seq: number;
   },
-): Promise<boolean> {
+): Promise<ResultadoDoTextoSemModelo> {
   if (args.channel.signalTyping !== undefined) {
     try {
       await args.channel.signalTyping({
@@ -683,19 +690,25 @@ export async function enviarTextoSemModelo(
     args.log.info("gancho de extensão: a cadeia vetou a bolha — a IA responde no lugar", {
       code: chain.code,
     });
-    return false;
+    return { kind: "vetoed", aceito: false, aviso: { avisado: false, porque: chain.code } };
   }
   const { outcome } = chain;
   switch (outcome.kind) {
     case "sent":
     case "already_sent":
+      return { kind: outcome.kind, aceito: true, aviso: { avisado: true } };
     case "queued":
-      return true;
+      // Custódia da fila mantém a coleta, mas não é recibo de entrega ao cliente.
+      return { kind: "queued", aceito: true, aviso: {
+        avisado: false, porque: "na_fila_canal_fora", motivoCodigo: "na_fila_canal_fora",
+      } };
     default:
       args.log.info("gancho de extensão: a bolha não foi entregue — a IA responde no lugar", {
         kind: outcome.kind,
       });
-      return false;
+      return { kind: outcome.kind, aceito: false, aviso: outcome.kind === "blocked"
+        ? { avisado: false, porque: "contato_bloqueado" }
+        : { avisado: false, porque: outcome.kind === "failed" ? "canal_falhou" : "canal_indisponivel", motivoCodigo: "falhou_no_envio" } };
   }
 }
 

@@ -87,17 +87,30 @@ dirigida posterior passou **89 testes em dez arquivos**, um worker, em 5,39 s;
 inclui DTO, serviço/consentimento, corpus do consumidor e cercas do workflow.
 ESLint dos seis TS alterados e parse dos quatro TS do E2E: RC 0.
 
-| ID | Medida prevista | Captura gerada somente pela execução |
-| --- | --- | --- |
-| TL01 | Admitir catálogo, instalar bytes exatos, nenhum aceite automático | `evidence/extensoes/turno-laudos/01-sem-aceite.png` |
-| TL02 | Viewer recusado; aceite de envio/passagem separado da leitura | `evidence/extensoes/turno-laudos/02-aceite-separado.png` |
-| TL03 | Biópsia, radiologia, patologia e escolha numérica; par com função pura | `evidence/extensoes/turno-laudos/03-passagem.png` |
-| TL04 | Saudação não coletada como nome; devolução à IA nos dois SDKs | `evidence/extensoes/turno-laudos/04-retorno-ia.png` |
-| TL05 | OUTBOUND selecionado, aceite próprio e outra conversa do mesmo contato | `evidence/extensoes/turno-laudos/05-contexto.png` |
-| TL06 | Outra organização não herda efeitos nem leitura opcional | `evidence/extensoes/turno-laudos/06-outra-organizacao.png` |
-| TL07 | Reconfigurar, desligar e reativar não retomam respostas da revisão antiga | `evidence/extensoes/turno-laudos/07-desativada.png` |
+A revisão fria posterior encontrou dois defeitos no caminho real da passagem.
+O cliente da transação agora é descartado com erro quando query/rollback ficam
+incertos; commit e recibo repetido saudáveis continuam reutilizando a conexão.
+O envio sem modelo preserva custódia e entrega separadas: `queued` mantém a coleta,
+mas grava cliente não avisado com o motivo canônico `na_fila_canal_fora`.
+Não acrescenta reenvio nem retentativa geral. O teste novo
+`tests/unit/extensoes-turno-desfechos-reais.test.ts` extrai e executa os nós reais
+da transação, do envio e dos callbacks: **8 falhas/8 acertos antes, 16 acertos após**.
+A rodada dirigida com testes vizinhos e a cerca documental passou **168 testes
+em oito arquivos**, um worker, em 13,78 s. Isso mede os ramos com falhas dirigidas
+nas bordas; não é execução de PostgreSQL nem prova visual do CI.
 
-Esses caminhos são **destinos futuros**, não imagens já observadas. O
+| ID | Medida prevista |
+| --- | --- |
+| TL01 | Admitir catálogo, instalar bytes exatos, nenhum aceite automático |
+| TL02 | Viewer recusado; aceite de envio/passagem separado da leitura |
+| TL03 | Biópsia, radiologia, patologia e escolha numérica; par com função pura |
+| TL04 | Saudação não coletada como nome; devolução à IA nos dois SDKs |
+| TL05 | OUTBOUND selecionado, aceite próprio e outra conversa do mesmo contato |
+| TL06 | Outra organização não herda efeitos nem leitura opcional |
+| TL07 | Reconfigurar, desligar e reativar não retomam respostas da revisão antiga |
+
+As capturas desses IDs estão planejadas para o diretório
+`evidence/extensoes/turno-laudos/`; ainda não há imagem nova observada para citar. O
 `manifesto.json` dessa pasta registra os IDs concluídos, tempo e contadores sem
 prompts, cabeçalhos ou respostas coletadas. O upload de evidências em sucesso
 já existente no workflow inclui a pasta; falhas mantêm os artifacts do Playwright.

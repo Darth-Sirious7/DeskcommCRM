@@ -3165,8 +3165,8 @@ async function executarTurnoDoAgente(
         // Somente mensagens já selecionadas por getLeadContext, com proveniência por linha.
         // O host só lê com aceite de turn.context e nunca consulta histórico adicional.
         contextoSelecionado: () => openingContext.context.messages,
-        enviar: (texto) =>
-          enviarTextoSemModelo({
+        enviar: async (texto) =>
+          (await enviarTextoSemModelo({
             pool,
             log: runLog,
             tenantId,
@@ -3182,12 +3182,12 @@ async function executarTurnoDoAgente(
             // Primeira bolha do turno. O ledger do canal deduplica por
             // `(job_id, seq)`, e a IA não roda neste turno: não há colisão.
             seq: 1,
-          }),
+          })).aceito,
         passarParaHumano: async ({ campos, aviso, idempotencia }) => {
           // O aviso ao contato é do PACOTE e sai pela cadeia do núcleo. O
           // desfecho dele vira LINHA na passagem (c3): "gravado" não é
           // "avisado", e quem assume precisa saber qual dos dois aconteceu.
-          const avisado = await enviarTextoSemModelo({
+          const envioDoAviso = await enviarTextoSemModelo({
             pool,
             log: runLog,
             tenantId,
@@ -3213,9 +3213,7 @@ async function executarTurnoDoAgente(
               // `fn_can_view_conversation`), nunca no corpo da Central.
               camposColetados: campos,
               ...(idempotencia !== null ? { idempotenciaDaPassagem: idempotencia } : {}),
-              avisoAoLead: avisado
-                ? { avisado: true }
-                : { avisado: false, porque: 'envio_vetado_pela_cadeia' },
+              avisoAoLead: envioDoAviso.aviso,
               log: runLog,
             },
           );

@@ -710,6 +710,9 @@ async function gravarPassagemComRecibo(
   log: Logger,
 ): Promise<void> {
   const cliente = await db.connect();
+  // #2506: query_timeout pode rejeitar sem encerrar socket/transação. Qualquer
+  // erro torna o cliente impróprio para reutilização, mesmo com rollback respondido.
+  let erroNaTransacao: Error | undefined;
   try {
     await cliente.query('begin');
     await cliente.query('select pg_advisory_xact_lock(hashtext($1))', [
@@ -731,6 +734,9 @@ async function gravarPassagemComRecibo(
     }
     const gravou = await registrarPassagem(cliente, nova);
     if (!gravou.gravada) {
+      // O escritor absorve também erros de INSERT. Sem distinguir a causa,
+      // não afirmar que a conexão ficou saudável apenas porque houve rollback.
+      erroNaTransacao = new Error(gravou.erro);
       await cliente.query('rollback');
       log.warn('passagem com dados coletados não registrada — o aviso sai, os campos não', {
         erro: gravou.erro,
@@ -746,17 +752,18 @@ async function gravarPassagemComRecibo(
     );
     await cliente.query('commit');
   } catch (err) {
+    erroNaTransacao = err instanceof Error ? err : new Error(String(err));
     try {
       await cliente.query('rollback');
     } catch {
-      // A conexão pode ter morrido — o `release` do `finally` ainda roda, e o
-      // advisory lock sai junto com a transação que o prendeu.
+      // Não há confirmação de fim da transação: release(error) descarta o
+      // cliente, em vez de emprestá-lo com transação/lock possivelmente vivos.
     }
     log.warn('passagem com dados coletados não registrada — o aviso sai, os campos não', {
       erro: err instanceof Error ? err.message.slice(0, 200) : 'erro_desconhecido',
     });
   } finally {
-    cliente.release();
+    cliente.release(erroNaTransacao);
   }
 }
 
