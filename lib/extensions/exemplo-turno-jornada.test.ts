@@ -1,213 +1,131 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-
 import { describe, expect, it } from "vitest";
 
-import { checkCompatibility, parseCatalog, parseManifest } from "@/lib/extensions/manifest";
-import { aceitePendente, motivoDeRecusaDoTurno } from "@/lib/extensions/consentimento";
-import { decidirDoFluxo, type FluxoDoTurno } from "@/lib/extensions/fluxo-do-turno";
+import { checkCompatibility, parseCatalog, parseManifest } from "./manifest";
+import { aceitePendente, motivoDeRecusaDoTurno } from "./consentimento";
+import { decidirDoFluxo, type EstadoDoFluxo, type FluxoDoTurno } from "./fluxo-do-turno";
 
-/**
- * O CONSUMIDOR REAL, PONTA A PONTA (#3076, exigência 5).
- *
- * Os testes de unidade provam as regras; este prova que elas cabem num PACOTE. O arquivo lido é o
- * mesmo que o gerador de catálogo publicou — `sha256` e `byte_length` conferidos contra
- * `extensoes/catalogo.json` —, e não um objeto montado no teste. Um manifesto que só existe no
- * teste não prova que o contrato é instalável; o #3456 já tinha testes verdes e um contrato que
- * aprovava a brecha.
- *
- * A jornada é a do atendimento de uma clínica: o cliente pede o laudo, o pacote pergunta exame,
- * paciente, data e médico, e a conversa vai para uma pessoa com os quatro campos. Percorrida nos
- * TRÊS idiomas do pacote — pt-BR, o inglês do consumidor e o híndi —, porque texto por idioma é
- * parte do contrato (`TextoDoFluxo`), e um fluxo que só fala português não é o consumidor real que
- * a nota do mantenedor descreveu.
- */
-const RAIZ = process.cwd();
-const catalogo = parseCatalog(new Uint8Array(readFileSync(join(RAIZ, "extensoes/catalogo.json"))));
-const entrada = catalogo.entries.find(
-  (item) => item.name === "laudo-do-exame",
-);
-
-if (entrada === undefined) throw new Error("Pacote de exemplo ausente do catálogo");
-const PACOTE = join(RAIZ, "extensoes/pacotes", entrada.publisher, `${entrada.name}-${entrada.version}.json`);
-const bytes = new Uint8Array(readFileSync(PACOTE));
+// Consumidor real de #3076, preservando os ramos de #3063 (@guptasp82-jpg).
+const catalogo = parseCatalog(new Uint8Array(readFileSync(join(process.cwd(), "extensoes/catalogo.json"))));
+const entrada = catalogo.entries.find((item) => item.name === "consulta-de-laudos");
+if (!entrada) throw new Error("Consumidor real ausente do catálogo");
+const bytes = new Uint8Array(readFileSync(join(process.cwd(), "extensoes/pacotes", entrada.publisher, `${entrada.name}-${entrada.version}.json`)));
 const manifest = parseManifest(bytes);
-const IDENTIDADE_DO_PACOTE = `${manifest.publisher}/${manifest.name}`;
 const fluxo = manifest.contributions.turn_flow as FluxoDoTurno;
-
-/**
- * A jornada como o HOST a percorre: o gatilho abre a coleta (`perguntar`/`comecou`), cada resposta
- * avança a etapa (`perguntar`/`avancou`) e a última encerra no desfecho declarado (`passar`).
- * Devolve as bolhas na ordem em que sairiam e o estado final, que é o que o gancho grava.
- */
-function jornada(textoDoGatilho: string, respostas: string[]) {
-  const primeiro = decidirDoFluxo(fluxo, IDENTIDADE_DO_PACOTE, null, {
-    texto: textoDoGatilho,
-    agora: "2026-10-26T12:00:00Z",
-  });
-  expect(primeiro.acao).toBe("perguntar");
-  const enviadas = primeiro.acao === "perguntar" ? [primeiro.texto] : [];
-  let estado = primeiro.acao === "perguntar" ? primeiro.estado : null;
-  let ultimo = primeiro;
-  for (const resposta of respostas) {
-    ultimo = decidirDoFluxo(fluxo, IDENTIDADE_DO_PACOTE, estado, {
-      texto: resposta,
-      agora: "2026-10-26T12:00:00Z",
-    });
-    if (ultimo.acao === "perguntar") {
-      enviadas.push(ultimo.texto);
-      estado = ultimo.estado;
-    } else {
-      // O desfecho também é uma bolha do host: `concluir` manda a despedida, `passar` manda o
-      // aviso antes de entregar a conversa. Sem ele, o cliente veria a última pergunta e o
-      // silêncio.
-      if (ultimo.acao === "concluir") enviadas.push(ultimo.texto);
-      if (ultimo.acao === "passar") enviadas.push(ultimo.aviso);
+const identidade = `${manifest.publisher}/${manifest.name}`;
+const agora = "2026-10-26T12:00:00Z";
+const decidir = (texto: string | null, estado: EstadoDoFluxo | null = null) =>
+  decidirDoFluxo(fluxo, identidade, estado, { texto, agora });
+function jornada(textos: Array<string | null>) {
+  let estado: EstadoDoFluxo | null = null;
+  const bolhas: string[] = [];
+  const decisoes = textos.map((texto) => {
+    const decisao = decidir(texto, estado);
+    if (decisao.acao === "perguntar") { estado = decisao.estado; bolhas.push(decisao.texto); }
+    else {
       estado = null;
+      if (decisao.acao === "passar") bolhas.push(decisao.aviso);
+      if (decisao.acao === "concluir") bolhas.push(decisao.texto);
     }
-  }
-  return { enviadas, ultimo };
+    return decisao;
+  });
+  return { bolhas, ultimo: decisoes.at(-1)!, decisoes };
 }
 
-describe("o pacote consumidor é o artefato ADMITIDO, não uma cópia do teste", () => {
-  it("o catálogo publicado aponta para estes bytes exatos", () => {
-    expect(entrada).toBeDefined();
-    const digest = createHash("sha256").update(bytes).digest("hex");
-    expect(entrada!.sha256).toBe(digest);
+describe("o artefato publicado é o consumidor, sem trocar permissões da identidade antiga", () => {
+  it("catálogo aponta para os bytes exatos e explicita a leitura opcional", () => {
+    expect(entrada!.sha256).toBe(createHash("sha256").update(bytes).digest("hex"));
     expect(entrada!.byte_length).toBe(bytes.byteLength);
-    // E o catálogo declara as mesmas permissões do manifesto — o contrato do pacote é espelhado.
-    expect(entrada!.permissions).toEqual(["turn.send", "turn.handoff"]);
-  });
-
-  it("o manifesto declara as DUAS permissões nomeadas, e o fluxo as exige", () => {
-    expect(manifest.permissions).toEqual(["turn.send", "turn.handoff"]);
-    expect(fluxo.id).toBe("laudo");
-    expect(fluxo.idiomas).toEqual(["pt-BR", "en", "hi"]);
-    expect(fluxo.desfecho.tipo).toBe("passar_para_humano");
+    expect(entrada!.permissions).toEqual(["turn.send", "turn.handoff", "turn.context"]);
     expect(checkCompatibility(manifest)).toEqual({ compatible: true, reason: null });
   });
 
-  it("antes do aceite, o pacote instalado e ativo NÃO age", () => {
-    expect(
-      motivoDeRecusaDoTurno({ declaradas: manifest.permissions, aceitas: [], fluxo }),
-    ).toBe("sem_aceite");
-    expect(aceitePendente({ declaradas: manifest.permissions, aceitas: [], fluxo })).toEqual([
-      "turn.send",
-      "turn.handoff",
-    ]);
-    // Aceite parcial do envio (política defensiva, sem autorizar troca de permissões) não cobre a passagem.
-    expect(
-      motivoDeRecusaDoTurno({
-        declaradas: manifest.permissions,
-        aceitas: ["turn.send"],
-        fluxo,
-      }),
-    ).toBe("aceite_desatualizado");
-    // Com o aceite explícito dos dois, age.
-    expect(
-      motivoDeRecusaDoTurno({
-        declaradas: manifest.permissions,
-        aceitas: ["turn.send", "turn.handoff"],
-        fluxo,
-      }),
-    ).toBeNull();
+  it("sem aceite não age; envio/passagem não concedem leitura por consequência", () => {
+    expect(motivoDeRecusaDoTurno({ declaradas: manifest.permissions, aceitas: [], fluxo })).toBe("sem_aceite");
+    const entrada = { declaradas: manifest.permissions, aceitas: ["turn.send", "turn.handoff"] as const, fluxo };
+    expect(motivoDeRecusaDoTurno(entrada)).toBeNull();
+    expect(aceitePendente(entrada)).toEqual([]);
+    expect(() => parseManifest(new TextEncoder().encode(JSON.stringify({ ...manifest,
+      permissions: ["turn.send", "turn.handoff"],
+    })))).toThrow();
+  });
+
+  it("o contrato linear da fonte continua legível, arquivado sem mudar seus bytes", () => {
+    const antigo = parseManifest(new Uint8Array(readFileSync(join(process.cwd(), "tests/fixtures/extensoes/laudo-linear-fonte3474.json"))));
+    expect(antigo.permissions).toEqual(["turn.send", "turn.handoff"]);
+    expect(antigo.name).not.toBe(manifest.name);
+    expect(antigo.contributions.turn_flow!.perguntas).toHaveLength(4);
   });
 });
 
-describe("a jornada completa, nos três idiomas do pacote", () => {
-  it("português: quatro perguntas e a passagem com os quatro campos", () => {
-    const { enviadas, ultimo } = jornada("Preciso do meu laudo", [
-      "Hemograma completo",
-      "Maria Silva",
-      "12/10/2026",
-      "Dra. Helena",
-    ]);
-    expect(enviadas).toEqual([
-      "Qual é o tipo de exame?",
-      "Qual é o nome do paciente?",
-      "Qual é a data do exame?",
-      "Quem é o médico solicitante?",
-      "Obrigado! Vou passar seu pedido para a nossa equipe conferir.",
-    ]);
-    expect(ultimo.acao).toBe("passar");
-    if (ultimo.acao !== "passar") return;
-    expect(ultimo.campos).toEqual({
-      exame: "Hemograma completo",
-      paciente: "Maria Silva",
-      data: "12/10/2026",
-      medico: "Dra. Helena",
-    });
-    expect(ultimo.porque).toBe("coletou");
+describe("ramos do laudo: patologia entrega; biópsia e radiologia coletam só pendências", () => {
+  it("patologia passa imediatamente, sem perguntar nome, data ou médico", () => {
+    expect(decidir("Is my blood report ready?")).toMatchObject({ acao: "passar", campos: { categoria: "patologia" } });
   });
 
-  it("inglês: o gatilho e as perguntas saem no idioma do cliente", () => {
-    const { enviadas, ultimo } = jornada("Where is my report?", [
-      "Blood test",
-      "John Carter",
-      "2026-10-12",
-      "Dr. Hayes",
-    ]);
-    expect(enviadas).toEqual([
-      "Which exam is it?",
-      "What is the patient's name?",
-      "What is the exam date?",
-      "Who is the requesting doctor?",
-      "Thank you! I will pass this to our team to check.",
-    ]);
-    expect(ultimo.acao).toBe("passar");
+  it("biópsia coleta nome, data de cirurgia e médico, uma pergunta por vez", () => {
+    const { bolhas, ultimo } = jornada(["Where is my biopsy report?", "Pessoa Sintética", "12/10/2026", "Dr. Sen"]);
+    expect(bolhas.slice(0, 3)).toEqual(["Patient name, as on the registration?", "Date of surgery?", "Doctor's name or hospital name?"]);
+    expect(ultimo).toMatchObject({ acao: "passar", campos: {
+      categoria: "biopsia", nome: "Pessoa Sintética", "data-cirurgia": "12/10/2026", medico: "Dr. Sen",
+    } });
+    if (ultimo.acao !== "passar") throw new Error("passagem esperada");
+    expect(ultimo.campos).not.toHaveProperty("data-exame");
+    expect(ultimo.campos).not.toHaveProperty("exame");
   });
 
-  it("híndi: o mesmo fluxo, com o texto Devanagari do consumidor", () => {
-    const { enviadas } = jornada("मेरा रिपोर्ट कहाँ है", [
-      "रक्त परीक्षण",
-      "अनीता शर्मा",
-      "12/10/2026",
-      "डॉ. वर्मा",
-    ]);
-    expect(enviadas).toEqual([
-      "कौन सा परीक्षण है?",
-      "मरीज़ का नाम क्या है?",
-      "परीक्षण की तारीख क्या है?",
-      "डॉक्टर का नाम क्या है?",
-      "धन्यवाद! मैं इसे हमारी टीम को भेज रहा हूँ।",
-    ]);
+  it("data e médico informados na entrada não são perguntados outra vez", () => {
+    const { bolhas, ultimo } = jornada(["Is my biopsy report ready? 12/10/2026 Dr. Sen", "Pessoa Sintética"]);
+    expect(bolhas).toHaveLength(2); // nome + aviso da passagem; sem repetir data ou médico.
+    expect(ultimo).toMatchObject({ acao: "passar", campos: {
+      categoria: "biopsia", nome: "Pessoa Sintética", "data-cirurgia": "12/10/2026", medico: "Dr. Sen",
+    } });
+  });
+
+  it("radiologia reaproveita os dados explícitos juntos e não pede médico", () => {
+    const { bolhas, ultimo } = jornada(["Where is my radiology report?", "Pessoa Sintética, 12/10/2026, test: ECG"]);
+    expect(bolhas).toHaveLength(2);
+    expect(ultimo).toMatchObject({ acao: "passar", campos: {
+      categoria: "radiologia", nome: "Pessoa Sintética", "data-exame": "12/10/2026", exame: "ECG",
+    } });
+    if (ultimo.acao !== "passar") throw new Error("passagem esperada");
+    expect(ultimo.campos).not.toHaveProperty("medico");
+    expect(ultimo.campos).not.toHaveProperty("data-cirurgia");
+  });
+
+  it("sem categoria confiável pergunta a opção e a escolha 1 passa sem coleta pessoal", () => {
+    const { bolhas, ultimo } = jornada(["Where is my report?", "1"]);
+    expect(bolhas).toHaveLength(2);
+    expect(ultimo).toMatchObject({ acao: "passar", campos: { categoria: "patologia" } });
   });
 });
 
-describe("a jornada tem saída: a conversa volta para a IA", () => {
-  it("mensagem fora do fluxo devolve o turno em vez de prender a coleta", () => {
-    const abertura = decidirDoFluxo(fluxo, IDENTIDADE_DO_PACOTE, null, {
-      texto: "Preciso do meu laudo",
-      agora: "2026-10-26T12:00:00Z",
-    });
-    expect(abertura.acao).toBe("perguntar");
-    if (abertura.acao !== "perguntar") return;
-    const fora = decidirDoFluxo(fluxo, IDENTIDADE_DO_PACOTE, abertura.estado, {
-      texto: "quanto custa o exame?",
-      agora: "2026-10-26T12:05:00Z",
-    });
-    expect(fora).toMatchObject({ acao: "devolver", porque: "fora_do_fluxo" });
+describe("idiomas, intenção e saídas sem prender a conversa", () => {
+  it.each([
+    ["Meu laudo está pronto?", "De qual serviço é o laudo?"],
+    ["¿Mi informe está listo?", "¿De qué servicio es el informe?"],
+    ["मेरा रिपोर्ट कहाँ है", "यह रिपोर्ट किस सेवा की है?"],
+    ["mera report kab milegi", "Yeh report kis service ki hai?"],
+  ])("%s usa o idioma declarado", (texto, inicio) => {
+    const d = decidir(texto);
+    expect(d.acao).toBe("perguntar");
+    if (d.acao === "perguntar") expect(d.texto.startsWith(inicio)).toBe(true);
   });
 
-  it("o teto de turnos sem progresso também devolve, em vez de insistir para sempre", () => {
-    const abertura = decidirDoFluxo(fluxo, IDENTIDADE_DO_PACOTE, null, {
-      texto: "Preciso do meu laudo",
-      agora: "2026-10-26T12:00:00Z",
-    });
-    if (abertura.acao !== "perguntar") throw new Error("o gatilho deveria abrir a coleta");
-    let estado = abertura.estado;
-    let desfecho: ReturnType<typeof decidirDoFluxo> | null = null;
-    // `sem_progresso > teto` encerra: com teto 3, a QUARTA mídia sem texto encerra. O desfecho do
-    // pacote é `passar_para_humano`, então o teto entrega a conversa a uma pessoa (com os campos
-    // que houver) em vez de insistir — a saída do fluxo é uma pessoa, não o silêncio.
-    for (let i = 0; i <= (fluxo.teto_de_turnos_sem_progresso ?? 3); i += 1) {
-      desfecho = decidirDoFluxo(fluxo, IDENTIDADE_DO_PACOTE, estado, {
-        texto: "",
-        agora: "2026-10-26T12:10:00Z",
-      });
-      if (desfecho.acao === "perguntar") estado = desfecho.estado;
+  it("menção sem pedido de status, pergunta de preço e texto português com report seguem para IA", () => {
+    for (const texto of ["Please share my report", "What is the price?", "qual o status do meu report?"]) {
+      expect(decidir(texto)).toMatchObject({ acao: "devolver" });
     }
-    expect(desfecho).toMatchObject({ acao: "passar", porque: "teto" });
+    const aberta = decidir("Where is my biopsy report?");
+    if (aberta.acao !== "perguntar") throw new Error("coleta esperada");
+    expect(decidir("What is the price?", aberta.estado)).toEqual({ acao: "devolver", porque: "fora_do_fluxo" });
+  });
+
+  it("três mensagens sem progresso levam à equipe e mídia posterior volta à IA", () => {
+    const { ultimo } = jornada(["Where is my biopsy report?", null, null, null]);
+    expect(ultimo).toMatchObject({ acao: "passar", porque: "teto", campos: { categoria: "biopsia" } });
+    expect(decidir(null)).toEqual({ acao: "devolver", porque: "mensagem_vazia" });
   });
 });

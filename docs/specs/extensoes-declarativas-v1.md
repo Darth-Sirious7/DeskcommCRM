@@ -31,7 +31,7 @@ type ExtensionManifest = {
   name: string; // slug ASCII minúsculo, 2–64 caracteres
   version: string; // SemVer estável x.y.z, inteiros sem zeros à esquerda
   license: "MIT";
-  host_api: { min: number; max: number }; // inteiros positivos; host atual = 1
+  host_api: { min: number; max: number }; // inteiros positivos; versão atual: HOST_API_VERSION em lib/extensions/manifest.ts
   permissions: ExtensionPermission[]; // lista fechada, não vazia, sem repetição — ADR-0003
   dependencies: [];
   data: { mode: "none" };
@@ -76,7 +76,7 @@ Uma função compartilhada verifica compatibilidade na instalação, ativação,
 
 ### Gancho antes da IA (host API 2, #3076)
 
-`contributions.turn_flow` declara gatilhos por idioma, perguntas por campo e desfecho
+`contributions.turn_flow` declara gatilhos por idioma (com coocorrência literal opcional de intenção), perguntas por campo e desfecho
 (`assumir`, que conclui a coleta, ou `passar_para_humano`). O contrato executável é
 `lib/extensions/fluxo-do-turno.ts`; a lista fechada de capacidades está em
 `lib/extensions/capacidades.ts`. O host exige `turn.send` e, para passagem, também
@@ -102,10 +102,34 @@ revisão também é invalidado. Leituras normais não aumentam revisões. Deslig
 extensão recolhe estado no próximo turno; reativar sem mensagem no intervalo também
 não retoma a coleta, pois a revisão do vínculo mudou.
 
-O pacote de laudo herdado do #3474 demonstra este contrato linear, mas ainda **não
-equivale ao #3063**: faltam a passagem imediata de patologia, os ramos de coleta e o
-reaproveitamento de dados já presentes. A adaptação do consumidor segue os docs de
-decisão 139/167 (opção A); este host não prova essa jornada nem encerra o #3063.
+O enriquecimento é fechado e limitado à mesma lista de perguntas: `opcoes` tem valores e
+sinônimos literais; `quando` só referencia uma opção declarada antes; `encerrar_quando`
+leva direto ao desfecho; `extrair` aceita apenas data e marcador literal da mensagem
+atual. Não há grafo, expressão, regex do pacote, JavaScript nem executor de terceiro.
+Uma opção ambígua não é inferida; campo livre do histórico não é herdado.
+
+`contexto` exige a declaração de `turn.context`. A leitura é opcional e tem botão próprio
+na gestão: autorizar envio/passagem não a concede. Sem aceite de leitura a coleta ainda
+funciona, apenas com a mensagem atual e seu estado. Com aceite, o host resolve somente
+uma opção a partir de OUTBOUND já selecionado por `getLeadContext`, com os ids da linha
+provando a mesma organização e conversa. A proveniência não enumerável fica fora do
+prompt/orçamento; se ausente, inclusive após uma transformação que a descarte, o item
+não é usado. Nenhuma nova consulta de histórico, outro contexto do CRM ou dado pessoal
+livre é entregue ao pacote; o log também não recebe o texto.
+
+O consumidor `consulta-de-laudos` preserva a decisão 139/167 (A): patologia passa
+imediatamente para checagem humana; biópsia coleta nome/data de cirurgia/médico;
+radiologia coleta nome/data do exame/tipo. Pergunta apenas pendências e reaproveita
+valores explícitos da mensagem atual. Os textos e categorias pertencem ao JSON, sem
+regra clínica no host. Inglês, híndi e hinglish em escrita latina mantêm a jornada do
+#3063, com português e espanhol. O estado tem saída por outra intenção ou teto de
+mensagens sem progresso; foto/áudio posterior ao encerramento não deixa a IA muda.
+
+A identidade nova é obrigatória pela 6-bis, pois pede outra permissão. Os bytes do
+exemplo linear da fonte #3474 ficaram preservados na fixture
+`tests/fixtures/extensoes/laudo-linear-fonte3474.json`; ele nunca integrou a main e não
+é anunciado como equivalente ao #3063. A adaptação é medida em unidade; banco real e
+jornada fresca em tela ainda são pendentes e o #3063 não é encerrado por este estado.
 
 ### Troca de artefato
 

@@ -35,6 +35,7 @@ const NOME_DA_PORTA: Record<ExtensionPermission, string> = {
   // `lib/extensions/consentimento.ts`.
   "turn.send": "Responde ao cliente no seu lugar",
   "turn.handoff": "Passa a conversa para uma pessoa",
+  "turn.context": "Usa o contexto já selecionado desta conversa",
 };
 
 export function nomeDaPorta(permissao: ExtensionPermission): string {
@@ -59,6 +60,7 @@ export function portasLegiveis(
   // `dados.proprios` sai da lista de "abre": ele não é uma tela, é armazenamento. Misturá-lo na
   // mesma oração faria a tela prometer uma coisa e o módulo fazer outra.
   const guardaDados = permissoes.includes("dados.proprios");
+  const usaContexto = permissoes.includes("turn.context");
   // O mesmo vale para as concessões de TURNO (#3076): elas não abrem tela, agem na CONVERSA. Uma
   // frase começando por "Abre" para quem responde ao cliente seria a tela mentindo sobre o que a
   // pessoa está autorizando — e é essa leitura que decide o aceite.
@@ -73,7 +75,9 @@ export function portasLegiveis(
     const lista =
       nomes.length === 1 ? nomes[0]! : `${nomes.slice(0, -1).join(", ")} ${t("e")} ${nomes.at(-1)!}`;
     partes.push(
-      guardaDados
+      usaContexto
+        ? t("Abre {portas}.").replace("{portas}", lista)
+        : guardaDados
         ? t("Abre {portas} e guarda fichas próprias nesta instalação; não lê seus dados.").replace(
             "{portas}",
             lista,
@@ -85,7 +89,7 @@ export function portasLegiveis(
   } else if (ageNaConversa.length === 0) {
     partes.push(t("Não abre nenhuma tela e não lê seus dados."));
   }
-  if (ageNaConversa.length > 0) {
+  if (ageNaConversa.some((p) => p !== "turn.context")) {
     const responde = ageNaConversa.includes("turn.send");
     const passa = ageNaConversa.includes("turn.handoff");
     partes.push(
@@ -96,6 +100,7 @@ export function portasLegiveis(
           : t("Passa a conversa para uma pessoa, com aceite próprio."),
     );
   }
+  if (usaContexto) partes.push(t("Usa somente o contexto já selecionado desta conversa, com aceite separado e opcional."));
   return partes.join(" ");
 }
 

@@ -55,8 +55,8 @@ export interface InstalledExtensionView {
   /**
    * As permissões de efeito que a versão vigente exige e o aceite ainda não cobre.
    *
-   * Não vazio = a extensão não age, mesmo ativa e compatível. É a prova de ATUALIZAÇÃO visível na
-   * tela: uma versão nova que passa a pedir `turn.handoff` aparece aqui até o aceite novo.
+   * Não vazio = a extensão não age, mesmo ativa e compatível. Leitura opcional de contexto é
+   * oferecida separadamente; atualizar com outro conjunto de permissões segue recusado (6-bis).
    */
   pending_permissions: ExtensionPermission[];
   enabled: boolean;

@@ -1063,13 +1063,13 @@ export function ExtensionsManager({
                         const { message } = await configure(alvo, enabled, configuration);
                         setConfigFeedback((atual) => ({ ...atual, [alvo.id]: message }));
                       }}
-                      onAccept={async (alvo) => {
+                      onAccept={async (alvo, permissions = alvo.pending_permissions) => {
                         setConfigFeedback(({ [alvo.id]: _, ...resto }) => resto);
                         // O conjunto INTEIRO — o que já valia mais o que falta. O pedido substitui
                         // o aceite anterior; mandar só a pendência apagaria a concessão antiga.
                         const { message } = await configure(alvo, alvo.enabled, alvo.configuration, [
                           ...alvo.accepted_permissions,
-                          ...alvo.pending_permissions,
+                          ...permissions,
                         ]);
                         setConfigFeedback((atual) => ({ ...atual, [alvo.id]: message }));
                       }}

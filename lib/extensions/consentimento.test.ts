@@ -51,7 +51,7 @@ const TODAS = [...PERMISSOES_DE_TURNO];
 
 describe("capacidades nomeadas do turno", () => {
   it("envio e handoff existem como capacidade E como permissão — as duas nomeadas", () => {
-    expect(CAPACIDADES_DE_EFEITO).toEqual(["turn.respond", "turn.handoff"]);
+    expect(CAPACIDADES_DE_EFEITO).toEqual(["turn.respond", "turn.handoff", "turn.context"]);
     // A capacidade não é o nome da permissão: o mapa é a única tradução, como em `tasks.open`.
     expect(EFEITO_DA_CAPACIDADE["turn.respond"]).toEqual({
       efeito: "envio",

@@ -622,3 +622,62 @@ describe("o estado acompanha a instalação e a decisão da organização", () =
     expect(atividades[0]?.motivo).toBe("extensao_nao_dirige_mais");
   });
 });
+
+
+describe("contexto opcional: concessão e proveniência antes da leitura", () => {
+  const fluxo = fluxoDeLaudo({
+    perguntas: [{ campo: "categoria", texto: { "pt-BR": "Qual categoria?" }, opcoes: [
+      { valor: "alfa", termos: ["alfa"] }, { valor: "beta", termos: ["beta"] },
+    ] }],
+    contexto: { campo: "categoria", marcadores: ["registro concluído"], padrao: "alfa" },
+    encerrar_quando: { campo: "categoria", valores: ["alfa"] },
+  });
+  const leitura = "turn.context" as ExtensionPermission;
+  const completa = { ...EXTENSAO, fluxo, permissoes: [...AMBAS, leitura], aceitas: [...AMBAS, leitura] };
+  const mensagem = { proveniencia: { organization_id: ORG, conversation_id: CONVERSA },
+    direction: "outbound" as const, body: "Registro concluído da categoria alfa" };
+
+  it("sem aceitar leitura, ainda atende, mas nunca chama a porta de contexto", async () => {
+    const { pool } = bancoDeMentira({ extensoes: [{ ...completa, aceitas: AMBAS }] });
+    const contextoSelecionado = vi.fn(() => [mensagem]);
+    const { deps, enviadas, passagens } = dependencias(pool as never, { contextoSelecionado });
+    expect((await prepararGanchoDoTurno(deps, turno("Preciso do meu laudo"))).tipo).toBe("assumido");
+    expect(contextoSelecionado).not.toHaveBeenCalled();
+    expect(enviadas).toEqual(["Qual categoria?"]);
+    expect(passagens).toEqual([]);
+  });
+
+  it("com aceite próprio, o host resolve só a opção do OUTBOUND da mesma conversa e organização", async () => {
+    const { pool } = bancoDeMentira({ extensoes: [completa] });
+    const contextoSelecionado = vi.fn(() => [mensagem]);
+    const { deps, enviadas, passagens } = dependencias(pool as never, { contextoSelecionado });
+    expect((await prepararGanchoDoTurno(deps, turno("Preciso do meu laudo"))).tipo).toBe("passado");
+    expect(contextoSelecionado).toHaveBeenCalledTimes(1);
+    expect(enviadas).toEqual([]);
+    expect(passagens[0]?.campos).toEqual({ categoria: "alfa" });
+  });
+
+  it.each([
+    { ...mensagem, proveniencia: { ...mensagem.proveniencia, organization_id: "outra-organizacao" } },
+    { ...mensagem, proveniencia: { ...mensagem.proveniencia, conversation_id: "outra-conversa" } },
+    { ...mensagem, direction: "inbound" },
+    { direction: "outbound", body: mensagem.body },
+  ])("item sem proveniência elegível não semeia campo: %j", async (item) => {
+    const { pool } = bancoDeMentira({ extensoes: [completa] });
+    const { deps, enviadas, passagens } = dependencias(pool as never, { contextoSelecionado: () => [item] });
+    expect((await prepararGanchoDoTurno(deps, turno("Preciso do meu laudo"))).tipo).toBe("assumido");
+    expect(enviadas).toEqual(["Qual categoria?"]);
+    expect(passagens).toEqual([]);
+  });
+  it("transformação que perde a propriedade não cria proveniência a partir de parâmetros", async () => {
+    const original = { direction: "outbound", body: mensagem.body };
+    Object.defineProperty(original, "proveniencia", { value: mensagem.proveniencia, enumerable: false });
+    const transformada = { ...original };
+    const { pool } = bancoDeMentira({ extensoes: [completa] });
+    const { deps, enviadas, passagens } = dependencias(pool as never, { contextoSelecionado: () => [transformada] });
+    expect((await prepararGanchoDoTurno(deps, turno("Preciso do meu laudo"))).tipo).toBe("assumido");
+    expect(enviadas).toEqual(["Qual categoria?"]);
+    expect(passagens).toEqual([]);
+  });
+
+});

@@ -24,17 +24,13 @@
  * ─── Por que \"cobre\", e não \"é igual\" ───────────────────────────────────
  *
  * A comparação é de SUBCONJUNTO: o que o fluxo precisa tem de estar no que a organização aceitou.
- * Duas consequências, as duas medidas por teste (exigência 3 da issue):
+ * A cobertura recusa concessão parcial, mas não muda a doutrina 6-bis: atualizar ou
+ * desfazer com outro conjunto de permissões segue recusado pela RPC real. Quem
+ * precisa de outro conjunto publica outra identidade.
  *
- *   - **permissão nova ⇒ aceite novo.** Uma versão que passa a passar a conversa para humano
- *     precisa de `turn.handoff`; o aceite antigo (`turn.send`) não cobre, e a extensão para de
- *     agir até alguém aceitar de novo. É a diferença entre `aceite_desatualizado` e `sem_aceite`.
- *   - **permissão removida não quebra nada.** O aceite guarda o que a pessoa viu na hora; se o
- *     manifesto deixa de pedir uma permissão, o que sobrou continua coberto. Exigir igualdade
- *     faria uma versão mais modesta derrubar o aceite e parar a conversa sem ninguém entender.
- *
- * A cobertura é por NOME, e não por um hash do conjunto: hash transformaria \"sobrou coberto\" em
- * \"mudou\", e o efeito seria exatamente o que a exigência 3 proíbe do lado da remoção.
+ * `turn.context` é leitura opcional, com aceite próprio. Precisa estar declarada
+ * quando o fluxo pede contexto; não aceitá-la não impede a coleta pela mensagem
+ * atual. O host jamais a deduz do aceite de envio/passagem.
  *
  * Módulo puro: não fala com banco, canal nem relógio. É importado pelo servidor e pelo navegador.
  */
@@ -46,14 +42,15 @@ import {
 import type { FluxoDoTurno } from "./fluxo-do-turno";
 
 /**
- * As permissões que NÃO se cobrem com a ativação genérica. Hoje são as duas do turno: são as
- * únicas que agem sobre o cliente em nome da organização. Uma permissão nova que também aja
+ * As permissões que NÃO se cobrem com a ativação genérica: envio, passagem e
+ * leitura opcional do contexto já selecionado da conversa. Uma permissão nova que também aja
  * (mandar template, mover dinheiro) entra AQUI, e o teste da lista impede que ela entre só no
  * vocabulário e passe despercebida.
  */
 export const PERMISSOES_QUE_EXIGEM_ACEITE = [
   "turn.send",
   "turn.handoff",
+  "turn.context",
 ] as const satisfies readonly ExtensionPermission[];
 export type PermissaoQueExigeAceite = (typeof PERMISSOES_QUE_EXIGEM_ACEITE)[number];
 
@@ -70,23 +67,22 @@ export function exigeAceite(permissao: ExtensionPermission): boolean {
 }
 
 /**
- * As capacidades que um fluxo usa, DERIVADAS do desfecho — o pacote não as declara.
+ * As capacidades derivadas do desfecho e da declaração opcional de contexto.
  *
  * Declarar seria pedir que o pacote fosse honesto duas vezes sobre a mesma coisa: um fluxo que
  * responde ao cliente e diz que não usa `turn.respond` ficaria com a permissão mais estreita e
  * agiria com a mais larga. Derivando do vocabulário, a única fonte é o desfecho.
  */
 export function capacidadesDoFluxo(
-  fluxo: Pick<FluxoDoTurno, "desfecho">,
+  fluxo: Pick<FluxoDoTurno, "desfecho" | "contexto">,
 ): readonly CapacidadeDeEfeito[] {
-  return fluxo.desfecho.tipo === "passar_para_humano"
-    ? ["turn.respond", "turn.handoff"]
-    : ["turn.respond"];
+  return ["turn.respond", ...(fluxo.desfecho.tipo === "passar_para_humano" ? ["turn.handoff" as const] : []),
+    ...(fluxo.contexto === undefined ? [] : ["turn.context" as const])];
 }
 
 /** As permissões nomeadas que o fluxo exige — o mapa do host é a única tradução. */
 export function permissoesDoFluxo(
-  fluxo: Pick<FluxoDoTurno, "desfecho">,
+  fluxo: Pick<FluxoDoTurno, "desfecho" | "contexto">,
 ): readonly PermissaoDeTurno[] {
   return capacidadesDoFluxo(fluxo).map(
     (capacidade) => EFEITO_DA_CAPACIDADE[capacidade].permissao as PermissaoDeTurno,
@@ -105,7 +101,7 @@ export type MotivoDeRecusaDoTurno =
   | "sem_permissao_declarada"
   /** A organização nunca aceitou nenhuma permissão de turno deste pacote. */
   | "sem_aceite"
-  /** O aceite existe, mas é de um conjunto anterior — a versão passou a pedir permissão nova. */
+  /** O aceite existe, mas não cobre os efeitos necessários do fluxo. */
   | "aceite_desatualizado";
 
 export interface EntradaDoAceite {
@@ -113,13 +109,14 @@ export interface EntradaDoAceite {
   declaradas: readonly ExtensionPermission[];
   /** `organization_extensions.accepted_permissions` — o que o dono da organização aceitou. */
   aceitas: readonly ExtensionPermission[];
-  fluxo: Pick<FluxoDoTurno, "desfecho">;
+  fluxo: Pick<FluxoDoTurno, "desfecho" | "contexto">;
 }
 
 export function motivoDeRecusaDoTurno(entrada: EntradaDoAceite): MotivoDeRecusaDoTurno | null {
-  const necessarias = permissoesDoFluxo(entrada.fluxo);
+  const declaracaoExigida = permissoesDoFluxo(entrada.fluxo);
+  const necessarias = declaracaoExigida.filter((p) => p !== "turn.context");
   const declaradas = new Set(entrada.declaradas);
-  if (necessarias.some((permissao) => !declaradas.has(permissao))) {
+  if (declaracaoExigida.some((permissao) => !declaradas.has(permissao))) {
     return "sem_permissao_declarada";
   }
   if (entrada.aceitas.length === 0) return "sem_aceite";
@@ -155,11 +152,12 @@ export function permissoesAceitaveis(
 /**
  * O que um aceite novo precisa somar ao anterior para cobrir o que a versão vigente usa.
  *
- * Vazio = nada pendente. É o número que a tela mostra como \"novo aceite necessário\" — e o que
- * separa a exigência 2 (primeiro aceite) da exigência 3 (o aceite mudou junto com a versão).
+ * Lista só o que falta para conduzir a coleta. A leitura opcional é oferecida
+ * separadamente na tela, sem concedê-la junto com os efeitos necessários.
  */
 export function aceitePendente(entrada: EntradaDoAceite): readonly PermissaoDeTurno[] {
-  const necessarias = permissoesDoFluxo(entrada.fluxo);
+  // Leitura é opcional e tem aceite próprio; não impede a coleta só com a mensagem atual.
+  const necessarias = permissoesDoFluxo(entrada.fluxo).filter((p) => p !== "turn.context");
   const aceitas = new Set(entrada.aceitas);
   return necessarias.filter((permissao) => !aceitas.has(permissao));
 }

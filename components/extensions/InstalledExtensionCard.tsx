@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import type { ExtensionPermission } from "@/lib/extensions/capacidades";
 
 import {
   AlertDialog,
@@ -83,7 +84,7 @@ export function InstalledExtensionCard({
    * é outro consentimento: salvar densidade não é conceder envio; e a tela precisa de um botão
    * que diga "Autorizar", não um "Salvar" que carregue a concessão de carona.
    */
-  onAccept: (extension: InstalledExtensionView) => Promise<void>;
+  onAccept: (extension: InstalledExtensionView, permissions?: readonly ExtensionPermission[]) => Promise<void>;
   /** Quem administra a instalação: vê o bloco "Em todas as organizações". */
   canInstall?: boolean;
   /** Qual ação de plataforma está em curso, para o indicador ficar no botão certo. */
@@ -216,6 +217,17 @@ export function InstalledExtensionCard({
         orações na terceira pessoa ("Passa a conversa para uma pessoa"): encaixá-las depois de
         "quer" produzia "quer passa a conversa" no texto que decide o aceite.
       */}
+      {extension.permissions.includes("turn.context") && !extension.accepted_permissions.includes("turn.context") ? (
+        <div className="mt-4 rounded-md border p-3 text-sm">
+          <p className="font-medium">{t("Contexto opcional desta conversa")}</p>
+          <p className="mt-1 text-muted-foreground">{t("Sem esta autorização, a coleta usa apenas as respostas atuais do cliente.")}</p>
+          {canManage ? <Button variant="outline" size="sm" className="mt-3"
+            disabled={busy || actionsDisabled}
+            onClick={() => void onAccept(extension, ["turn.context"])}>
+            {t("Autorizar contexto desta conversa")}
+          </Button> : null}
+        </div>
+      ) : null}
       {extension.pending_permissions.length > 0 ? (
         <div
           className="mt-4 rounded-md border border-warning/40 bg-warning-bg p-3 text-sm"
@@ -235,7 +247,7 @@ export function InstalledExtensionCard({
               className="mt-3"
               data-testid={`extension-accept-permissions-${extension.id}`}
               disabled={busy || actionsDisabled}
-              onClick={() => void onAccept(extension)}
+              onClick={() => void onAccept(extension, extension.pending_permissions)}
             >
               {t("Autorizar")}
             </Button>

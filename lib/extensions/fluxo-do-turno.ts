@@ -56,7 +56,7 @@ import { z } from "zod";
  * sabe detectar (`idiomaDaMensagem` abaixo): incluir um idioma aqui sem detector
  * faria o fluxo nunca disparar naquele idioma, o que é pior que recusar o pacote.
  */
-export const IDIOMAS_DO_TURNO = ["pt-BR", "es", "en", "hi"] as const;
+export const IDIOMAS_DO_TURNO = ["pt-BR", "es", "en", "hi", "hi-Latn"] as const;
 export type IdiomaDoTurno = (typeof IDIOMAS_DO_TURNO)[number];
 
 /** O idioma do recuo: todo texto do fluxo tem `pt-BR`, e a instalação fala pt-BR. */
@@ -84,17 +84,30 @@ export type TextoDoFluxo = {
   es?: string;
   en?: string;
   hi?: string;
+  "hi-Latn"?: string;
 };
+
+export interface CondicaoDeOpcao {
+  campo: string;
+  valores: string[];
+}
 
 export interface PerguntaDoFluxoDeclarado {
   /** O nome do campo que vai para a passagem (`camposColetados`). */
   campo: string;
   texto: TextoDoFluxo;
+  /** Escolha finita; termos são frases literais, nunca expressão ou código. */
+  opcoes?: Array<{ valor: string; termos: string[] }>;
+  /** Só compara com uma escolha declarada ANTES desta pergunta. */
+  quando?: CondicaoDeOpcao;
+  extrair?: { tipo: "data" } | { tipo: "marcador"; termos: string[]; incluir_marcador?: boolean };
 }
 
 export interface GatilhoDoFluxo {
   idioma: IdiomaDoTurno;
   texto: string;
+  /** Coocorrência literal que estreita a intenção sem expressão do pacote. */
+  com_um_de?: string[];
 }
 
 /**
@@ -118,6 +131,11 @@ export interface FluxoDoTurno {
   desfecho: DesfechoDoFluxo;
   /** Ausente = `LIMITES_DO_FLUXO.tetoDeTurnosSemProgresso`. */
   teto_de_turnos_sem_progresso?: number;
+  /** Uma escolha pode levar direto ao mesmo desfecho, sem coletar os outros campos. */
+  encerrar_quando?: CondicaoDeOpcao;
+  /** O host resolve somente uma opção; nunca entrega histórico bruto ao pacote. */
+  contexto?: { campo: string; marcadores: string[]; padrao: string };
+
 }
 
 const slugSchema = z
@@ -143,6 +161,7 @@ function textoDoFluxoSchema(maxCharacters: number) {
       es: texto.optional(),
       en: texto.optional(),
       hi: texto.optional(),
+      "hi-Latn": texto.optional(),
     })
     .strict();
 }
@@ -150,6 +169,9 @@ function textoDoFluxoSchema(maxCharacters: number) {
 function temTextoEm(texto: TextoDoFluxo, idioma: IdiomaDoTurno): boolean {
   return typeof texto[idioma] === "string" && texto[idioma]!.trim() !== "";
 }
+
+const termosLiteraisSchema = z.array(textoSchema(LIMITES_DO_FLUXO.gatilhoCharacters)).min(1).max(32);
+const condicaoDeOpcaoSchema = z.object({ campo: slugSchema, valores: z.array(slugSchema).min(1).max(8) }).strict();
 
 export const fluxoDoTurnoSchema = z
   .object({
@@ -169,6 +191,7 @@ export const fluxoDoTurnoSchema = z
         z
           .object({
             idioma: z.enum(IDIOMAS_DO_TURNO),
+            com_um_de: termosLiteraisSchema.optional(),
             texto: z
               .string()
               .refine((texto) => texto.trim().length > 0 && [...texto].length <= LIMITES_DO_FLUXO.gatilhoCharacters, {
@@ -185,6 +208,12 @@ export const fluxoDoTurnoSchema = z
           .object({
             campo: slugSchema,
             texto: textoDoFluxoSchema(LIMITES_DO_FLUXO.perguntaCharacters),
+            opcoes: z.array(z.object({ valor: slugSchema, termos: termosLiteraisSchema }).strict()).min(1).max(8).optional(),
+            quando: condicaoDeOpcaoSchema.optional(),
+            extrair: z.discriminatedUnion("tipo", [
+              z.object({ tipo: z.literal("data") }).strict(),
+              z.object({ tipo: z.literal("marcador"), termos: termosLiteraisSchema, incluir_marcador: z.boolean().optional() }).strict(),
+            ]).optional(),
           })
           .strict(),
       )
@@ -210,6 +239,8 @@ export const fluxoDoTurnoSchema = z
         })
         .strict(),
     ]),
+    encerrar_quando: condicaoDeOpcaoSchema.optional(),
+    contexto: z.object({ campo: slugSchema, marcadores: termosLiteraisSchema, padrao: slugSchema }).strict().optional(),
     teto_de_turnos_sem_progresso: z
       .number()
       .int()
@@ -239,6 +270,27 @@ export const fluxoDoTurnoSchema = z
           });
         }
       }
+    }
+    // Só uma comparação de escolha anterior: sem referências futuras, ciclo ou expressão.
+    const escolhas = new Map<string, Set<string>>();
+    const validarCondicao = (condicao: CondicaoDeOpcao | undefined) => {
+      if (condicao !== undefined && condicao.valores.some((valor) => !escolhas.get(condicao.campo)?.has(valor))) {
+        ctx.addIssue({ code: "custom", message: "condição exige opção anterior declarada" });
+      }
+    };
+    for (const pergunta of fluxo.perguntas) {
+      validarCondicao(pergunta.quando);
+      if (pergunta.opcoes !== undefined) {
+        const valores = new Set(pergunta.opcoes.map((opcao) => opcao.valor));
+        if (valores.size !== pergunta.opcoes.length || pergunta.extrair !== undefined) {
+          ctx.addIssue({ code: "custom", message: "escolha repetida ou com extrator incompatível" });
+        }
+        escolhas.set(pergunta.campo, valores);
+      }
+    }
+    validarCondicao(fluxo.encerrar_quando);
+    if (fluxo.contexto !== undefined && !escolhas.get(fluxo.contexto.campo)?.has(fluxo.contexto.padrao)) {
+      ctx.addIssue({ code: "custom", message: "contexto só resolve opção declarada" });
     }
     // Gatilho em idioma que o fluxo não cobre é gatilho que nunca pode disparar
     // (mensagem naquele idioma já vai para a IA). Recusar aqui evita um pacote
@@ -305,9 +357,10 @@ const PALAVRAS_DO_IDIOMA: Record<IdiomaDoTurno, readonly string[]> = {
     "can", "where", "when", "what", "report", "status", "need", "want", "results",
     "doctor", "appointment", "available", "open", "saturday", "still", "yet",
   ],
-  hi: [
+  hi: [],
+  "hi-Latn": [
     "mera", "hai", "kya", "kaise", "kab", "kahan", "dhanyavad", "namaste", "aap",
-    "mujhe", "chahiye", "taiyar", "report", "result", "doctor", "mil", "gaya",
+    "mujhe", "chahiye", "taiyar", "report", "result", "doctor", "mil", "gaya", "miltajulta",
   ],
 };
 
@@ -356,7 +409,8 @@ export function gatilhoQueCasou(
     const alvo = tokens(gatilho.texto);
     if (alvo.length === 0) continue;
     for (let i = 0; i + alvo.length <= palavras.length; i += 1) {
-      if (alvo.every((palavra, j) => palavras[i + j] === palavra)) return gatilho;
+      if (alvo.every((palavra, j) => palavras[i + j] === palavra) &&
+        (gatilho.com_um_de === undefined || gatilho.com_um_de.some((termo) => contemTermoLiteral(texto, termo)))) return gatilho;
     }
   }
   return null;
@@ -459,7 +513,7 @@ export function decidirDoFluxo(
   fluxo: FluxoDoTurno,
   extensao: string,
   estado: EstadoDoFluxo | null,
-  entrada: { texto: string | null; agora: string },
+  entrada: { texto: string | null; agora: string; camposIniciais?: Readonly<Record<string, string>> },
 ): ResultadoDoFluxo {
   const texto = entrada.texto === null ? "" : entrada.texto.trim();
   const idioma = idiomaDaMensagem(texto);
@@ -482,11 +536,18 @@ export function decidirDoFluxo(
       mensagens: [],
       iniciado_em: entrada.agora,
     };
+    // Contexto só pode semear a opção declarada; nenhum valor livre é herdado.
+    const contexto = fluxo.contexto;
+    const inicial = contexto === undefined ? undefined : entrada.camposIniciais?.[contexto.campo];
+    if (contexto !== undefined && inicial !== undefined && fluxo.perguntas.some((p) =>
+      p.campo === contexto.campo && p.opcoes?.some((o) => o.valor === inicial))) novo.campos[contexto.campo] = inicial;
+    preencherDeclarados(fluxo, novo, texto, false);
+    if (condicaoAtendida(fluxo.encerrar_quando, novo.campos)) return encerrar(fluxo, novo, "coletou");
+    novo.etapa = proximaPendente(fluxo, novo.campos);
+    if (novo.etapa < 0) return encerrar(fluxo, novo, "coletou");
     return {
-      acao: "perguntar",
-      estado: novo,
-      texto: textoNoIdioma(fluxo.perguntas[0]!.texto, idioma),
-      porque: "comecou",
+      acao: "perguntar", estado: novo,
+      texto: textoNoIdioma(fluxo.perguntas[novo.etapa]!.texto, idioma), porque: "comecou",
     };
   }
 
@@ -523,20 +584,111 @@ export function decidirDoFluxo(
     return { acao: "devolver", porque: "fora_do_fluxo" };
   }
 
+  // Mudar de opção no meio não transforma o nome de outro ramo num dado pessoal.
+  if (fluxo.perguntas.some((p) => {
+    const valor = opcaoNoTexto(p, texto);
+    return valor !== null && estado.campos[p.campo] !== undefined && estado.campos[p.campo] !== valor;
+  })) return { acao: "devolver", porque: "fora_do_fluxo" };
   const seguinte = clonar(estado);
-  const pergunta = fluxo.perguntas[seguinte.etapa]!;
-  seguinte.campos[pergunta.campo] = texto;
-  seguinte.sem_progresso = 0;
-  seguinte.etapa += 1;
-  if (seguinte.etapa >= fluxo.perguntas.length) {
-    return encerrar(fluxo, seguinte, "coletou");
+  const antes = Object.keys(seguinte.campos).length;
+  preencherDeclarados(fluxo, seguinte, texto, true);
+  if (condicaoAtendida(fluxo.encerrar_quando, seguinte.campos)) return encerrar(fluxo, seguinte, "coletou");
+  const pendente = proximaPendente(fluxo, seguinte.campos);
+  if (pendente < 0) return encerrar(fluxo, seguinte, "coletou");
+  if (Object.keys(seguinte.campos).length === antes) {
+    seguinte.sem_progresso += 1;
+    if (seguinte.sem_progresso > tetoDoFluxo(fluxo)) return encerrar(fluxo, seguinte, "teto");
+    return { acao: "perguntar", estado: seguinte,
+      texto: textoNoIdioma(fluxo.perguntas[pendente]!.texto, seguinte.idioma), porque: "repetiu" };
   }
+  seguinte.sem_progresso = 0;
+  seguinte.etapa = pendente;
   return {
     acao: "perguntar",
     estado: seguinte,
     texto: textoNoIdioma(fluxo.perguntas[seguinte.etapa]!.texto, seguinte.idioma),
     porque: "avancou",
   };
+}
+
+/** Compara uma frase literal, com limite de tokens e sem regex do pacote. */
+export function contemTermoLiteral(texto: string, termo: string): boolean {
+  const alvo = tokens(termo);
+  const palavras = tokens(texto);
+  if (alvo.length === 0) return false;
+  if (/^\d+$/.test(termo.trim())) return texto.trim() === termo.trim();
+  return palavras.some((_, i) => alvo.every((palavra, j) => palavras[i + j] === palavra));
+}
+
+function opcaoNoTexto(pergunta: PerguntaDoFluxoDeclarado, texto: string): string | null {
+  const opcoes = pergunta.opcoes?.filter((o) => o.termos.some((t) => contemTermoLiteral(texto, t))) ?? [];
+  return opcoes.length === 1 ? opcoes[0]!.valor : null;
+}
+
+function condicaoAtendida(condicao: CondicaoDeOpcao | undefined, campos: Readonly<Record<string, string>>): boolean {
+  return condicao !== undefined && condicao.valores.includes(campos[condicao.campo] ?? "");
+}
+
+function aplicavel(pergunta: PerguntaDoFluxoDeclarado, campos: Readonly<Record<string, string>>): boolean {
+  return pergunta.quando === undefined || condicaoAtendida(pergunta.quando, campos);
+}
+
+function proximaPendente(fluxo: FluxoDoTurno, campos: Readonly<Record<string, string>>): number {
+  return fluxo.perguntas.findIndex((p) => aplicavel(p, campos) && campos[p.campo] === undefined);
+}
+
+/** Extração determinística do #3063, só da mensagem atual; devolve o trecho, sem estimar data. */
+function datasDoTexto(texto: string): string[] {
+  const latim = texto.match(/\b\d{1,2}[/-]\d{1,2}([/-]\d{2,4})?\b|\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december)\b|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+\d{1,2}\b/gi);
+  const devanagari = texto.match(/(\d{1,2}\s*)?(जनवरी|फ़रवरी|फरवरी|मार्च|अप्रैल|मई|जून|जुलाई|अगस्त|सितंबर|अक्टूबर|नवंबर|दिसंबर)/g);
+  return [...(latim ?? []), ...(devanagari ?? [])];
+}
+
+function preencherDeclarados(fluxo: FluxoDoTurno, estado: EstadoDoFluxo, texto: string, responderPendente: boolean): void {
+  // Resolver opções primeiro permite aplicar somente os extratores do ramo escolhido.
+  for (const pergunta of fluxo.perguntas) {
+    if (!aplicavel(pergunta, estado.campos)) continue;
+    const opcao = opcaoNoTexto(pergunta, texto);
+    if (opcao !== null) estado.campos[pergunta.campo] = opcao;
+  }
+  if (condicaoAtendida(fluxo.encerrar_quando, estado.campos)) return;
+  let restante = texto;
+  const extratores = [...fluxo.perguntas].sort((a, b) => Number(b.extrair?.tipo === "data") - Number(a.extrair?.tipo === "data"));
+  for (const pergunta of extratores) {
+    if (!aplicavel(pergunta, estado.campos) || estado.campos[pergunta.campo] !== undefined) continue;
+    const extrator = pergunta.extrair;
+    let valor: string | null = null;
+    let consumido: string | null = null;
+    if (extrator?.tipo === "data") {
+      const datas = datasDoTexto(texto);
+      if (datas.length === 1) valor = consumido = datas[0]!;
+    } else if (extrator?.tipo === "marcador") {
+      for (const termo of extrator.termos) {
+        const inicio = restante.toLocaleLowerCase().indexOf(termo.toLocaleLowerCase());
+        if (inicio < 0 || (inicio > 0 && /[\p{L}\p{N}]/u.test(restante[inicio - 1]!))) continue;
+        let trecho = restante.slice(inicio).split(/[;,\n]/, 1)[0]!.trim();
+        for (const outra of extratores) {
+          if (outra === pergunta || !aplicavel(outra, estado.campos) || outra.extrair?.tipo !== "marcador") continue;
+          for (const marcador of outra.extrair.termos) {
+            const proximo = trecho.toLocaleLowerCase().indexOf(marcador.toLocaleLowerCase(), termo.length);
+            if (proximo > 0 && !/[\p{L}\p{N}]/u.test(trecho[proximo - 1]!)) trecho = trecho.slice(0, proximo).trim();
+          }
+        }
+        const candidato = (extrator.incluir_marcador ? trecho : trecho.slice(termo.length)).trim();
+        if (candidato !== "") { valor = candidato; consumido = trecho; break; }
+      }
+    }
+    if (valor !== null && [...valor].length <= LIMITES_DO_FLUXO.respostaCharacters) {
+      estado.campos[pergunta.campo] = valor;
+      if (consumido !== null) restante = restante.replace(consumido, " ");
+    }
+  }
+  const pergunta = fluxo.perguntas[estado.etapa];
+  if (responderPendente && pergunta !== undefined && pergunta.opcoes === undefined &&
+    pergunta.extrair?.tipo !== "data" && aplicavel(pergunta, estado.campos) && estado.campos[pergunta.campo] === undefined) {
+    const valor = restante.replace(/^[,;:\s]+|[,;:\s]+$/g, "").trim();
+    if (valor !== "") estado.campos[pergunta.campo] = valor;
+  }
 }
 
 /**

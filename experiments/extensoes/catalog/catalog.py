@@ -54,6 +54,7 @@ PERMISSOES = [
     # conhece para poder publicar o pacote de exemplo com `turn_flow`.
     "turn.send",
     "turn.handoff",
+    "turn.context",
 ]
 CAPACIDADES = [
     "tasks.open",
@@ -65,6 +66,7 @@ CAPACIDADES = [
     # Efeito, e não porta: mesmas duas naturezas do vocabulário do host (#3076).
     "turn.respond",
     "turn.handoff",
+    "turn.context",
 ]
 HOST_API_ATUAL = 2
 

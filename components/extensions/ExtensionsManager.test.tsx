@@ -1962,4 +1962,44 @@ describe("ExtensionsManager", () => {
     expect(bloco).toHaveTextContent("Peça a um administrador da organização para autorizar.");
     expect(screen.queryByTestId(`extension-accept-permissions-${INSTALLATION}`)).toBeNull();
   });
+  it("autorizar envio e passagem não concede leitura opcional de contexto junto", async () => {
+    const pendente = list(ORG_A, { installations: [installation({
+      enabled: true, revision: 3,
+      permissions: ["turn.send", "turn.handoff", "turn.context"],
+      accepted_permissions: [], pending_permissions: ["turn.send", "turn.handoff"],
+    })] });
+    let enviado: Record<string, unknown> | null = null;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(json({ data: pendente }))
+      .mockImplementationOnce((_input: RequestInfo | URL, init?: RequestInit) => {
+        enviado = JSON.parse(String(init?.body));
+        const id = new Headers(init?.headers).get("Idempotency-Key")!;
+        return Promise.resolve(json({ data: operation({ id, kind: "configure" }) }));
+      }).mockResolvedValue(json({ data: pendente })));
+    renderManager();
+    await userEvent.click(await screen.findByTestId(`extension-accept-permissions-${INSTALLATION}`));
+    await waitFor(() => expect(enviado).not.toBeNull());
+    expect(enviado).toMatchObject({ accept_permissions: ["turn.send", "turn.handoff"] });
+  });
+
+  it("leitura opcional tem botão próprio e só esse clique soma turn.context ao aceite", async () => {
+    const pendente = list(ORG_A, { installations: [installation({
+      enabled: true, revision: 3,
+      permissions: ["turn.send", "turn.handoff", "turn.context"],
+      accepted_permissions: ["turn.send", "turn.handoff"], pending_permissions: [],
+    })] });
+    let enviado: Record<string, unknown> | null = null;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(json({ data: pendente }))
+      .mockImplementationOnce((_input: RequestInfo | URL, init?: RequestInit) => {
+        enviado = JSON.parse(String(init?.body));
+        const id = new Headers(init?.headers).get("Idempotency-Key")!;
+        return Promise.resolve(json({ data: operation({ id, kind: "configure" }) }));
+      }).mockResolvedValue(json({ data: pendente })));
+    renderManager();
+    const botao = await screen.findByRole("button", { name: "Autorizar contexto desta conversa" });
+    expect(enviado).toBeNull();
+    await userEvent.click(botao);
+    await waitFor(() => expect(enviado).not.toBeNull());
+    expect(enviado).toMatchObject({ accept_permissions: ["turn.send", "turn.handoff", "turn.context"] });
+  });
+
 });

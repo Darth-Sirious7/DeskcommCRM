@@ -75,11 +75,13 @@ import {
   parseFluxoDoTurno,
   textoNoIdioma,
   idiomaDaMensagem,
+  contemTermoLiteral,
   type EstadoDoFluxo,
   type FluxoDoTurno,
 } from "@/lib/extensions/fluxo-do-turno";
 import {
   motivoDeRecusaDoTurno,
+  aceiteCobre,
   type MotivoDeRecusaDoTurno,
 } from "@/lib/extensions/consentimento";
 import type { ExtensionPermission } from "@/lib/extensions/capacidades";
@@ -129,11 +131,19 @@ export type DecisaoDoTurno =
   /** A conversa foi para um humano com os campos coletados — a IA não roda. */
   | { tipo: "passado"; fluxo: string; porque: "coletou" | "teto"; campos: Record<string, string> };
 
+export interface MensagemDoContextoSelecionado {
+  direction: string;
+  body: string;
+  proveniencia?: { organization_id: string; conversation_id: string };
+}
+
 export interface DepsDoGancho {
   pool: pg.Pool;
   log: Logger;
   /** As extensões ativas da organização, com permissões declaradas e aceites. */
   fluxos: () => Promise<readonly FluxoAtivoDaOrganizacao[]>;
+  /** Somente a cauda já carregada para o turno; sem query nem CRM adicional. */
+  contextoSelecionado?: () => readonly MensagemDoContextoSelecionado[];
   /** Manda UMA bolha pela cadeia do núcleo. `false` = a cadeia vetou. */
   enviar: (texto: string, fluxo: FluxoAtivoDaOrganizacao) => Promise<boolean>;
   /** A passagem (c3) com os campos coletados, idempotente pela mensagem. */
@@ -384,6 +394,7 @@ export async function prepararGanchoDoTurno(
   const resultado = decidirDoFluxo(alvo.fluxo, alvo.extensao, estado, {
     texto: t.texto,
     agora: t.agora.toISOString(),
+    ...(estado === null ? { camposIniciais: opcaoDoContexto(deps, t, alvo) } : {}),
   });
 
   if (resultado.acao === "devolver") {
@@ -499,6 +510,29 @@ export async function prepararGanchoDoTurno(
     await registrarAssuncao(deps, alvo);
   }
   return { tipo: "assumido", fluxo: alvo.fluxo.id, porque: resultado.porque };
+}
+
+/** O pacote declara uma regra literal; só o HOST lê e só devolve o valor da opção. */
+function opcaoDoContexto(deps: DepsDoGancho, t: TurnoDoGancho, alvo: FluxoAtivoDaOrganizacao): Record<string, string> {
+  const regra = alvo.fluxo.contexto;
+  if (regra === undefined || deps.contextoSelecionado === undefined ||
+    !aceiteCobre(["turn.context"], alvo.declaradas) || !aceiteCobre(["turn.context"], alvo.aceitas)) return {};
+  const pergunta = alvo.fluxo.perguntas.find((p) => p.campo === regra.campo);
+  try {
+    // getLeadContext já limitou esta cauda pelo orçamento do turno. Nenhum histórico é buscado.
+    for (const mensagem of [...deps.contextoSelecionado()].reverse()) {
+      if (mensagem.direction !== "outbound" || mensagem.proveniencia?.organization_id !== t.organizationId ||
+        mensagem.proveniencia.conversation_id !== t.conversationId ||
+        !regra.marcadores.some((m) => contemTermoLiteral(mensagem.body, m))) continue;
+      const opcoes = pergunta?.opcoes?.filter((o) => o.termos.some((termo) => contemTermoLiteral(mensagem.body, termo))) ?? [];
+      if (opcoes.length > 1) return {};
+      return { [regra.campo]: opcoes[0]?.valor ?? regra.padrao };
+    }
+  } catch {
+    // Contexto ausente/incompatível não interrompe a coleta e não expõe texto ao log.
+    deps.log.warn("gancho de extensão: contexto selecionado indisponível — só a mensagem atual");
+  }
+  return {};
 }
 
 /** A atividade de "assumir": a conversa passou a ser conduzida pela extensão. */

@@ -9092,6 +9092,12 @@ export const DICIONARIO: Traducoes = {
     es: "La extensión pide permisos que la organización todavía no aceptó.",
   },
   // O bloco de aceite do card (#3076): a tela nomeia a concessão pendente e o botão que a concede.
+  "Usa o contexto já selecionado desta conversa": { es: "Usa el contexto ya seleccionado de esta conversación" },
+  "Abre {portas}.": { es: "Abre {portas}." },
+  "Usa somente o contexto já selecionado desta conversa, com aceite separado e opcional.": { es: "Usa solo el contexto ya seleccionado de esta conversación, con consentimiento separado y opcional." },
+  "Contexto opcional desta conversa": { es: "Contexto opcional de esta conversación" },
+  "Sem esta autorização, a coleta usa apenas as respostas atuais do cliente.": { es: "Sin esta autorización, la recopilación usa solo las respuestas actuales del cliente." },
+  "Autorizar contexto desta conversa": { es: "Autorizar contexto de esta conversación" },
   "Falta o seu aceite": { es: "Falta tu consentimiento" },
   "O que ela pede:": { es: "Lo que pide:" },
   "Enquanto você não aceitar, ela não responde ao cliente.": {

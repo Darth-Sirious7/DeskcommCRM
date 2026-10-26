@@ -48,12 +48,14 @@ export const EXTENSION_PERMISSIONS = [
   // um pacote de dados não pede porta de navegação, e dar-lhe uma que ele não usa só para caber na
   // validação seria mentir para quem lê a tela (ADR-0005, D4).
   "dados.proprios",
-  // As duas concessões de TURNO (#3076). Não abrem tela: autorizam o host a responder ao contato
+  // As concessões de TURNO (#3076). Não abrem tela: autorizam o host a responder ao contato
   // e a passar a conversa para uma pessoa em nome da organização. São as primeiras permissões que
   // exigem ACEITE PRÓPRIO (`PERMISSOES_QUE_EXIGEM_ACEITE`) porque agem sobre o cliente, e não
   // sobre uma tela que quem clica já podia abrir.
   "turn.send",
   "turn.handoff",
+  // Só o contexto já selecionado, com proveniência e aceite próprio; nunca consulta adicional.
+  "turn.context",
 ] as const;
 export type ExtensionPermission = (typeof EXTENSION_PERMISSIONS)[number];
 
@@ -73,7 +75,7 @@ export type CapacidadeDePorta = (typeof CAPACIDADES_DE_PORTA)[number];
  * não entram no `PORTA_DA_CAPACIDADE`: dar-lhes uma porta (nem vazia) seria abrir um caminho de
  * navegação para uma capacidade que não navega.
  */
-export const CAPACIDADES_DE_EFEITO = ["turn.respond", "turn.handoff"] as const;
+export const CAPACIDADES_DE_EFEITO = ["turn.respond", "turn.handoff", "turn.context"] as const;
 export type CapacidadeDeEfeito = (typeof CAPACIDADES_DE_EFEITO)[number];
 
 /** A capacidade é o que a extensão pede: o cartão ao clicar, o fluxo do turno ao declarar. */
@@ -92,7 +94,7 @@ interface PortaDaCapacidade {
 
 interface EfeitoDaCapacidade {
   /** O que o host passa a poder fazer. Vocabulário fechado, sem texto do pacote. */
-  readonly efeito: "envio" | "passagem";
+  readonly efeito: "envio" | "passagem" | "contexto";
   /** A permissão que precisa estar declarada no manifesto para esta capacidade valer. */
   readonly permissao: ExtensionPermission;
 }
@@ -114,6 +116,7 @@ export const PORTA_DA_CAPACIDADE: Record<CapacidadeDePorta, PortaDaCapacidade> =
 export const EFEITO_DA_CAPACIDADE: Record<CapacidadeDeEfeito, EfeitoDaCapacidade> = {
   "turn.respond": { efeito: "envio", permissao: "turn.send" },
   "turn.handoff": { efeito: "passagem", permissao: "turn.handoff" },
+  "turn.context": { efeito: "contexto", permissao: "turn.context" },
 };
 
 /** Todos os destinos que o host aceita devolver. A tela reconfere contra este conjunto. */

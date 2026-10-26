@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Pool } from "pg";
@@ -48,7 +49,7 @@ async function rpc(name: string, args: unknown[]) {
 
 function artifact(version = "1.0.0", declared = permissions) {
   // Mesmo pacote publicado que a instalação baixa, com identidade de teste isolada.
-  const manifest = JSON.parse(readFileSync(join(process.cwd(), "extensoes/pacotes", "deskcomm", "laudo-do-exame-1.0.0.json"), "utf8"));
+  const manifest = JSON.parse(readFileSync(join(process.cwd(), "tests/fixtures/extensoes", "laudo-linear-fonte3474.json"), "utf8"));
   manifest.publisher = "invariante-turno";
   manifest.name = "coleta-do-turno";
   manifest.version = version;
@@ -182,6 +183,47 @@ describe("aceite de turno no banco real", () => {
     await expect(install(changed, 1)).rejects.toThrow("extension_permissions_changed");
     expect((await installation(id)).revision).toBe(1);
   });
+
+  it("leitura opcional é um aceite separado, sem bloquear a coleta e sem conceder por instalação", async () => {
+    const manifest = JSON.parse(readFileSync(join(process.cwd(), "extensoes/pacotes", "deskcomm", "consulta-de-laudos-1.0.0.json"), "utf8"));
+    manifest.publisher = "invariante-turno";
+    manifest.name = "coleta-com-contexto";
+    const { publisher, name, version, license, host_api, display, permissions: declared } = manifest;
+    const item = { manifest, entry: { publisher, name, version, license, host_api, display, permissions: declared,
+      sha256: hash(manifest), byte_length: Buffer.byteLength(JSON.stringify(manifest)) } };
+    await admit([base.entry, item.entry], 2);
+    const id = (await install(item)).installation_id;
+    await configure(id, 0, true, permissions);
+    expect((await binding(orgA, id)).accepted_permissions).toEqual(permissions);
+    expect((await lerFluxosAtivosDaOrganizacao(pool, orgA, log))[0]?.aceitas).not.toContain("turn.context");
+    await configure(id, 1, true, [...permissions, "turn.context"]);
+    expect((await binding(orgA, id)).accepted_permissions).toEqual([...permissions, "turn.context"]);
+    expect(await binding(orgB, id)).toBeUndefined();
+  });
+
+  it("baseline inteiro reaplica com ON_ERROR_STOP=1 sobre aceite de leitura e o preserva", async () => {
+    const manifest = JSON.parse(readFileSync(join(process.cwd(), "extensoes/pacotes", "deskcomm", "consulta-de-laudos-1.0.0.json"), "utf8"));
+    manifest.publisher = "invariante-turno";
+    manifest.name = "coleta-reaplicada";
+    const { publisher, name, version, license, host_api, display, permissions: declared } = manifest;
+    const item = { manifest, entry: { publisher, name, version, license, host_api, display, permissions: declared,
+      sha256: hash(manifest), byte_length: Buffer.byteLength(JSON.stringify(manifest)) } };
+    await admit([base.entry, item.entry], 2);
+    const id = (await install(item)).installation_id;
+    await configure(id, 0, true, [...permissions, "turn.context"]);
+    const before = await binding(orgA, id);
+    const replay = spawnSync("docker", ["exec", "-i", process.env.TEST_DB_CONTAINER!,
+      "psql", "-U", "postgres", "-d", "postgres", "-q", "-v", "ON_ERROR_STOP=1", "-f", "-"], {
+      input: readFileSync(join(process.cwd(), "supabase/baseline.sql"), "utf8"),
+      encoding: "utf8", maxBuffer: 64 * 1024 * 1024,
+    });
+    expect(replay.error, "psql precisa executar o baseline integral").toBeUndefined();
+    expect(replay.status, replay.stderr.slice(-3000)).toBe(0);
+    expect(replay.stderr.split("\n").filter((line) => /\b(ERROR|FATAL)\b/.test(line))).toEqual([]);
+    expect(await binding(orgA, id)).toEqual(before);
+    const check = await pool.query("select convalidated from pg_constraint where conrelid='public.organization_extensions'::regclass and conname='organization_extensions_accepted_permissions_check'");
+    expect(check.rows).toEqual([{ convalidated: true }]);
+  }, 300_000);
 
   it("a assinatura nova de configurar não é RPC pública e a antiga não sobrevive", async () => {
     const signature = "public.fn_extensions_configure(uuid,uuid,uuid,uuid,integer,boolean,jsonb,jsonb)";

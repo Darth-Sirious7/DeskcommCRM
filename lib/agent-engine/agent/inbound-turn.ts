@@ -3162,6 +3162,9 @@ async function executarTurnoDoAgente(
         pool,
         log: runLog,
         fluxos: () => lerFluxosAtivosDaOrganizacao(pool, tenantId, runLog),
+        // Somente mensagens já selecionadas por getLeadContext, com proveniência por linha.
+        // O host só lê com aceite de turn.context e nunca consulta histórico adicional.
+        contextoSelecionado: () => openingContext.context.messages,
         enviar: (texto) =>
           enviarTextoSemModelo({
             pool,

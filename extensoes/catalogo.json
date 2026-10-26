@@ -40,7 +40,7 @@
     },
     {
       "publisher": "deskcomm",
-      "name": "laudo-do-exame",
+      "name": "consulta-de-laudos",
       "version": "1.0.0",
       "license": "MIT",
       "host_api": {
@@ -49,22 +49,23 @@
       },
       "display": {
         "title": {
-          "pt-BR": "Laudo do exame",
-          "es": "Informe del examen"
+          "pt-BR": "Consulta de laudos",
+          "es": "Consulta de informes"
         },
         "summary": {
-          "pt-BR": "Recebe o pedido de laudo na conversa, pergunta exame, paciente, data e médico — e entrega a um humano com tudo preenchido.",
-          "es": "Recibe el pedido de informe en la conversación, pregunta examen, paciente, fecha y médico, y lo entrega a una persona con todo completo."
+          "pt-BR": "Encaminha patologia para conferência humana e coleta só as pendências de biópsia ou radiologia. Contexto desta conversa é opcional, com aceite próprio.",
+          "es": "Deriva patología para revisión humana y recopila solo lo pendiente de biopsia o radiología. El contexto de esta conversación es opcional, con consentimiento propio."
         },
         "category": "service",
         "icon": "BookOpen"
       },
       "permissions": [
         "turn.send",
-        "turn.handoff"
+        "turn.handoff",
+        "turn.context"
       ],
-      "sha256": "3e59870c00b0a8d09644c7af06e824d4795f59171ac12f0759dedebacdf11e61",
-      "byte_length": 3068,
+      "sha256": "3e940e5f0fafe888a412ba8166b83ae773af0b0c34ad7fb45ec15a55ee49b954",
+      "byte_length": 10613,
       "publisher_label": "Deskcomm",
       "repository": "https://github.com/melgarafael/DeskcommCRM",
       "tags": [
@@ -146,5 +147,5 @@
       "published_at": "2026-09-18"
     }
   ],
-  "revision": 2
+  "revision": 3
 }

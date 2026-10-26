@@ -1,4 +1,4 @@
--- manifest: **A permissão NOMEADA do turno e o ACEITE explícito da organização (#3076).** `turn.send` e `turn.handoff` entram no conjunto fechado de `fn_extensions_permissoes_validas` (8 → 10 nomes), espelhando `lib/extensions/capacidades.ts`; `organization_extensions` ganha `accepted_permissions text[] not null default '{}'` com CHECK que aceita o vazio e exige o mesmo vocabulário quando há conteúdo — a coluna nasce VAZIA de propósito, porque nenhuma instalação anterior aceitou permissão de turno (backfill transformaria instalação em autorização, que é o que o #3456 recusou). `fn_extensions_configure` ganha `p_accepted_permissions` (nulo = não concede nada agora, preservando o aceite vigente), recusa `extension_invalid_input` para nome fora do manifesto e `extension_permission_not_accepted` na ATIVAÇÃO de fluxo sem cobertura, derivada do DESFECHO (`turn.send` para encerrar, `turn.send`+`turn.handoff` para passar a humano). Desativar nunca é bloqueado. Idempotente; apêndice espelhado no `baseline.sql` (coluna, CHECK e as duas funções); `MANIFEST.md` é histórico e não recebe linha.
+-- manifest: **A permissão NOMEADA do turno e o ACEITE explícito da organização (#3076).** `turn.send` e `turn.handoff` entram no conjunto fechado de `fn_extensions_permissoes_validas` (8 → 11 nomes), espelhando `lib/extensions/capacidades.ts`; `organization_extensions` ganha `accepted_permissions text[] not null default '{}'` com CHECK que aceita o vazio e exige o mesmo vocabulário quando há conteúdo — a coluna nasce VAZIA de propósito, porque nenhuma instalação anterior aceitou permissão de turno (backfill transformaria instalação em autorização, que é o que o #3456 recusou). `fn_extensions_configure` ganha `p_accepted_permissions` (nulo = não concede nada agora, preservando o aceite vigente), recusa `extension_invalid_input` para nome fora do manifesto e `extension_permission_not_accepted` na ATIVAÇÃO de fluxo sem cobertura, derivada do DESFECHO (`turn.send` para encerrar, `turn.send`+`turn.handoff` para passar a humano). Desativar nunca é bloqueado. Idempotente; apêndice espelhado no `baseline.sql` (coluna, CHECK e as duas funções); `MANIFEST.md` é histórico e não recebe linha.
 
 -- 0767 — A permissão NOMEADA do turno e o ACEITE da organização (issue #3076)
 --
@@ -38,12 +38,17 @@
 -- Idempotente: `create or replace`, `drop function if exists` da assinatura antiga, `add column if
 -- not exists` e `drop/add constraint if exists`.
 
--- ── 1. O conjunto fechado cresce de 8 para 10 nomes ────────────────────────────────────────────
+-- Adaptação forward-aware da fonte #3474: este arquivo é proposta não aplicada na
+-- main. O nome opcional `turn.context` precisa estar aqui ANTES de recriar o CHECK:
+-- re-aplicar o baseline sobre aceite já gravado pela 0800 deve passar também com
+-- ON_ERROR_STOP=1. Admitir o nome não concede leitura; nenhum aceite é preenchido.
+-- A fonte original 0767 permanece no commit 0d93c5489d, com crédito a @webtecnica.
+-- ── 1. O conjunto fechado cresce de 8 para 11 nomes ────────────────────────────────────────────
 create or replace function public.fn_extensions_permissoes_validas(p_permissions jsonb)
 returns boolean language sql immutable set search_path = public, pg_temp as $$
   select p_permissions is not null
     and jsonb_typeof(p_permissions) = 'array'
-    and jsonb_array_length(p_permissions) between 1 and 10
+    and jsonb_array_length(p_permissions) between 1 and 11
     and not exists (
       select 1 from jsonb_array_elements(p_permissions) e
       where jsonb_typeof(e.value) <> 'string'
@@ -51,7 +56,7 @@ returns boolean language sql immutable set search_path = public, pg_temp as $$
               'navigation.tasks', 'navigation.inbox', 'navigation.kanban',
               'navigation.contacts', 'navigation.agenda', 'navigation.radar',
               'theme.apply', 'dados.proprios',
-              'turn.send', 'turn.handoff')
+              'turn.send', 'turn.handoff', 'turn.context')
     )
     and (select count(distinct e.value) from jsonb_array_elements(p_permissions) e)
         = jsonb_array_length(p_permissions);
