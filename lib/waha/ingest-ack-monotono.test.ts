@@ -120,7 +120,16 @@ async function chegarAviso(
 }
 
 function linha(extra: Partial<Linha> = {}): Linha {
-  return { id: "m1", organization_id: ORG_A, external_id: EXTERNO, status: "sent", ack: 1, ...extra };
+  return {
+    id: "m1",
+    organization_id: ORG_A,
+    external_id: EXTERNO,
+    status: "sent",
+    ack: 1,
+    delivered_at: null,
+    read_at: null,
+    ...extra,
+  };
 }
 
 describe("aviso positivo nunca faz o status voltar (fatia 1)", () => {
