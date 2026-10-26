@@ -1163,6 +1163,7 @@ jobs:
         agenda-google-sync.spec.ts
         agenda-servicos.spec.ts
         encerramento-atendimento.spec.ts
+        atendimento-conjunto.spec.ts
         passagem-com-contexto.spec.ts
         interface-por-vinculo.spec.ts
         pipelines-gestao.spec.ts

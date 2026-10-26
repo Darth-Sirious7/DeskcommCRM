@@ -19,7 +19,10 @@ export function useParticipacoesRealtime(userId: string | null, orgId: string | 
       void qc.resetQueries({ queryKey: ["messages", linha.conversation_id] });
     } else {
       // Reconexão: o canal não guarda os eventos que ocorreram enquanto caiu.
-      void qc.invalidateQueries({ queryKey: ["conversation"] });
+      // Um 404 no refetch mantém o dado anterior no react-query. Resetar tira
+      // esse snapshot também quando a remoção ocorreu durante a desconexão.
+      void qc.resetQueries({ queryKey: ["conversation"] });
+      void qc.resetQueries({ queryKey: ["messages"] });
     }
   }, [qc]);
   useRealtimeChannel({

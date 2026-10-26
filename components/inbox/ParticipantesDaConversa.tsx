@@ -171,7 +171,7 @@ export function ParticipantesDaConversa({ conversationId, podeConvidar, atendent
             return (
               <DropdownMenu key={p.id}>
                 <DropdownMenuTrigger asChild>
-                  <button type="button" aria-label={`${t("Quem participa desta conversa")}: ${nome}`} disabled={remover.isPending} className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  <button type="button" aria-label={`${t("Quem participa desta conversa")}: ${nome}`} disabled={remover.isPending} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                     {avatar}
                   </button>
                 </DropdownMenuTrigger>
