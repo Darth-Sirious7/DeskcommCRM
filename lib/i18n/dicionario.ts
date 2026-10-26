@@ -17980,7 +17980,41 @@ export const DICIONARIO: Traducoes = {
   "Parâmetro inválido.": {
     es: "Parámetro no válido.",
   },
+  // ── Domínio de envio da organização (#3441) ─────────────────────────────────
+  // O card de Configurações → Marca que confere SPF, DKIM, MX de retorno e DMARC
+  // pelo DNS público. Os nomes de registro (SPF/DKIM/MX/DMARC) ficam no texto e
+  // não são traduzidos: são o nome técnico que o admin vai procurar no painel do
+  // registrador, e traduzi-los atrapalharia a busca.
+  "Domínio de envio": { es: "Dominio de envío" },
+  "O domínio pelo qual saem os e-mails das automações e das campanhas. A conferência lê o DNS público e diz o que falta publicar.":
+    {
+      es: "El dominio por el que salen los correos de las automatizaciones y de las campañas. La comprobación lee el DNS público y dice qué falta publicar.",
+    },
+  "Domínio ou e-mail": { es: "Dominio o correo" },
+  "Conferir": { es: "Comprobar" },
+  "Conferindo…": { es: "Comprobando…" },
+  "Pronto para enviar": { es: "Listo para enviar" },
+  "Falta publicar": { es: "Falta publicar" },
+  "Conferido em {quando}": { es: "Comprobado el {quando}" },
+  "SPF: quem pode entregar": { es: "SPF: quién puede entregar" },
+  "DKIM: assinatura da mensagem": { es: "DKIM: firma del mensaje" },
+  "MX de retorno: as voltas": { es: "MX de retorno: los rebotes" },
+  "DMARC: o que fazer quando falha": { es: "DMARC: qué hacer cuando falla" },
+  "Certo": { es: "Correcto" },
+  "Ausente": { es: "Ausente" },
+  "Encontrado": { es: "Encontrado" },
+  "Bloqueios": { es: "Bloqueos" },
+  "Avisos": { es: "Avisos" },
+  "Só um administrador da organização pode conferir o domínio.": {
+    es: "Solo un administrador de la organización puede comprobar el dominio.",
+  },
+  "Informe um domínio, como lojadaana.com.": { es: "Indica un dominio, como tiendaanita.com." },
+  "Registro": { es: "Registro" },
+  "Não foi possível conferir agora. Tente de novo em instantes.": {
+    es: "No se pudo comprobar ahora. Inténtalo de nuevo en unos instantes.",
+  },
 };
+
 
 /**
  * Traduz, ou devolve o próprio texto.

@@ -33,12 +33,14 @@ import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { marcaDaInstalacao } from "@/lib/branding/instalacao";
 import { marcaDaOrganizacaoDeSettings } from "@/lib/branding/organizacao";
+import { dominioDeEndereco } from "@/lib/email/dominio-de-envio";
 import { env } from "@/lib/env";
 import { perfilDoPais } from "@/lib/legal/perfil-do-pais";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 import { FormularioDaMarcaDaOrganizacao } from "./_form";
+import { DominioDeEnvio } from "./_dominio-de-envio";
 
 export const metadata = { title: "Marca" };
 export const dynamic = "force-dynamic";
@@ -70,6 +72,11 @@ export default async function MarcaDaOrganizacaoPage() {
   // degrada para o Brasil quando a coluna está vazia ou o país é desconhecido
   // — e o Brasil tem lei revisada, então o `?? "LGPD"` cobre só o tipo.
   const perfil = perfilDoPais(data?.country);
+  // O domínio de ENVIO (#3441) parte do "responder para" que a fatia 1 do #3287
+  // já grava: é o endereço que a organização usa para falar com o cliente, e o
+  // domínio dele é o palpite certo para o campo. Sem ele, o campo nasce vazio e
+  // quem confere digita — nunca herda o domínio da PLATAFORMA, que não é dela.
+  const dominioDoRemetente = dominioDeEndereco(gravada?.email_reply_to ?? null);
 
   return (
     <div className="flex h-full flex-col gap-6 overflow-y-auto p-6">
@@ -125,6 +132,8 @@ export default async function MarcaDaOrganizacaoPage() {
           rotuloNomeLegal: perfil.empresa.rotuloNomeLegal,
         }}
       />
+
+      <DominioDeEnvio dominioInicial={dominioDoRemetente} idioma={idioma} />
     </div>
   );
 }
