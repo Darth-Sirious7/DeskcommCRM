@@ -153,6 +153,7 @@ test("convite chega em Minhas, permite resposta e revogação retira o acesso se
     await semConvite.page.getByRole("tab", { name: /Minhas/ }).click();
     await expect(semConvite.page.getByText(nome, { exact: true })).toHaveCount(0);
     expect((await semConvite.page.request.get(`/api/v1/conversations/${principal.id}`)).status()).toBe(404);
+    expect((await semConvite.page.request.post("/api/v1/messages", { data: { conversation_id: principal.id, type: "text", body: "Sem convite não envia" } })).status()).toBe(404);
     await navegar(viewer.page, `/app/inbox?id=${principal.id}`);
     await expect(viewer.page.getByText(`Contexto sintético ${prefixo}`, { exact: true })).toBeVisible();
     await expect(viewer.page.getByTestId("convidar-participante")).toHaveCount(0);
@@ -172,6 +173,7 @@ test("convite chega em Minhas, permite resposta e revogação retira o acesso se
     await expect(linhaConvidada).toHaveCount(0, { timeout: 15_000 });
     await expect(convidada.page.getByText("Conversa não encontrada ou fora do seu acesso.", { exact: true })).toBeVisible();
     expect((await convidada.page.request.get(`/api/v1/conversations/${principal.id}`)).status()).toBe(404);
+    expect((await convidada.page.request.post("/api/v1/messages", { data: { conversation_id: principal.id, type: "text", body: "Convite revogado não envia" } })).status()).toBe(404);
     await convidar();
     await expect(linhaConvidada).toBeVisible({ timeout: 15_000 });
     const vinculos = await db.from("conversation_participants").select("id, left_at").eq("organization_id", org).eq("conversation_id", principal.id).eq("user_id", convidada.id);
