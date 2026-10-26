@@ -3,6 +3,7 @@
  * lista e devolvem uma nova, sem mutar a de entrada — o construtor guarda o
  * resultado no estado e o React compara por referência.
  */
+import { randomId } from "@/lib/random-id";
 import { variaveisDesconhecidas } from "./variaveis";
 import type { Passo, PassoRamo, TipoDePasso } from "./tipos";
 
@@ -15,9 +16,7 @@ export interface PontoDeInsercao {
 }
 
 export function novoId(): string {
-  return typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
-    : `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  return randomId();
 }
 
 export function passoVazio(tipo: TipoDePasso): Passo {

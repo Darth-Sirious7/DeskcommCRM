@@ -48,7 +48,7 @@ import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { sendEmail } from "@/lib/email/roteador";
 import { env } from "@/lib/env";
-import { cadenciasLigadas } from "./modulo";
+import { cadenciasLigadas } from "@/lib/cadencias/modulo";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { logger } from "@/lib/logger";
 import type { createAdminClient } from "@/lib/supabase/admin";

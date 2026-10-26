@@ -109,7 +109,7 @@ export const configuracaoDaCadenciaSchema = z.object({
     dias: z.array(z.enum(DIAS_DA_SEMANA)).max(7),
   }),
   fuso: z.string().trim().min(1).max(80).refine((v) => {
-    try { new Intl.DateTimeFormat("pt-BR", { timeZone: v }); return true; } catch { return false; }
+    try { new Intl.DateTimeFormat(undefined, { timeZone: v }); return true; } catch { return false; }
   }, "Fuso inválido."),
   limiteDiarioPorCaixa: z.number().int().min(1).max(10_000),
   paradas: z.object({

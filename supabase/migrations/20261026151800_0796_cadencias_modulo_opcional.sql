@@ -1,7 +1,7 @@
 -- manifest: Cadências de e-mail do PR1738 entram como módulo opcional oficial (doc75B, ADR0002), desligadas até instalação e escolha da empresa; tabelas nascem só na provisionadora fixa, com RLS/grants e LGPD, abertura com consentimento e descadastro sem sessão. Crédito: Marcelo (@lmarceloc).
 -- A migration entrega funções, não tabelas para toda instalação. Não modifica MANIFEST histórico.
 create or replace function public.fn_cadencias_provisionar()
-returns void language plpgsql security definer set search_path = public, pg_temp as $cadencias$
+returns void language plpgsql security definer set search_path = public, pg_temp as $f$
 begin
 create table if not exists public.email_cadences (
   id uuid primary key default gen_random_uuid(),
@@ -158,8 +158,9 @@ grant all on public.email_cadence_events to service_role;
   -- Reaplicar restaura todas as proteções na mesma transação da instalação.
   perform public.fn_proteger_modulo_provisionado();
 
-end $cadencias$;
-revoke execute on function public.fn_cadencias_provisionar() from public,anon,authenticated;
+end;
+$f$;
+revoke execute on function public.fn_cadencias_provisionar() from public, anon, authenticated;
 grant execute on function public.fn_cadencias_provisionar() to service_role;
 
 -- Registro declarativo existe sem instalar as tabelas (D8/0619). A cascata

@@ -1416,6 +1416,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
   }
 
   // ADR-0002/D8: ausência do módulo é vazia; qualquer outra falha é explícita.
+  let cadenciasInstaladas = false;
   let cadencias_inscricoes: NonNullable<ExportPayload["cadencias_inscricoes"]> = [];
   let cadencias_eventos: NonNullable<ExportPayload["cadencias_eventos"]> = [];
   if (contactId) {
@@ -1424,6 +1425,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     const { data: moduloCadencias, error: erroModulo } = await admin.from("modulos_instalados").select("modulo").eq("modulo", "cadencias").maybeSingle();
     if (erroModulo) throw new Error("cadencias_export_module_read_failed");
     if (moduloCadencias) {
+      cadenciasInstaladas = true;
       const { data: inscricoesCadencia, error: erroCadencias } = await admin.from("email_cadence_enrollments")
         .select("id, cadence_id, lead_id, status, motivo_parada, rastreio_consentido, consentimento_em, emails_enviados, aberturas, created_at, concluida_em, parada_em")
         .eq("organization_id", organizationId).eq("contact_id", contactId).order("created_at", { ascending: false }).limit(500);
@@ -2341,8 +2343,9 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     leads,
     honorarios_contratos,
     honorarios_parcelas,
-    cadencias_inscricoes,
-    cadencias_eventos,
+    // O módulo ausente não altera o contrato do arquivo legado. Instalado
+    // (inclusive suspenso), entrega suas seções, mesmo sem linhas do titular.
+    ...(cadenciasInstaladas ? { cadencias_inscricoes, cadencias_eventos } : {}),
     orders,
     activities,
     checkpoints,
@@ -2538,8 +2541,6 @@ function emptyPayload(
     leads: [],
     honorarios_contratos: [],
     honorarios_parcelas: [],
-    cadencias_inscricoes: [],
-    cadencias_eventos: [],
     orders: [],
     activities: [],
     checkpoints: [],
