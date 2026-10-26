@@ -1,8 +1,8 @@
 # Prova do preenchimento revisado do card — #3476
 
-Banco dirigido medido em Postgres 17 próprio na VPS de teste. Navegador e tipos
-gerados ainda aguardam a faixa reservada. Não iniciar Docker nem um segundo app
-na máquina compartilhada para esta prova.
+Banco dirigido e geração de tipos medidos em Postgres 17 próprio na VPS de
+teste. Navegador e verificação integral ainda aguardam a faixa reservada. Não
+iniciar Docker nem um segundo app na máquina compartilhada para esta prova.
 
 ## Banco
 
@@ -69,19 +69,24 @@ Não se afirma prova de modelo lendo PDF; o seam medido é a entrada MCP.
 
 ## Tipos gerados e verificação completa
 
-O CLI disponível na preparação é Supabase 2.95.4. Gerar de um Postgres 17 próprio
-com o baseline deste head aplicado, usando a conexão local do ambiente reservado:
+Medido com o CLI Supabase 2.122.0 já em cache na VPS. Essa versão gera TypeScript
+no próprio processo pela conexão direta, conforme sua
+[documentação de efeitos](https://github.com/supabase/cli/blob/v2.122.0/apps/cli/src/commands/gen/types/SIDE_EFFECTS.md).
+O banco recebeu o baseline e as provas acima. Duas passadas de geração do schema
+`public` produziram arquivos byte a byte idênticos. Comando de reprodução, na
+pasta própria de teste e com o DSN do banco efêmero:
 
 ```sh
 supabase gen types --db-url "$TEST_DB_CONN" --schema public \
   > /tmp/database-propostas-gerado.types.ts
 ```
 
-Comparar a saída e substituir `lib/database.types.ts` somente pelo resultado do
-gerador. Não montar tipos da nova tabela à mão nem gerar do projeto remoto.
-O comando usa a credencial do ambiente, sem imprimi-la. A disponibilidade do
-executor de geração deve ser conferida antes de iniciar o banco; não atualizar
-CLI ou instalar dependências durante a faixa de outra entrega.
+Comparar a saída e substituir `lib/database.types.ts` pelo resultado do gerador,
+com formatação mecânica pelo Prettier já instalado. A saída bruta permanece
+guardada para comparação. Não montar tipos da nova tabela à mão nem gerar do
+projeto remoto. A regeneração alcança a defasagem do arquivo anterior: 170 tabelas
+descritas passam a 206 no schema real, e 146 funções passam a 247. O delta inclui
+estruturas anteriores à proposta e requer avaliação na tipagem integral.
 
 Depois que o slot do Mac for liberado: typecheck integral e lint; o CI mede a
 suíte completa e build. Antes de sair do draft, reconciliar os resultados reais,
