@@ -32,9 +32,8 @@ async function handle(req: NextRequest): Promise<Response> {
   let resultado;
   try {
     resultado = await processarCadencias(createAdminClient(), new Date(), requestId);
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
-    logger.error("[cadencia-worker] rodada falhou", { error: detail, requestId });
+  } catch {
+    logger.error("[cadencia-worker] rodada falhou", { codigo: "cadencia_tick_failed", requestId });
     return fail("internal_error", "Failed to process cadencia enrollments.", 500, { requestId });
   }
 

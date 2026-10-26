@@ -13,7 +13,7 @@ import { z } from "zod";
 const DIAS_DA_SEMANA = ["seg", "ter", "qua", "qui", "sex", "sab", "dom"] as const;
 
 const passoEmailSchema = z.object({
-  id: z.string().min(1),
+  id: z.string().min(1).max(200),
   tipo: z.literal("email"),
   assunto: z.string().max(300),
   corpo: z.string().max(20_000),
@@ -21,7 +21,7 @@ const passoEmailSchema = z.object({
 });
 
 const passoEsperaSchema = z.object({
-  id: z.string().min(1),
+  id: z.string().min(1).max(200),
   tipo: z.literal("espera"),
   diasUteis: z.number().int().min(1).max(365),
 });
@@ -33,13 +33,13 @@ const condicaoDoRamoSchema = z.discriminatedUnion("tipo", [
 ]);
 
 const passoWhatsappSchema = z.object({
-  id: z.string().min(1),
+  id: z.string().min(1).max(200),
   tipo: z.literal("whatsapp"),
   mensagem: z.string().max(4096),
 });
 
 const passoTarefaSchema = z.object({
-  id: z.string().min(1),
+  id: z.string().min(1).max(200),
   tipo: z.literal("tarefa"),
   titulo: z.string().max(300),
   prazoDias: z.number().int().min(0).max(365),
@@ -61,7 +61,7 @@ type PassoEntrada =
 
 const passoRamoSchema: z.ZodType<Extract<PassoEntrada, { tipo: "ramo" }>> = z.lazy(() =>
   z.object({
-    id: z.string().min(1),
+    id: z.string().min(1).max(200),
     tipo: z.literal("ramo"),
     condicao: condicaoDoRamoSchema,
     sim: z.array(passoSchema).max(200),
@@ -77,16 +77,40 @@ export const passoSchema: z.ZodType<PassoEntrada> = z.lazy(() =>
   z.union([passoEmailSchema, passoEsperaSchema, passoRamoSchema, passoWhatsappSchema, passoTarefaSchema]),
 );
 
+/** Limita o documento inteiro antes da validação recursiva: ids únicos e sem
+ * pilha arbitrária na API. Os 500 passos já eram o teto da raiz na fonte. */
+function estruturaLimitada(valor: unknown): boolean {
+  if (!Array.isArray(valor)) return false;
+  const fila = valor.map((passo) => ({ passo, nivel: 1 }));
+  const ids = new Set<string>();
+  let total = 0;
+  while (fila.length) {
+    const item = fila.pop()!;
+    if (++total > 500 || item.nivel > 50 || !item.passo || typeof item.passo !== "object") return false;
+    const p = item.passo as Record<string, unknown>;
+    if (typeof p.id !== "string" || ids.has(p.id)) return false;
+    ids.add(p.id);
+    if (p.tipo === "ramo") {
+      if (!Array.isArray(p.sim) || !Array.isArray(p.nao)) return false;
+      for (const passo of [...p.sim, ...p.nao]) fila.push({ passo, nivel: item.nivel + 1 });
+    }
+  }
+  return true;
+}
+const passosSchema = z.unknown().refine(estruturaLimitada, "Passos repetidos ou árvore acima do limite técnico.").pipe(z.array(passoSchema).max(500));
+
 export const configuracaoDaCadenciaSchema = z.object({
   tagDoSegmento: z.string().trim().max(80),
   somenteEmailValidado: z.boolean(),
   caixaPadraoId: z.string().max(80).nullable(),
   janela: z.object({
-    inicio: z.string().regex(/^\d{2}:\d{2}$/),
-    fim: z.string().regex(/^\d{2}:\d{2}$/),
+    inicio: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+    fim: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
     dias: z.array(z.enum(DIAS_DA_SEMANA)).max(7),
   }),
-  fuso: z.string().trim().min(1).max(80),
+  fuso: z.string().trim().min(1).max(80).refine((v) => {
+    try { new Intl.DateTimeFormat("pt-BR", { timeZone: v }); return true; } catch { return false; }
+  }, "Fuso inválido."),
   limiteDiarioPorCaixa: z.number().int().min(1).max(10_000),
   paradas: z.object({
     respondeu: z.boolean(),
@@ -105,7 +129,7 @@ export const editarCadenciaSchema = z
   .object({
     name: z.string().trim().min(1).max(160).optional(),
     configuracao: configuracaoDaCadenciaSchema.optional(),
-    passos: z.array(passoSchema).max(500).optional(),
+    passos: passosSchema.optional(),
   })
   .refine((v) => v.name !== undefined || v.configuracao !== undefined || v.passos !== undefined, {
     message: "Nada para atualizar.",
@@ -117,6 +141,7 @@ export const mudarStatusDaCadenciaSchema = z.object({
 
 export const inscreverLeadSchema = z.object({
   lead_id: z.string().uuid(),
+  rastreio_consentido: z.boolean().optional().default(false),
 });
 
 export const listarCadenciasSchema = z.object({

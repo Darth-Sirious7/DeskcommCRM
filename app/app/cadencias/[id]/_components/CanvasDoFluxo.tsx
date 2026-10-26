@@ -350,24 +350,11 @@ function CartaoDoGatilho({
       </div>
       <div className="p-3">
         <div className="rounded-sm border border-dashed border-border px-3 py-2 text-center text-sm">
-          {tag ? (
-            <>
-              <span className="text-text-muted">{t("Lead recebe a tag")} </span>
-              <span className="rounded-sm bg-accent-soft px-1.5 py-0.5 font-mono text-xs font-semibold text-accent">
-                {tag}
-              </span>
-              {configuracao.somenteEmailValidado && (
-                <span className="mt-1 block text-xs text-text-muted">
-                  {t("e tem e-mail validado")}
-                </span>
-              )}
-            </>
-          ) : (
-            <span className="text-warning-fg">{t("Escolha a tag do segmento em Configurações")}</span>
-          )}
+          {t("Inscrição manual na aba Inscrições e atividade")}
+          {tag && <span className="mt-1 block text-xs text-text-muted">{tag}</span>}
         </div>
         <p className="mt-2 text-center text-xs text-text-muted">
-          {t("Também dá para inscrever leads manualmente ou em lote.")}
+          {t("Somente negócios desta empresa com e-mail disponível.")}
         </p>
       </div>
     </button>

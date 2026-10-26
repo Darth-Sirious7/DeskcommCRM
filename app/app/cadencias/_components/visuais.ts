@@ -21,7 +21,7 @@ export interface VisualDoPasso {
 export const VISUAL_DO_PASSO: Record<TipoDePasso, VisualDoPasso> = {
   email: {
     rotulo: "Enviar e-mail",
-    descricao: "Um e-mail da caixa do vendedor, com variáveis do lead.",
+    descricao: "Um e-mail pelo transporte da instalação, com variáveis do lead.",
     icon: EnvelopeSimple,
     cabecalho: "bg-info-bg text-info-fg border-b-info/30",
     chip: "bg-info-bg text-info-fg",
@@ -35,7 +35,7 @@ export const VISUAL_DO_PASSO: Record<TipoDePasso, VisualDoPasso> = {
   },
   ramo: {
     rotulo: "Ramificação se/então",
-    descricao: "Divide o caminho conforme o lead abriu, clicou ou respondeu.",
+    descricao: "Divide o caminho conforme a abertura autorizada do e-mail.",
     icon: GitBranch,
     cabecalho: "bg-accent-soft text-accent border-b-accent/30",
     chip: "bg-accent-soft text-accent",
@@ -56,7 +56,7 @@ export const VISUAL_DO_PASSO: Record<TipoDePasso, VisualDoPasso> = {
   },
 };
 
-export const ORDEM_DOS_TIPOS: TipoDePasso[] = ["email", "espera", "ramo", "whatsapp", "tarefa"];
+export const ORDEM_DOS_TIPOS: TipoDePasso[] = ["email", "espera", "ramo", "tarefa"];
 
 type T = (texto: string) => string;
 
@@ -65,7 +65,7 @@ export function plural(n: number, um: string, varios: string): string {
 }
 
 export function descreverCondicao(c: CondicaoDoRamo, t: T): string {
-  const prazo = `${t("em até")} ${c.dentroDeDias} ${t(plural(c.dentroDeDias, "dia útil", "dias úteis"))}`;
+  const prazo = `${t("em até")} ${c.dentroDeDias} ${t(plural(c.dentroDeDias, "dia", "dias"))}`;
   switch (c.tipo) {
     case "abriu":
       return `${t("Abriu o e-mail anterior")} ${c.vezes}+ ${t(plural(c.vezes, "vez", "vezes"))} ${prazo}`;
@@ -83,7 +83,7 @@ export function resumirPasso(p: Passo, t: T): string {
       if (p.mesmaConversa) return `${t("Resposta na mesma conversa")}${p.assunto ? ` · ${p.assunto}` : ""}`;
       return p.assunto.trim() || t("Sem assunto");
     case "espera":
-      return `${p.diasUteis} ${t(plural(p.diasUteis, "dia útil", "dias úteis"))}`;
+      return `${p.diasUteis} ${t(plural(p.diasUteis, "dia", "dias"))}`;
     case "ramo":
       return descreverCondicao(p.condicao, t);
     case "whatsapp":

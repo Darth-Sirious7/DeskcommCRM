@@ -8,9 +8,11 @@
  *
  * Esta rota NÃO envia e-mail: só cria a linha em `email_cadence_enrollments`
  * com `proximo_em = now()`. Quem lê essa fila e dispara o primeiro passo é o
- * worker do cron — ainda não escrito (ver MANIFEST da migration 0428).
+ * worker do cron, agendado no scheduler da instalação.
  */
+import { contatoRestringido } from "@/lib/cadencias/guarda-do-contato";
 import { randomUUID } from "node:crypto";
+import { cadenciasLigadas } from "@/lib/cadencias/modulo";
 
 import type { NextRequest } from "next/server";
 
@@ -32,6 +34,7 @@ export async function GET(
   const requestId = randomUUID();
   const authz = await requireRole("agent", { requestId, resource: "cadencias" });
   if (!authz.ok) return authz.response;
+  if (!(await cadenciasLigadas(createAdminClient(), authz.org.orgId))) return fail("not_found", "Módulo indisponível.", 404, { requestId });
   const { id } = await ctx.params;
 
   const limit = Math.min(Math.max(Number(new URL(req.url).searchParams.get("limit")) || 50, 1), 200);
@@ -41,7 +44,7 @@ export async function GET(
     .from("email_cadence_enrollments")
     .select(
       "id, lead_id, contact_id, status, motivo_parada, origem, passo_atual_id, proximo_em, " +
-        "emails_enviados, aberturas, cliques, concluida_em, parada_em, created_at",
+        "emails_enviados, aberturas, concluida_em, parada_em, created_at, rastreio_consentido, ultimo_erro, crm_leads(title)",
     )
     .eq("organization_id", authz.org.orgId)
     .eq("cadence_id", id)
@@ -62,6 +65,7 @@ export async function POST(
   const requestId = randomUUID();
   const authz = await requireRole("agent", { requestId, resource: "cadencias" });
   if (!authz.ok) return authz.response;
+  if (!(await cadenciasLigadas(createAdminClient(), authz.org.orgId))) return fail("not_found", "Módulo indisponível.", 404, { requestId });
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org } = authz;
   const { id: cadenceId } = await ctx.params;
@@ -70,7 +74,7 @@ export async function POST(
   if (!parsed.success) {
     return fail("validation_failed", t("Dados inválidos."), 422, { requestId, details: parsed.error.flatten() });
   }
-  const { lead_id } = parsed.data;
+  const { lead_id, rastreio_consentido } = parsed.data;
 
   const supabase = createAdminClient();
 
@@ -88,17 +92,16 @@ export async function POST(
   // Confere o lead CONTRA A ORGANIZAÇÃO (mesmo motivo do `channel_sessions` em
   // `campaigns/route.ts`) e traz o e-mail do contato — sem ele não há para
   // onde mandar, e a inscrição nunca deveria nascer para nunca sair do lugar.
-  const { data: lead } = await supabase
-    .from("crm_leads")
-    .select("id, contact_id, contacts:contact_id(id, email, is_anonymized)")
-    .eq("organization_id", org.orgId)
-    .eq("id", lead_id)
-    .maybeSingle();
-  const contato = (lead as { contacts?: { id: string; email: string | null; is_anonymized: boolean } | null } | null)
-    ?.contacts;
-  if (!lead || !contato) {
-    return fail("cadencia_lead_indisponivel", t("Lead não encontrado nesta organização."), 409, { requestId });
-  }
+  const { data: lead, error: erroLead } = await supabase
+    .from("crm_leads").select("id, contact_id").eq("organization_id", org.orgId).eq("id", lead_id).maybeSingle();
+  if (erroLead) return fail("internal_error", t("Não foi possível buscar os negócios."), 500, { requestId });
+  if (!lead?.contact_id) return fail("cadencia_lead_indisponivel", t("Lead não encontrado nesta organização."), 409, { requestId });
+  const { data: contato, error: erroContato } = await supabase.from("contacts")
+    .select("id, email, is_anonymized, is_blocked, is_personal, consent")
+    .eq("id", lead.contact_id).eq("organization_id", org.orgId).maybeSingle();
+  if (erroContato) return fail("internal_error", t("Não foi possível buscar os negócios."), 500, { requestId });
+  if (!contato) return fail("cadencia_lead_indisponivel", t("Lead não encontrado nesta organização."), 409, { requestId });
+  if (contatoRestringido(contato)) return fail("cadencia_lead_indisponivel", t("Este contato não pode receber cadências pelas preferências registradas."), 409, { requestId });
   if (!contato.email || contato.is_anonymized) {
     return fail("cadencia_lead_indisponivel", t("Este lead não tem e-mail para receber a cadência."), 409, {
       requestId,
@@ -111,7 +114,7 @@ export async function POST(
   // fechado. Só um humano decide contornar isso, e não é esta rota: é preciso
   // apagar a linha de supressão a mão (fora de escopo hoje), nunca uma
   // reinscrição comum.
-  const { data: descadastrado } = await supabase
+  const { data: descadastrado, error: erroSupressao } = await supabase
     .from("email_cadence_enrollments")
     .select("id")
     .eq("organization_id", org.orgId)
@@ -119,6 +122,7 @@ export async function POST(
     .eq("motivo_parada", "descadastro")
     .limit(1)
     .maybeSingle();
+  if (erroSupressao) return fail("internal_error", t("Não foi possível carregar as inscrições."), 500, { requestId });
   if (descadastrado) {
     return fail(
       "cadencia_lead_indisponivel",
@@ -137,6 +141,8 @@ export async function POST(
       contact_id: contato.id,
       status: "ativa",
       origem: "manual",
+      rastreio_consentido,
+      consentimento_em: rastreio_consentido ? new Date().toISOString() : null,
       inscrito_por: user.id,
     })
     .select("id, lead_id, contact_id, status, origem, proximo_em, created_at")

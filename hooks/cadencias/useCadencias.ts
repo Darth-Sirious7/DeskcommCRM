@@ -20,6 +20,8 @@
  *    audita mesmo (ver a rota).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+import { useT } from "@/hooks/i18n/useT";
 
 import type { Cadencia, ConfiguracaoDaCadencia, Passo, StatusDaCadencia } from "@/lib/cadencias/tipos";
 
@@ -101,97 +103,73 @@ export function useCadencias() {
 const ESPERA_DO_DEBOUNCE_MS = 700;
 
 export function useCadencia(id: string) {
+  const t = useT();
   const [cadencia, setCadencia] = useState<Cadencia | null>(null);
   const [carregando, setCarregando] = useState(true);
+  const atual = useRef<Cadencia | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendente = useRef<{ name?: string; configuracao?: ConfiguracaoDaCadencia; passos?: Passo[] }>({});
-
+  const revisoes = useRef<Record<string, number>>({});
+  const fila = useRef<Promise<boolean>>(Promise.resolve(true));
+  const gravar = useCallback(async (corpo: object): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/v1/cadencias/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo) });
+      if (!res.ok) { toast.error(await extrairErro(res)); return false; }
+      return true;
+    } catch { toast.error(t("Não foi possível salvar a cadência. Suas alterações continuam nesta tela.")); return false; }
+  }, [id, t]);
+  const descarregar = useCallback((): Promise<boolean> => {
+    if (timer.current) clearTimeout(timer.current);
+    const corpo = pendente.current;
+    const revisoesDoCorpo = { ...revisoes.current };
+    pendente.current = {};
+    if (Object.keys(corpo).length === 0) return fila.current;
+    fila.current = fila.current.then(async () => {
+      const salvo = await gravar(corpo);
+      if (!salvo) {
+        // Uma falha velha não recoloca texto sobre uma edição mais nova já
+        // enfileirada. Só restaura a chave que ainda tem a mesma revisão.
+        const restaurar = Object.fromEntries(Object.entries(corpo).filter(([chave]) => revisoes.current[chave] === revisoesDoCorpo[chave]));
+        pendente.current = { ...restaurar, ...pendente.current };
+      }
+      return salvo;
+    });
+    return fila.current;
+  }, [gravar]);
   useEffect(() => {
     let vivo = true;
-    // `carregando` já nasce `true` (useState acima); Next.js remonta a página
-    // quando o `id` da rota muda, então não há um segundo carregamento no
-    // mesmo componente a resetar.
-    (async () => {
+    void (async () => {
       try {
         const res = await fetch(`/api/v1/cadencias/${id}`);
-        if (!res.ok) {
-          if (vivo) setCadencia(null);
-          return;
-        }
-        const { data } = (await res.json()) as { data: LinhaDaApi };
-        if (vivo) setCadencia(linhaParaCadencia(data));
-      } finally {
-        if (vivo) setCarregando(false);
-      }
+        if (!res.ok) throw new Error();
+        const { data } = await res.json() as { data: LinhaDaApi };
+        if (vivo) { atual.current = linhaParaCadencia(data); setCadencia(atual.current); }
+      } catch { if (vivo) toast.error(t("Não foi possível carregar a cadência.")); }
+      finally { if (vivo) setCarregando(false); }
     })();
-    return () => {
-      vivo = false;
-      if (timer.current) clearTimeout(timer.current);
-    };
-  }, [id]);
-
-  const gravarConteudoAgora = useCallback(async () => {
-    const corpo = pendente.current;
-    pendente.current = {};
-    if (Object.keys(corpo).length === 0) return;
-    const res = await fetch(`/api/v1/cadencias/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(corpo),
-    });
-    if (res.ok) {
-      const { data } = (await res.json()) as { data: LinhaDaApi };
-      setCadencia(linhaParaCadencia(data));
+    return () => { vivo = false; void descarregar(); };
+  }, [id, descarregar, t]);
+  const salvar = useCallback(async (nova: Cadencia): Promise<boolean> => {
+    const anterior = atual.current;
+    if (!anterior) return false;
+    if (nova.status !== anterior.status) {
+      // O último texto precisa estar confirmado ANTES de a API validar/ativar.
+      if (!(await descarregar())) return false;
+      if (!(await gravar({ status: nova.status }))) return false;
+      atual.current = nova; setCadencia(nova);
+      return true;
     }
-    // Falha na gravação debounced fica só no console: o construtor não tem
-    // onde mostrar um erro de tecla perdida sem interromper quem está
-    // digitando. A tela recarrega com o último estado salvo se navegar fora.
-  }, [id]);
-
-  const salvar = useCallback(
-    (nova: Cadencia) => {
-      setCadencia((atual) => {
-        const anterior = atual;
-        // Otimista: a tela mostra a mudança já, e a rede confirma depois.
-        const otimista = { ...nova, atualizadaEm: new Date().toISOString() };
-
-        if (anterior && nova.status !== anterior.status) {
-          void (async () => {
-            const res = await fetch(`/api/v1/cadencias/${id}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ status: nova.status }),
-            });
-            if (res.ok) {
-              const { data } = (await res.json()) as { data: LinhaDaApi };
-              setCadencia(linhaParaCadencia(data));
-            } else if (anterior) {
-              // Estado recusado (409/422): volta pro que o servidor confirmou
-              // por último — não deixa a tela mentir "ativa" com o backend
-              // recusando.
-              setCadencia(anterior);
-            }
-          })();
-        }
-
-        const mudouConteudo =
-          !anterior || nova.nome !== anterior.nome || nova.configuracao !== anterior.configuracao || nova.passos !== anterior.passos;
-        if (mudouConteudo) {
-          pendente.current = {
-            ...pendente.current,
-            ...(nova.nome !== anterior?.nome ? { name: nova.nome } : {}),
-            ...(nova.configuracao !== anterior?.configuracao ? { configuracao: nova.configuracao } : {}),
-            ...(nova.passos !== anterior?.passos ? { passos: nova.passos } : {}),
-          };
-          if (timer.current) clearTimeout(timer.current);
-          timer.current = setTimeout(() => void gravarConteudoAgora(), ESPERA_DO_DEBOUNCE_MS);
-        }
-
-        return otimista;
-      });
-    },
-    [id, gravarConteudoAgora],
-  );
-
+    atual.current = nova; setCadencia(nova);
+    const alteracoes = {
+      ...(nova.nome !== anterior.nome ? { name: nova.nome } : {}),
+      ...(nova.configuracao !== anterior.configuracao ? { configuracao: nova.configuracao } : {}),
+      ...(nova.passos !== anterior.passos ? { passos: nova.passos } : {}),
+    };
+    for (const chave of Object.keys(alteracoes)) revisoes.current[chave] = (revisoes.current[chave] ?? 0) + 1;
+    pendente.current = { ...pendente.current, ...alteracoes };
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => { void descarregar(); }, ESPERA_DO_DEBOUNCE_MS);
+    return true;
+  }, [descarregar, gravar]);
   return { cadencia, salvar, carregando };
 }

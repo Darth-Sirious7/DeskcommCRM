@@ -32,9 +32,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useCadencias } from "@/hooks/cadencias/useCadencias";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
-import { todosOsPassos } from "@/lib/cadencias/arvore";
 import type { Cadencia, StatusDaCadencia } from "@/lib/cadencias/tipos";
-import { EnvelopeSimple, GitBranch, Info, Plus, Trash, WhatsappLogo } from "@/lib/ui/icons";
+import { EnvelopeSimple, Info, Plus, Trash } from "@/lib/ui/icons";
 
 const VARIANTE: Record<StatusDaCadencia, "success" | "warning" | "neutral"> = {
   ativa: "success",
@@ -61,7 +60,7 @@ export function ListaDeCadencias() {
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight">{t("Cadências")}</h1>
           <p className="text-sm text-muted-foreground">
-            {t("Sequências de e-mail por segmento: o lead entra pela tag, recebe os e-mails no ritmo certo e sai sozinho quando responde.")}
+            {t("Sequências de e-mail com inscrição manual, janela de envio e descadastro.")}
           </p>
         </div>
         <Button onClick={() => setNovaAberta(true)} data-testid="nova-cadencia">
@@ -72,7 +71,7 @@ export function ListaDeCadencias() {
       <div className="flex gap-2 rounded-md border border-info/30 bg-info-bg p-3 text-xs text-info-fg">
         <Info size={14} aria-hidden className="mt-0.5 shrink-0" />
         <span>
-          {t("A cadência já fica salva no CRM. O envio de e-mail ainda não está ligado — os leads inscritos esperam na fila.")}
+          {t("O envio usa o e-mail da instalação. Respostas e devoluções ainda precisam ser acompanhadas pela equipe.")}
         </span>
       </div>
 
@@ -94,10 +93,6 @@ export function ListaDeCadencias() {
       ) : (
         <Card className="divide-y divide-border">
           {lista.map((c) => {
-            const passos = todosOsPassos(c.passos);
-            const emails = passos.filter((p) => p.tipo === "email").length;
-            const ramos = passos.filter((p) => p.tipo === "ramo").length;
-            const wpp = passos.filter((p) => p.tipo === "whatsapp").length;
             return (
               <div
                 key={c.id}
@@ -111,21 +106,9 @@ export function ListaDeCadencias() {
                         {c.configuracao.tagDoSegmento}
                       </span>
                     ) : (
-                      <span className="text-xs text-warning-fg">{t("Sem tag de segmento")}</span>
+                      <span className="text-xs text-warning-fg">{t("Sem segmento")}</span>
                     )}
-                    <span className="flex items-center gap-1">
-                      <EnvelopeSimple size={14} aria-hidden /> {emails} {t(emails === 1 ? "e-mail" : "e-mails")}
-                    </span>
-                    {ramos > 0 && (
-                      <span className="flex items-center gap-1">
-                        <GitBranch size={14} aria-hidden /> {ramos} {t(ramos === 1 ? "ramificação" : "ramificações")}
-                      </span>
-                    )}
-                    {wpp > 0 && (
-                      <span className="flex items-center gap-1">
-                        <WhatsappLogo size={14} aria-hidden /> {wpp} WhatsApp
-                      </span>
-                    )}
+
                   </p>
                 </Link>
                 <div className="flex shrink-0 items-center gap-3">

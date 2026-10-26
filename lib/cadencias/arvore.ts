@@ -3,6 +3,7 @@
  * lista e devolvem uma nova, sem mutar a de entrada — o construtor guarda o
  * resultado no estado e o React compara por referência.
  */
+import { variaveisDesconhecidas } from "./variaveis";
 import type { Passo, PassoRamo, TipoDePasso } from "./tipos";
 
 /** Qual lista recebe o passo: a principal ou um dos lados de um ramo. */
@@ -158,6 +159,7 @@ export function haEmailAntes(passos: Passo[], id: string): boolean {
 }
 
 export type ProblemaDoPasso =
+  | "Retire as variáveis indisponíveis antes de ativar."
   | "Informe o assunto do e-mail."
   | "Escreva o corpo do e-mail."
   | "A espera precisa ser de pelo menos 1 dia útil."
@@ -173,6 +175,7 @@ export function validarPassos(passos: Passo[]): Map<string, ProblemaDoPasso[]> {
     if (p.tipo === "email") {
       if (!p.assunto.trim() && !p.mesmaConversa) lista.push("Informe o assunto do e-mail.");
       if (!p.corpo.trim()) lista.push("Escreva o corpo do e-mail.");
+      if (variaveisDesconhecidas(`${p.assunto}\n${p.corpo}`).length) lista.push("Retire as variáveis indisponíveis antes de ativar.");
     }
     if (p.tipo === "espera" && !(p.diasUteis >= 1)) {
       lista.push("A espera precisa ser de pelo menos 1 dia útil.");

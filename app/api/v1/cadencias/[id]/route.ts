@@ -8,7 +8,10 @@
  *        "pause primeiro").
  * DELETE /api/v1/cadencias/:id — só fora de `ativa`, mesmo motivo.
  */
+import { problemasParaAtivar } from "@/lib/cadencias/ativacao";
+import type { Cadencia } from "@/lib/cadencias/tipos";
 import { randomUUID } from "node:crypto";
+import { cadenciasLigadas } from "@/lib/cadencias/modulo";
 
 import type { NextRequest } from "next/server";
 
@@ -45,6 +48,7 @@ export async function GET(
   const requestId = randomUUID();
   const authz = await requireRole("agent", { requestId, resource: "cadencias" });
   if (!authz.ok) return authz.response;
+  if (!(await cadenciasLigadas(createAdminClient(), authz.org.orgId))) return fail("not_found", "Módulo indisponível.", 404, { requestId });
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { id } = await ctx.params;
 
@@ -70,6 +74,7 @@ export async function PATCH(
   const requestId = randomUUID();
   const authz = await requireRole("manager", { requestId, resource: "cadencias" });
   if (!authz.ok) return authz.response;
+  if (!(await cadenciasLigadas(createAdminClient(), authz.org.orgId))) return fail("not_found", "Módulo indisponível.", 404, { requestId });
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org } = authz;
   const { id } = await ctx.params;
@@ -107,13 +112,16 @@ export async function PATCH(
     if (novoStatus === "ativa") {
       const { data: comPassos } = await supabase
         .from("email_cadences")
-        .select("passos")
+        .select("passos, configuracao")
+        .eq("organization_id", org.orgId)
         .eq("id", id)
         .single();
       const passos = ((comPassos as { passos: Passo[] } | null)?.passos ?? []) as Passo[];
       if (passos.length === 0) {
         return fail("cadencia_sem_passos", t("A cadência precisa de pelo menos um e-mail."), 422, { requestId });
       }
+      const problemas = problemasParaAtivar({ passos, configuracao: (comPassos as { configuracao: Cadencia["configuracao"] }).configuracao }, t);
+      if (problemas.length > 0) return fail("validation_failed", problemas[0]!, 422, { requestId });
       if (validarPassos(passos).size > 0) {
         return fail("cadencia_sem_passos", t("Há passos com problema — eles estão marcados em vermelho."), 422, {
           requestId,
@@ -171,6 +179,9 @@ export async function PATCH(
   if (entrada.name !== undefined) mudanca.name = entrada.name;
   if (entrada.configuracao !== undefined) mudanca.configuracao = entrada.configuracao;
   if (entrada.passos !== undefined) {
+    const { data: emCurso, error: erroFila } = await supabase.from("email_cadence_enrollments").select("id").eq("organization_id", org.orgId).eq("cadence_id", id).eq("status", "ativa").limit(1);
+    if (erroFila) return fail("internal_error", t("Não foi possível carregar as inscrições."), 500, { requestId });
+    if (emCurso?.length) return fail("cadencia_nao_editavel", t("Termine ou retire as inscrições ativas antes de mudar os passos."), 409, { requestId });
     mudanca.passos = entrada.passos;
     // Sobe a versão: a inscrição guarda o passo por id e o worker (quando
     // existir) confere que o id ainda existe na versão atual — comentário da
@@ -203,6 +214,7 @@ export async function DELETE(
   const requestId = randomUUID();
   const authz = await requireRole("manager", { requestId, resource: "cadencias" });
   if (!authz.ok) return authz.response;
+  if (!(await cadenciasLigadas(createAdminClient(), authz.org.orgId))) return fail("not_found", "Módulo indisponível.", 404, { requestId });
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org } = authz;
   const { id } = await ctx.params;

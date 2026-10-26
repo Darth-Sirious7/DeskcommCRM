@@ -1,5 +1,6 @@
 "use client";
 
+import { traduzirProblemaDoPasso } from "@/lib/cadencias/rotulo-do-problema";
 import { useRef } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -74,7 +75,7 @@ export function PainelDoPasso(props: Props) {
             <Warning size={16} aria-hidden className="mt-0.5 shrink-0" />
             <ul className="space-y-0.5">
               {erros.map((e) => (
-                <li key={e}>{t(e)}</li>
+                <li key={e}>{traduzirProblemaDoPasso(e, t)}</li>
               ))}
             </ul>
           </div>
@@ -210,7 +211,7 @@ function FormEmail({
       <div className="flex gap-2 rounded-md bg-info-bg p-3 text-xs text-info-fg">
         <Info size={14} aria-hidden className="mt-0.5 shrink-0" />
         <span>
-          {t("Sai da caixa do dono do lead. Lead sem dono usa a caixa padrão da cadência.")}
+          {t("Sai pelo transporte de e-mail da instalação.")}
         </span>
       </div>
 
@@ -219,7 +220,7 @@ function FormEmail({
           <Label htmlFor="mesma-conversa">{t("Responder na mesma conversa")}</Label>
           <p className="text-xs text-text-muted">
             {podeResponderNaMesmaConversa
-              ? t("Vai como resposta ao e-mail anterior (“Re:”), na mesma thread.")
+              ? t("Usa o prefixo Re: no assunto anterior. O agrupamento depende do leitor de e-mail.")
               : t("Disponível a partir do segundo e-mail do caminho.")}
           </p>
         </div>
@@ -238,7 +239,7 @@ function FormEmail({
           ref={assuntoRef}
           value={passo.mesmaConversa ? "" : passo.assunto}
           disabled={passo.mesmaConversa}
-          placeholder={passo.mesmaConversa ? t("Re: assunto do e-mail anterior") : t("Ex.: {{primeiro_nome}}, uma ideia para a {{empresa}}")}
+          placeholder={passo.mesmaConversa ? t("Re: assunto do e-mail anterior") : t("Ex.: {{primeiro_nome}}, uma ideia para você")}
           onFocus={() => (ultimoFoco.current = "assunto")}
           onChange={(e) => onMudar({ ...passo, assunto: e.target.value })}
         />
@@ -308,8 +309,8 @@ function FormRamo({ passo, onMudar }: Props & { passo: PassoRamo }) {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="abriu">{t("Abriu o e-mail anterior")}</SelectItem>
-            <SelectItem value="clicou">{t("Clicou em um link do e-mail anterior")}</SelectItem>
-            <SelectItem value="respondeu">{t("Respondeu o e-mail")}</SelectItem>
+            <SelectItem disabled value="clicou">{t("Clicou em um link do e-mail anterior")}</SelectItem>
+            <SelectItem disabled value="respondeu">{t("Respondeu o e-mail")}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -326,12 +327,12 @@ function FormRamo({ passo, onMudar }: Props & { passo: PassoRamo }) {
             className="w-32"
           />
           <p className="text-xs text-text-muted">
-            {t("Aberturas com menos de 1 hora de intervalo contam como uma só — filtra as aberturas automáticas do Apple Mail e de filtros corporativos.")}
+            {t("A contagem depende de autorização do destinatário e pode incluir abertura automática do provedor de e-mail.")}
           </p>
         </div>
       )}
       <div className="space-y-2">
-        <Label htmlFor="dentro-de">{t("Esperar a resposta por até (dias úteis)")}</Label>
+        <Label htmlFor="dentro-de">{t("Esperar o sinal por até (dias)")}</Label>
         <Input
           id="dentro-de"
           type="number"

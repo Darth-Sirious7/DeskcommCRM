@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -19,27 +18,18 @@ import {
   numerarPassos,
   passoVazio,
   removerPasso,
-  todosOsPassos,
   validarPassos,
 } from "@/lib/cadencias/arvore";
+import { problemasParaAtivar } from "@/lib/cadencias/ativacao";
+import { Atividade } from "./Atividade";
 import type { Cadencia } from "@/lib/cadencias/tipos";
-import { ArrowLeft, ChartBar, ClockCounterClockwise, Pause, Play } from "@/lib/ui/icons";
+import { ArrowLeft, Pause, Play } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import { AbaConfiguracoes } from "./AbaConfiguracoes";
 import { CanvasDoFluxo } from "./CanvasDoFluxo";
 import { PainelDoPasso } from "./PainelDoPasso";
 
-type Aba = "fluxo" | "configuracoes" | "desempenho" | "historico";
-
-/** O que impede ativar e não pertence a um passo só. */
-function problemasGerais(c: Cadencia): string[] {
-  const out: string[] = [];
-  if (!c.configuracao.tagDoSegmento.trim()) out.push("Escolha a tag do segmento em Configurações.");
-  if (!todosOsPassos(c.passos).some((p) => p.tipo === "email")) out.push("A cadência precisa de pelo menos um e-mail.");
-  if (!c.configuracao.caixaPadraoId) out.push("Escolha a caixa padrão em Configurações.");
-  if (c.configuracao.janela.dias.length === 0) out.push("Escolha pelo menos um dia da semana para enviar.");
-  return out;
-}
+type Aba = "fluxo" | "configuracoes" | "atividade";
 
 export function Construtor({ id }: { id: string }) {
   const t = useT();
@@ -74,15 +64,16 @@ export function Construtor({ id }: { id: string }) {
   const passoAberto = selecionado ? encontrarPasso(cadencia.passos, selecionado) : null;
   const mudar = (patch: Partial<Cadencia>) => salvar({ ...cadencia, ...patch });
 
-  const ativar = () => {
-    const gerais = problemasGerais(cadencia);
+  const ativar = async () => {
+    const gerais = problemasParaAtivar(cadencia, t);
     if (gerais.length > 0 || erros.size > 0) {
       const primeiro = gerais[0] ?? t("Há passos com problema — eles estão marcados em vermelho.");
-      toast.error(t(primeiro));
+      toast.error(primeiro);
       if (gerais.length === 0) setAba("fluxo");
       return;
     }
-    mudar({ status: "ativa" });
+    const salvo = await mudar({ status: "ativa" });
+    if (!salvo) return;
     setSelecionado(null);
     toast.success(t("Cadência ativada."));
   };
@@ -90,8 +81,7 @@ export function Construtor({ id }: { id: string }) {
   const abas: { id: Aba; rotulo: string }[] = [
     { id: "fluxo", rotulo: t("Fluxo") },
     { id: "configuracoes", rotulo: t("Configurações") },
-    { id: "desempenho", rotulo: t("Desempenho") },
-    { id: "historico", rotulo: t("Histórico") },
+    { id: "atividade", rotulo: t("Inscrições e atividade") },
   ];
 
   return (
@@ -101,26 +91,26 @@ export function Construtor({ id }: { id: string }) {
       className="flex h-[calc(100dvh-8rem)] min-h-[560px] flex-col overflow-hidden rounded-md border border-border"
       data-testid="construtor-cadencia"
     >
-      <header className="flex flex-wrap items-center gap-3 bg-neutral-900 px-4 py-2.5 text-white">
+      <header className="flex flex-wrap items-center gap-3 border-b border-border bg-surface px-4 py-2.5 text-text">
         <Link
           href="/app/cadencias"
-          className="flex items-center gap-1.5 text-sm font-medium text-white/90 hover:text-white"
+          className="flex items-center gap-1.5 text-sm font-medium text-text-muted hover:text-text"
         >
           <ArrowLeft size={16} aria-hidden /> {t("Cadências")}
         </Link>
-        <span className="text-white/30" aria-hidden>
+        <span className="text-border" aria-hidden>
           /
         </span>
         <input
           aria-label={t("Nome da cadência")}
           value={cadencia.nome}
           onChange={(e) => mudar({ nome: e.target.value })}
-          className="min-w-0 flex-1 rounded-sm bg-transparent px-1.5 py-1 text-sm font-semibold outline-hidden hover:bg-white/10 focus:bg-white/10"
+          className="min-w-0 flex-1 rounded-sm bg-transparent px-1.5 py-1 text-sm font-semibold outline-hidden hover:bg-surface-elevated focus:bg-surface-elevated"
           data-testid="nome-cadencia"
         />
-        <span className="text-xs text-white/70">
+        <span className="text-xs text-text-muted">
           {t("A cadência está")}{" "}
-          <strong className={cn(ativa ? "text-success" : "text-white")}>
+          <strong className={cn(ativa ? "text-success" : "text-text")}>
             {ativa ? t("ATIVA") : cadencia.status === "pausada" ? t("PAUSADA") : t("DESATIVADA")}
           </strong>
         </span>
@@ -128,8 +118,8 @@ export function Construtor({ id }: { id: string }) {
           <Button
             size="sm"
             variant="secondary"
-            onClick={() => {
-              mudar({ status: "pausada" });
+            onClick={async () => {
+              if (!(await mudar({ status: "pausada" }))) return;
               toast(t("Cadência pausada. Nenhum e-mail novo sai até você ativar de novo."));
             }}
           >
@@ -162,7 +152,7 @@ export function Construtor({ id }: { id: string }) {
         ))}
       </nav>
 
-      {ativa && aba !== "desempenho" && aba !== "historico" && (
+      {ativa && aba !== "atividade" && (
         <div className="border-b border-warning/30 bg-warning-bg px-4 py-2 text-center text-xs text-warning-fg">
           {t("A cadência está no ar. Para editar os passos ou as configurações, pause primeiro.")}
         </div>
@@ -218,62 +208,7 @@ export function Construtor({ id }: { id: string }) {
             />
           </div>
         )}
-        {aba === "desempenho" && (
-          <AbaAindaSemDados
-            icone={<ChartBar size={28} aria-hidden />}
-            titulo={t("O desempenho aparece quando os envios começarem")}
-            texto={t("Por cadência e por etapa: enviados, abertos únicos, total de aberturas, média por lead, cliques, respostas, bounces e descadastros.")}
-            colunas={[t("Enviados"), t("Abertos únicos"), t("Aberturas"), t("Cliques"), t("Respostas"), t("Bounces")]}
-          />
-        )}
-        {aba === "historico" && (
-          <AbaAindaSemDados
-            icone={<ClockCounterClockwise size={28} aria-hidden />}
-            titulo={t("Nenhum lead passou por esta cadência ainda")}
-            texto={t("Cada inscrição, e-mail enviado, abertura, resposta e parada vai aparecer aqui, com data e hora.")}
-          />
-        )}
-      </div>
-    </div>
-  );
-}
-
-function AbaAindaSemDados({
-  icone,
-  titulo,
-  texto,
-  colunas,
-}: {
-  icone: React.ReactNode;
-  titulo: string;
-  texto: string;
-  colunas?: string[];
-}) {
-  const t = useT();
-  const emBreve = t("Em breve");
-  return (
-    <div className="flex-1 overflow-y-auto bg-bg p-6">
-      <div className="mx-auto max-w-4xl space-y-6">
-        {colunas && (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-            {colunas.map((c) => (
-              <Card key={c} className="p-4">
-                <p className="text-xs text-text-muted">{c}</p>
-                <p className="mt-1 text-2xl font-semibold tabular-nums text-text-subtle">—</p>
-              </Card>
-            ))}
-          </div>
-        )}
-        <Card className="flex flex-col items-center gap-2 p-10 text-center">
-          <span className="flex h-14 w-14 items-center justify-center rounded-full bg-accent-soft text-accent">
-            {icone}
-          </span>
-          <p className="font-medium text-text">{titulo}</p>
-          <p className="max-w-md text-sm text-text-muted">{texto}</p>
-          <Badge variant="neutral" className="mt-2">
-            {emBreve}
-          </Badge>
-        </Card>
+        {aba === "atividade" && <Atividade id={id} ativa={ativa} />}
       </div>
     </div>
   );

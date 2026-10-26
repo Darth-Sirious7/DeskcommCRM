@@ -3,16 +3,8 @@
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useT } from "@/hooks/i18n/useT";
-import { CAIXAS_DE_EXEMPLO } from "@/lib/cadencias/exemplos";
 import type { ConfiguracaoDaCadencia, DiaDaSemana } from "@/lib/cadencias/tipos";
 import { EnvelopeSimple, Lightning, StopCircle, Clock } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
@@ -23,101 +15,25 @@ interface Props {
   onMudar: (c: ConfiguracaoDaCadencia) => void;
 }
 
-const DIAS: { dia: DiaDaSemana; rotulo: string }[] = [
-  { dia: "seg", rotulo: "Seg" },
-  { dia: "ter", rotulo: "Ter" },
-  { dia: "qua", rotulo: "Qua" },
-  { dia: "qui", rotulo: "Qui" },
-  { dia: "sex", rotulo: "Sex" },
-  { dia: "sab", rotulo: "Sáb" },
-  { dia: "dom", rotulo: "Dom" },
-];
-
-/** Normaliza o que o usuário digita no formato de tag: minúsculas, hífens. */
-function formatarTag(bruto: string): string {
-  return bruto
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+/, "");
-}
+const DIAS: DiaDaSemana[] = ["seg", "ter", "qua", "qui", "sex", "sab", "dom"];
 
 export function AbaConfiguracoes({ configuracao: c, somenteLeitura, onMudar }: Props) {
   const t = useT();
-  const paradas: { chave: keyof ConfiguracaoDaCadencia["paradas"]; rotulo: string; ajuda: string }[] = [
-    { chave: "respondeu", rotulo: "Quando o lead responder", ajuda: "A resposta aparece no CRM e a cadência para para esse lead." },
-    { chave: "bounce", rotulo: "Quando o e-mail voltar (bounce)", ajuda: "Endereço inexistente ou caixa cheia. Protege a reputação do domínio." },
-    { chave: "descadastro", rotulo: "Quando o lead se descadastrar", ajuda: "Obrigatório pela LGPD: o endereço entra na lista de supressão." },
-    { chave: "ganhoOuPerdido", rotulo: "Quando o card for para ganho ou perdido", ajuda: "Não faz sentido seguir prospectando quem já fechou ou saiu." },
-  ];
+  const rotulos = { seg: t("Seg"), ter: t("Ter"), qua: t("Qua"), qui: t("Qui"), sex: t("Sex"), sab: t("Sáb"), dom: t("Dom") };
 
   return (
     <div className="h-full overflow-y-auto bg-bg">
       <fieldset disabled={somenteLeitura} className="mx-auto max-w-3xl space-y-6 p-6">
         <Secao icone={<Lightning size={16} aria-hidden />} titulo={t("Inscrição")}>
-          <div className="space-y-2">
-            <Label htmlFor="tag-segmento">{t("Tag do segmento")}</Label>
-            <Input
-              id="tag-segmento"
-              value={c.tagDoSegmento}
-              placeholder="papel-e-celulose"
-              className="max-w-sm font-mono"
-              onChange={(e) => onMudar({ ...c, tagDoSegmento: formatarTag(e.target.value) })}
-            />
-            <p className="text-xs text-text-muted">
-              {t("O lead que receber esta tag (por exemplo, vindo do Treg pelo webhook de captação) entra na cadência automaticamente.")}
-            </p>
-          </div>
-          <Linha
-            id="so-validado"
-            rotulo={t("Só inscrever lead com e-mail validado")}
-            ajuda={t("O Treg marca o e-mail como validado. Lead sem essa marca não entra, para não queimar o domínio com bounce.")}
-            marcado={c.somenteEmailValidado}
-            onMudar={(v) => onMudar({ ...c, somenteEmailValidado: v })}
-          />
+          <p className="text-sm text-text-muted">{t("Inscreva cada negócio na aba Inscrições e atividade. Tags não inscrevem automaticamente; não há integração com validador de e-mail.")}</p>
+          <Label htmlFor="tag-segmento">{t("Identificação do segmento (opcional)")}</Label>
+          <Input id="tag-segmento" value={c.tagDoSegmento} onChange={(e) => onMudar({ ...c, tagDoSegmento: e.target.value })} maxLength={80} />
         </Secao>
-
         <Secao icone={<EnvelopeSimple size={16} aria-hidden />} titulo={t("Remetente")}>
-          <p className="text-sm text-text">
-            {t("Cada e-mail sai da caixa do dono do lead. Escolha a caixa usada quando o lead não tem dono ou o dono ainda não conectou a caixa dele.")}
-          </p>
-          <div className="space-y-2">
-            <Label>{t("Caixa padrão")}</Label>
-            <Select
-              value={c.caixaPadraoId ?? undefined}
-              onValueChange={(caixaPadraoId) => onMudar({ ...c, caixaPadraoId })}
-            >
-              <SelectTrigger className="max-w-md">
-                <SelectValue placeholder={t("Escolha uma caixa")} />
-              </SelectTrigger>
-              <SelectContent>
-                {CAIXAS_DE_EXEMPLO.map((cx) => (
-                  <SelectItem key={cx.id} value={cx.id}>
-                    {cx.nomeDoRemetente} &lt;{cx.endereco}&gt;
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-text-muted">
-              {t("Use um domínio secundário para prospecção — assim o domínio principal da empresa fica protegido.")}
-            </p>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="limite">{t("Limite de envios por caixa, por dia")}</Label>
-            <Input
-              id="limite"
-              type="number"
-              min={1}
-              max={500}
-              value={c.limiteDiarioPorCaixa}
-              className="w-32"
-              onChange={(e) => onMudar({ ...c, limiteDiarioPorCaixa: Number(e.target.value) })}
-            />
-            <p className="text-xs text-text-muted">
-              {t("O que passar do limite fica na fila para o próximo dia útil.")}
-            </p>
-          </div>
+          <p className="text-sm text-text-muted">{t("O envio usa o transporte de e-mail da instalação. A resposta vai para o dono do negócio quando ele tem e-mail cadastrado.")}</p>
+          <Label htmlFor="limite">{t("Limite desta cadência a cada 24 horas")}</Label>
+          <Input id="limite" type="number" min={1} max={10000} value={c.limiteDiarioPorCaixa} className="w-32" onChange={(e) => onMudar({ ...c, limiteDiarioPorCaixa: Number(e.target.value) })} />
+          <p className="text-xs text-text-muted">{t("O teto da instalação também se aplica. Tentativas contam para o limite; ao atingi-lo, a fila aguarda e confere novamente.")}</p>
         </Secao>
 
         <Secao icone={<Clock size={16} aria-hidden />} titulo={t("Janela de envio")}>
@@ -142,12 +58,12 @@ export function AbaConfiguracoes({ configuracao: c, somenteLeitura, onMudar }: P
                 onChange={(e) => onMudar({ ...c, janela: { ...c.janela, fim: e.target.value } })}
               />
             </div>
-            <p className="pb-2 text-xs text-text-muted">{t("Horário de Brasília")}</p>
+            <div className="space-y-2"><Label htmlFor="fuso">{t("Fuso horário")}</Label><Input id="fuso" value={c.fuso} onChange={(e) => onMudar({ ...c, fuso: e.target.value })} /></div>
           </div>
           <div className="space-y-2">
             <Label>{t("Dias da semana")}</Label>
             <div className="flex flex-wrap gap-1.5">
-              {DIAS.map(({ dia, rotulo }) => {
+              {DIAS.map((dia) => {
                 const ativo = c.janela.dias.includes(dia);
                 return (
                   <button
@@ -170,7 +86,7 @@ export function AbaConfiguracoes({ configuracao: c, somenteLeitura, onMudar }: P
                         : "border-border bg-surface text-text-muted hover:border-accent",
                     )}
                   >
-                    {t(rotulo)}
+                    {rotulos[dia]}
                   </button>
                 );
               })}
@@ -179,20 +95,9 @@ export function AbaConfiguracoes({ configuracao: c, somenteLeitura, onMudar }: P
         </Secao>
 
         <Secao icone={<StopCircle size={16} aria-hidden />} titulo={t("Quando a cadência para")}>
-          {paradas.map((p) => (
-            <Linha
-              key={p.chave}
-              id={`parada-${p.chave}`}
-              rotulo={t(p.rotulo)}
-              ajuda={t(p.ajuda)}
-              marcado={c.paradas[p.chave]}
-              travado={p.chave === "descadastro"}
-              onMudar={(v) => onMudar({ ...c, paradas: { ...c.paradas, [p.chave]: v } })}
-            />
-          ))}
-          <p className="text-xs text-text-muted">
-            {t("O vendedor também pode pausar, pular um passo ou tirar o lead da cadência a qualquer momento.")}
-          </p>
+          <Linha id="descadastro" rotulo={t("Quando o destinatário se descadastrar")} ajuda={t("O descadastro interrompe todas as cadências deste contato nesta empresa.")} marcado travado onMudar={() => {}} />
+          <Linha id="ganho-perdido" rotulo={t("Quando o card for para ganho ou perdido")} ajuda={t("Conferido antes de executar o próximo passo.")} marcado={c.paradas.ganhoOuPerdido} onMudar={(v) => onMudar({ ...c, paradas: { ...c.paradas, ganhoOuPerdido: v } })} />
+          <p className="text-xs text-text-muted">{t("Este módulo não detecta respostas nem devoluções do provedor. A retirada manual está na aba Inscrições e atividade.")}</p>
         </Secao>
       </fieldset>
     </div>

@@ -14,8 +14,6 @@ export interface VariavelDoEmail {
 export const VARIAVEIS_DO_EMAIL: VariavelDoEmail[] = [
   { chave: "primeiro_nome", rotulo: "Primeiro nome", exemplo: "Mariana" },
   { chave: "nome", rotulo: "Nome completo", exemplo: "Mariana Souza" },
-  { chave: "empresa", rotulo: "Empresa", exemplo: "Celulose Riograndense" },
-  { chave: "cargo", rotulo: "Cargo", exemplo: "Gerente de Compras" },
   { chave: "segmento", rotulo: "Segmento", exemplo: "Papel e celulose" },
   { chave: "vendedor", rotulo: "Nome do vendedor", exemplo: "Luiz" },
 ];

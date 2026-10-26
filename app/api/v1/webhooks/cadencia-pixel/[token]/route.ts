@@ -18,6 +18,8 @@
  */
 import type { NextRequest } from "next/server";
 
+import { cadenciasLigadas } from "@/lib/cadencias/modulo";
+import { registrarFalhaDeToken, tokenFailureLimited } from "@/lib/auth/rate-limit";
 import { verifyCadenciaLink } from "@/lib/cadencias/token";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -48,39 +50,36 @@ export async function GET(
   ctx: { params: Promise<{ token: string }> },
 ): Promise<Response> {
   const { token } = await ctx.params;
-  const payload = verifyCadenciaLink(token);
-  if (!payload) return respostaDoPixel();
+  if (await tokenFailureLimited(token)) return respostaDoPixel();
+  const payload = verifyCadenciaLink(token, "abertura");
+  if (!payload) { await registrarFalhaDeToken(token); return respostaDoPixel(); }
 
   const admin = createAdminClient();
   try {
+    if (!(await cadenciasLigadas(admin, payload.organization_id))) return respostaDoPixel();
+    const { data: inscricao, error: leituraErro } = await admin.from("email_cadence_enrollments")
+      .select("id, rastreio_consentido").eq("id", payload.enrollment_id)
+      .eq("organization_id", payload.organization_id).maybeSingle();
+    if (leituraErro || inscricao?.rastreio_consentido !== true) return respostaDoPixel();
     const { error: rpcErro } = await admin.rpc("fn_cadencia_registrar_abertura", {
       p_enrollment_id: payload.enrollment_id,
       p_organization_id: payload.organization_id,
+      p_passo_id: payload.passo_id,
     });
     if (rpcErro) {
       logger.error("[cadencia-pixel] incremento falhou", {
-        error: rpcErro.message,
+        codigo: "cadencia_open_write_failed",
         enrollment_id: payload.enrollment_id,
       });
       return respostaDoPixel();
     }
 
-    // A LINHA DO TEMPO permite mais de um "aberto" por inscrição de propósito
-    // (`tests/e2e`/schema não têm índice único em `tipo`) — é assim que a aba
-    // Atividade mostra "abriu às 10h02, abriu de novo às 14h30...".
-    await admin.from("email_cadence_events").insert({
-      organization_id: payload.organization_id,
-      cadence_id: payload.cadence_id,
-      enrollment_id: payload.enrollment_id,
-      lead_id: payload.lead_id,
-      tipo: "aberto",
-      passo_id: payload.passo_id,
-    });
-  } catch (err) {
+    // A RPC grava contagem e evento na mesma transação, só com consentimento atual.
+  } catch {
     // Falha aqui NUNCA pode aparecer pro cliente de e-mail — o pixel é
     // invisível por natureza. O log é a única rede.
     logger.error("[cadencia-pixel] falhou", {
-      error: err instanceof Error ? err.message : String(err),
+      codigo: "cadencia_public_handler_failed",
     });
   }
 

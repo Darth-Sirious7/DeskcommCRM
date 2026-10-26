@@ -10,6 +10,7 @@
  * `campaigns`.
  */
 import { randomUUID } from "node:crypto";
+import { cadenciasLigadas } from "@/lib/cadencias/modulo";
 
 import type { NextRequest } from "next/server";
 
@@ -45,6 +46,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("agent", { requestId, resource: "cadencias" });
   if (!authz.ok) return authz.response;
+  if (!(await cadenciasLigadas(createAdminClient(), authz.org.orgId))) return fail("not_found", "Módulo indisponível.", 404, { requestId });
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
 
   const params = Object.fromEntries(new URL(req.url).searchParams.entries());
@@ -91,6 +93,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("manager", { requestId, resource: "cadencias" });
   if (!authz.ok) return authz.response;
+  if (!(await cadenciasLigadas(createAdminClient(), authz.org.orgId))) return fail("not_found", "Módulo indisponível.", 404, { requestId });
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org } = authz;
 

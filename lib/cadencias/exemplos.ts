@@ -4,34 +4,17 @@
  * TEMPORÁRIO: quando as tabelas e a API da cadência existirem, a tela passa a
  * ler de lá e este arquivo vira fixture de teste.
  */
-import type { CaixaDeEnvio, Cadencia, ConfiguracaoDaCadencia } from "./tipos";
-
-export const CAIXAS_DE_EXEMPLO: CaixaDeEnvio[] = [
-  {
-    id: "caixa-comercial",
-    endereco: "comercial@prospeccao-exemplo.com.br",
-    nomeDoRemetente: "Equipe Comercial",
-    dono: null,
-    limiteDiario: 80,
-  },
-  {
-    id: "caixa-luiz",
-    endereco: "luiz@prospeccao-exemplo.com.br",
-    nomeDoRemetente: "Luiz",
-    dono: "Luiz",
-    limiteDiario: 50,
-  },
-];
+import type { Cadencia, ConfiguracaoDaCadencia } from "./tipos";
 
 export function configuracaoPadrao(): ConfiguracaoDaCadencia {
   return {
     tagDoSegmento: "",
-    somenteEmailValidado: true,
-    caixaPadraoId: CAIXAS_DE_EXEMPLO[0]?.id ?? null,
+    somenteEmailValidado: false,
+    caixaPadraoId: null,
     janela: { inicio: "08:00", fim: "18:00", dias: ["seg", "ter", "qua", "qui", "sex"] },
     fuso: "America/Sao_Paulo",
     limiteDiarioPorCaixa: 40,
-    paradas: { respondeu: true, bounce: true, descadastro: true, ganhoOuPerdido: true },
+    paradas: { respondeu: false, bounce: false, descadastro: true, ganhoOuPerdido: true },
   };
 }
 
@@ -48,9 +31,9 @@ export function cadenciaDeExemplo(): Cadencia {
       {
         id: "ex-1",
         tipo: "email",
-        assunto: "{{primeiro_nome}}, uma ideia para a {{empresa}}",
+        assunto: "{{primeiro_nome}}, uma ideia para a {{segmento}}",
         corpo:
-          "Oi {{primeiro_nome}},\n\nVi que a {{empresa}} atua em papel e celulose e queria entender como vocês organizam hoje o atendimento aos distribuidores.\n\nFaz sentido conversarmos 15 minutos nesta semana?\n\n{{vendedor}}",
+          "Oi {{primeiro_nome}},\n\nVi que a {{segmento}} atua em papel e celulose e queria entender como vocês organizam hoje o atendimento aos distribuidores.\n\nFaz sentido conversarmos 15 minutos nesta semana?\n\n{{vendedor}}",
         mesmaConversa: false,
       },
       { id: "ex-2", tipo: "espera", diasUteis: 3 },
@@ -63,9 +46,9 @@ export function cadenciaDeExemplo(): Cadencia {
             id: "ex-4",
             tipo: "whatsapp",
             mensagem:
-              "Oi {{primeiro_nome}}, aqui é {{vendedor}}. Te mandei um e-mail sobre a {{empresa}} — posso te explicar por aqui em 2 minutos?",
+              "Oi {{primeiro_nome}}, aqui é {{vendedor}}. Te mandei um e-mail sobre a {{segmento}} — posso te explicar por aqui em 2 minutos?",
           },
-          { id: "ex-5", tipo: "tarefa", titulo: "Ligar para {{primeiro_nome}} ({{empresa}})", prazoDias: 1 },
+          { id: "ex-5", tipo: "tarefa", titulo: "Ligar para {{primeiro_nome}} ({{segmento}})", prazoDias: 1 },
         ],
         nao: [
           {
@@ -73,7 +56,7 @@ export function cadenciaDeExemplo(): Cadencia {
             tipo: "email",
             assunto: "",
             corpo:
-              "{{primeiro_nome}}, retomando o e-mail acima — consegue me dizer quem cuida disso na {{empresa}}?\n\n{{vendedor}}",
+              "{{primeiro_nome}}, retomando o e-mail acima — consegue me dizer quem cuida disso na {{segmento}}?\n\n{{vendedor}}",
             mesmaConversa: true,
           },
           { id: "ex-7", tipo: "espera", diasUteis: 4 },

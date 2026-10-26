@@ -36,6 +36,8 @@
  * `limite_diario_atingido` na timeline pra quem opera ver O PORQUÊ do atraso
  * em vez de achar que o envio travou sem motivo.
  */
+import { contatoRestringido } from "./guarda-do-contato";
+import { dentroDaJanela } from "./janela";
 import { avancarDiasUteis } from "./dias-uteis";
 import { passoParaExecutar, primeiroDoLado, proximoIrmao } from "./proximo-passo";
 import { renderizarComLead } from "./renderizar";
@@ -45,6 +47,8 @@ import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { sendEmail } from "@/lib/email/roteador";
 import { env } from "@/lib/env";
+import { cadenciasLigadas } from "./modulo";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 import { logger } from "@/lib/logger";
 import type { createAdminClient } from "@/lib/supabase/admin";
 
@@ -74,9 +78,12 @@ export interface InscricaoRow {
   ultimo_email_em: string | null;
   ultimo_email_passo_id: string | null;
   aberturas: number;
+  aberturas_ultimo_email?: number;
   emails_enviados: number;
   tentativas: number;
   inscrito_por: string | null;
+  rastreio_consentido?: boolean;
+  envio_pendente_passo_id?: string | null;
 }
 
 export interface ResultadoDoTick {
@@ -87,11 +94,12 @@ export interface ResultadoDoTick {
   falhas: number;
 }
 
-async function carregarCadencia(admin: Admin, cadenceId: string) {
+async function carregarCadencia(admin: Admin, cadenceId: string, orgId: string) {
   const { data } = await admin
     .from("email_cadences")
     .select("id, status, passos, configuracao")
     .eq("id", cadenceId)
+    .eq("organization_id", orgId)
     .maybeSingle();
   return data as { id: string; status: string; passos: Passo[]; configuracao: Cadencia["configuracao"] } | null;
 }
@@ -127,7 +135,7 @@ async function executarPassoEmail(
   const { inscricao, cadencia, contato, nomeDoVendedor, emailDoVendedor } = ctx;
 
   const assunto = passo.mesmaConversa
-    ? assuntoDaResposta(cadencia.passos, inscricao.ultimo_email_passo_id)
+    ? renderizarComLead(assuntoDaResposta(cadencia.passos, inscricao.ultimo_email_passo_id), { nomeDoContato: contato.name, nomeDoVendedor, segmento: cadencia.configuracao.tagDoSegmento })
     : renderizarComLead(passo.assunto, {
         nomeDoContato: contato.name,
         nomeDoVendedor,
@@ -139,20 +147,22 @@ async function executarPassoEmail(
     segmento: cadencia.configuracao.tagDoSegmento,
   });
 
+  if (/\{\{\s*[a-z_]+\s*\}\}/.test(`${assunto}\n${corpoRenderizado}`)) return { ok: false, erro: "cadencia_variable_missing" };
+
   const linkPixel = signCadenciaLink({
     enrollment_id: inscricao.id,
     organization_id: inscricao.organization_id,
     cadence_id: inscricao.cadence_id,
     lead_id: inscricao.lead_id,
     passo_id: passo.id,
-  });
+  }, "abertura");
   const linkDescadastro = signCadenciaLink({
     enrollment_id: inscricao.id,
     organization_id: inscricao.organization_id,
     cadence_id: inscricao.cadence_id,
     lead_id: inscricao.lead_id,
     passo_id: passo.id,
-  });
+  }, "descadastro");
   const base = env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "");
   const urlPixel = `${base}/api/v1/webhooks/cadencia-pixel/${linkPixel}`;
   const urlDescadastro = `${base}/api/v1/webhooks/cadencia-descadastro/${linkDescadastro}`;
@@ -161,8 +171,18 @@ async function executarPassoEmail(
     `${corpoEmHtml(corpoRenderizado)}` +
     `<p style="margin-top:24px;font-size:11px;color:#888">` +
     `Não quer mais receber estes e-mails? <a href="${urlDescadastro}">Descadastrar</a></p>` +
-    `<img src="${urlPixel}" width="1" height="1" alt="" style="display:none" />`;
+    (inscricao.rastreio_consentido === true
+      ? `<p>Você autorizou a contagem de abertura deste e-mail. Ela pode ser revogada com o descadastro.</p><img src="${urlPixel}" width="1" height="1" alt="" style="display:none" />`
+      : "");
 
+  if (!(await cadenciasLigadas(admin, inscricao.organization_id))) return { ok: false, erro: "cadencia_desligada" };
+  // Persistir ANTES do efeito: um timeout pode significar que o provedor aceitou.
+  // Outra rodada nunca repete um envio cuja confirmação local ficou incerta.
+  const { data: reserva, error: erroReserva } = await admin.from("email_cadence_enrollments")
+    .update({ envio_pendente_passo_id: passo.id })
+    .eq("id", inscricao.id).eq("organization_id", inscricao.organization_id)
+    .eq("status", "ativa").is("envio_pendente_passo_id", null).select("id").maybeSingle();
+  if (erroReserva || !reserva) return { ok: false, erro: "cadencia_send_not_reserved" };
   const resultado = await sendEmail({
     to: contato.email,
     subject: assunto || "(sem assunto)",
@@ -179,10 +199,10 @@ async function executarPassoEmail(
   if (!resultado.ok) {
     logger.error("[cadencia-worker] envio de e-mail falhou", {
       enrollment_id: inscricao.id,
-      erro: resultado.error,
+      codigo: resultado.error,
       via: resultado.via,
     });
-    return { ok: false, erro: resultado.details ?? resultado.error ?? "send_failed" };
+    return { ok: false, erro: resultado.error ?? "send_failed" };
   }
 
   await admin.from("email_cadence_events").insert({
@@ -210,7 +230,7 @@ export function avaliarRamo(
     : true; // nunca houve e-mail: nada a esperar, decide já
 
   if (passo.condicao.tipo === "abriu") {
-    if (inscricao.aberturas >= passo.condicao.vezes) return true;
+    if ((inscricao.aberturas_ultimo_email ?? inscricao.aberturas) >= passo.condicao.vezes) return true;
     return prazoVenceu ? false : null;
   }
   // `clicou`/`respondeu`: sem fonte de dado ainda — nunca resolve pra "sim",
@@ -220,7 +240,15 @@ export function avaliarRamo(
 
 /** Uma linha da fila, do claim até o desfecho. Nunca lança — falha vira `ultimo_erro` na própria linha. */
 async function processarInscricao(admin: Admin, inscricao: InscricaoRow, agora: Date, requestId: string) {
-  const cadencia = await carregarCadencia(admin, inscricao.cadence_id);
+  if (!(await cadenciasLigadas(admin, inscricao.organization_id))) {
+    await liberarSemAvancar(admin, inscricao, agora, 60);
+    return { desfecho: "adiada" as const };
+  }
+  if (inscricao.envio_pendente_passo_id) {
+    await pararInscricao(admin, inscricao, "falha", "cadencia_delivery_unconfirmed");
+    return { desfecho: "falha" as const };
+  }
+  const cadencia = await carregarCadencia(admin, inscricao.cadence_id, inscricao.organization_id);
   if (!cadencia) {
     await liberarSemAvancar(admin, inscricao, agora, 60);
     return { desfecho: "adiada" as const };
@@ -237,6 +265,7 @@ async function processarInscricao(admin: Admin, inscricao: InscricaoRow, agora: 
       .from("crm_leads")
       .select("status")
       .eq("id", inscricao.lead_id)
+      .eq("organization_id", inscricao.organization_id)
       .maybeSingle();
     if (lead && (lead as { status: string }).status !== "open") {
       await pararInscricao(admin, inscricao, "ganho_ou_perdido");
@@ -251,12 +280,21 @@ async function processarInscricao(admin: Admin, inscricao: InscricaoRow, agora: 
   }
 
   if (passo.tipo === "email") {
+    if (!dentroDaJanela(cadencia.configuracao, agora)) {
+      await liberarSemAvancar(admin, inscricao, agora, 1);
+      return { desfecho: "adiada" as const };
+    }
+    const tetoDaCadencia = await checkRateLimit(
+      `cadencia-email:${inscricao.organization_id}:${inscricao.cadence_id}`,
+      cadencia.configuracao.limiteDiarioPorCaixa,
+      JANELA_DO_TETO_DIARIO_SEG,
+    );
     const teto = await checkRateLimit(
       BUCKET_TETO_DIARIO_DE_EMAIL,
       env.CADENCIA_LIMITE_EMAILS_POR_DIA,
       JANELA_DO_TETO_DIARIO_SEG,
     );
-    if (!teto.allowed) {
+    if (!teto.allowed || !tetoDaCadencia.allowed) {
       await admin.from("email_cadence_events").insert({
         organization_id: inscricao.organization_id,
         cadence_id: inscricao.cadence_id,
@@ -272,14 +310,20 @@ async function processarInscricao(admin: Admin, inscricao: InscricaoRow, agora: 
 
     const { data: contatoRow } = await admin
       .from("contacts")
-      .select("email, name, display_name, is_anonymized")
+      .select("email, name, display_name, is_anonymized, is_blocked, is_personal, consent")
       .eq("id", inscricao.contact_id)
+      .eq("organization_id", inscricao.organization_id)
       .maybeSingle();
     const contato = contatoRow as
-      | { email: string | null; name: string | null; display_name: string | null; is_anonymized: boolean }
+      | { email: string | null; name: string | null; display_name: string | null; is_anonymized: boolean; is_blocked: boolean; is_personal: boolean; consent: unknown }
       | null;
     if (!contato || !contato.email || contato.is_anonymized) {
       await pararInscricao(admin, inscricao, "sem_email");
+      return { desfecho: "parada" as const };
+    }
+
+    if (contatoRestringido(contato)) {
+      await pararInscricao(admin, inscricao, "falha", "cadencia_contact_restricted");
       return { desfecho: "parada" as const };
     }
 
@@ -289,6 +333,7 @@ async function processarInscricao(admin: Admin, inscricao: InscricaoRow, agora: 
       .from("crm_leads")
       .select("owner_user_id")
       .eq("id", inscricao.lead_id)
+      .eq("organization_id", inscricao.organization_id)
       .maybeSingle();
     const ownerId = (leadRow as { owner_user_id: string | null } | null)?.owner_user_id;
     if (ownerId) {
@@ -310,8 +355,12 @@ async function processarInscricao(admin: Admin, inscricao: InscricaoRow, agora: 
       requestId,
     });
 
+    if (!envio.ok && envio.erro === "cadencia_desligada") {
+      await liberarSemAvancar(admin, inscricao, agora, 60);
+      return { desfecho: "adiada" as const };
+    }
     if (!envio.ok) {
-      await registrarTentativaFalha(admin, inscricao, envio.erro ?? "send_failed");
+      await pararInscricao(admin, inscricao, "falha", envio.erro ?? "send_failed");
       return { desfecho: "falha" as const };
     }
 
@@ -320,6 +369,8 @@ async function processarInscricao(admin: Admin, inscricao: InscricaoRow, agora: 
       passoAtualId: proximo?.id ?? null,
       proximoEm: agora,
       extras: {
+        envio_pendente_passo_id: null,
+        aberturas_ultimo_email: 0,
         ultimo_email_em: agora.toISOString(),
         ultimo_email_passo_id: passo.id,
         emails_enviados: inscricao.emails_enviados + 1,
@@ -391,6 +442,7 @@ async function criarTarefaDoPasso(
     .from("crm_leads")
     .select("owner_user_id")
     .eq("id", inscricao.lead_id)
+      .eq("organization_id", inscricao.organization_id)
     .maybeSingle();
   const ownerId = (leadRow as { owner_user_id: string | null } | null)?.owner_user_id ?? inscricao.inscrito_por;
 
@@ -412,8 +464,7 @@ async function criarTarefaDoPasso(
     .single();
 
   if (error || !tarefa) {
-    logger.error("[cadencia-worker] criação de tarefa falhou", { erro: error?.message, enrollment_id: inscricao.id });
-    return;
+    throw new Error("cadencia_task_create_failed");
   }
 
   await admin.from("email_cadence_events").insert({
@@ -447,11 +498,8 @@ async function avancar(
     concluirSeSemProximo: boolean;
   },
 ) {
-  if (args.concluirSeSemProximo && args.passoAtualId === null) {
-    await concluirInscricao(admin, inscricao);
-    return;
-  }
-  await admin
+  const terminou = args.concluirSeSemProximo && args.passoAtualId === null;
+  const { error } = await admin
     .from("email_cadence_enrollments")
     .update({
       passo_atual_id: args.passoAtualId,
@@ -459,9 +507,12 @@ async function avancar(
       processando_ate: null,
       updated_at: new Date().toISOString(),
       ...args.extras,
+      ...(terminou ? { status: "concluida", concluida_em: new Date().toISOString() } : {}),
     })
     .eq("id", inscricao.id)
-    .eq("organization_id", inscricao.organization_id);
+    .eq("organization_id", inscricao.organization_id).eq("status", "ativa");
+  if (error) throw new Error("cadencia_progress_write_failed");
+  if (terminou) await admin.from("email_cadence_events").insert({ organization_id: inscricao.organization_id, cadence_id: inscricao.cadence_id, enrollment_id: inscricao.id, lead_id: inscricao.lead_id, tipo: "concluida" });
 }
 
 async function concluirInscricao(admin: Admin, inscricao: InscricaoRow) {
@@ -470,7 +521,7 @@ async function concluirInscricao(admin: Admin, inscricao: InscricaoRow) {
     .from("email_cadence_enrollments")
     .update({ status: "concluida", concluida_em: agora, processando_ate: null, updated_at: agora })
     .eq("id", inscricao.id)
-    .eq("organization_id", inscricao.organization_id);
+    .eq("organization_id", inscricao.organization_id).eq("status", "ativa");
   await admin.from("email_cadence_events").insert({
     organization_id: inscricao.organization_id,
     cadence_id: inscricao.cadence_id,
@@ -498,7 +549,7 @@ async function pararInscricao(
       ...(erro ? { ultimo_erro: erro } : {}),
     })
     .eq("id", inscricao.id)
-    .eq("organization_id", inscricao.organization_id);
+    .eq("organization_id", inscricao.organization_id).eq("status", "ativa");
   await admin.from("email_cadence_events").insert({
     organization_id: inscricao.organization_id,
     cadence_id: inscricao.cadence_id,
@@ -529,7 +580,7 @@ async function registrarTentativaFalha(admin: Admin, inscricao: InscricaoRow, er
       updated_at: agora.toISOString(),
     })
     .eq("id", inscricao.id)
-    .eq("organization_id", inscricao.organization_id);
+    .eq("organization_id", inscricao.organization_id).eq("status", "ativa");
   await admin.from("email_cadence_events").insert({
     organization_id: inscricao.organization_id,
     cadence_id: inscricao.cadence_id,
@@ -548,45 +599,51 @@ async function liberarSemAvancar(admin: Admin, inscricao: InscricaoRow, agora: D
       processando_ate: null,
     })
     .eq("id", inscricao.id)
-    .eq("organization_id", inscricao.organization_id);
+    .eq("organization_id", inscricao.organization_id).eq("status", "ativa");
 }
 
 export async function processarCadencias(admin: Admin, agora: Date, requestId: string): Promise<ResultadoDoTick> {
-  const { data: candidatas } = await admin
+  const vazio: ResultadoDoTick = { processadas: 0, emailsEnviados: 0, concluidas: 0, paradas: 0, falhas: 0 };
+  if (!(await moduloLigado(admin, "cadencias"))) return vazio;
+  const { data: candidatas, error: erroLeitura } = await admin
     .from("email_cadence_enrollments")
     .select(
-      "id, organization_id, cadence_id, lead_id, contact_id, passo_atual_id, ultimo_email_em, ultimo_email_passo_id, aberturas, emails_enviados, tentativas, inscrito_por, processando_ate",
+      "id, organization_id, cadence_id, lead_id, contact_id, passo_atual_id, ultimo_email_em, ultimo_email_passo_id, aberturas, emails_enviados, tentativas, inscrito_por, processando_ate, rastreio_consentido, envio_pendente_passo_id, aberturas_ultimo_email",
     )
     .eq("status", "ativa")
     .lte("proximo_em", agora.toISOString())
     .limit(LOTE);
 
-  const resultado: ResultadoDoTick = { processadas: 0, emailsEnviados: 0, concluidas: 0, paradas: 0, falhas: 0 };
+  if (erroLeitura) throw new Error("cadencia_queue_read_failed");
+  const resultado: ResultadoDoTick = vazio;
   for (const linha of (candidatas ?? []) as (InscricaoRow & { processando_ate: string | null })[]) {
+    if (!(await cadenciasLigadas(admin, linha.organization_id))) continue;
     // Claim otimista: só processa se ninguém mais é dono da linha agora.
     const { data: reivindicada } = await admin
       .from("email_cadence_enrollments")
       .update({ processando_ate: new Date(agora.getTime() + JANELA_DE_TRAVA_MS).toISOString() })
       .eq("id", linha.id)
+      .eq("organization_id", linha.organization_id)
+      .lte("proximo_em", agora.toISOString())
       .eq("status", "ativa")
       .or(`processando_ate.is.null,processando_ate.lt.${agora.toISOString()}`)
       .select("id")
       .maybeSingle();
     if (!reivindicada) continue; // outra rodada (ou instância) já pegou
 
+    resultado.processadas++;
     try {
       const desfecho = await processarInscricao(admin, linha, agora, requestId);
-      resultado.processadas++;
       if (desfecho.desfecho === "email_enviado") resultado.emailsEnviados++;
       if (desfecho.desfecho === "concluida") resultado.concluidas++;
       if (desfecho.desfecho === "parada") resultado.paradas++;
       if (desfecho.desfecho === "falha") resultado.falhas++;
-    } catch (err) {
+    } catch {
       logger.error("[cadencia-worker] inscrição falhou", {
         enrollment_id: linha.id,
-        erro: err instanceof Error ? err.message : String(err),
+        erro: "cadencia_processing_failed",
       });
-      await registrarTentativaFalha(admin, linha, err instanceof Error ? err.message : String(err));
+      await registrarTentativaFalha(admin, linha, "cadencia_processing_failed");
       resultado.falhas++;
     }
   }
