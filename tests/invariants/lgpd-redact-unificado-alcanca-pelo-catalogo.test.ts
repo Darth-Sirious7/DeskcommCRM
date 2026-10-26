@@ -293,6 +293,16 @@ const DECISOES: Record<string, Decisao> = {
     razao: "0494 (#1964): a LINHA e o estágio ficam (é o estado do negócio), mas next_action (texto) e qualification (jsonb) — texto livre que cita a pessoa — são zerados na virada de is_anonymized pelo gatilho fn_redigir_conversas_ao_anonimizar (a porta da 0391 que a app já usava em lib/lgpd/cascata.ts passo 7).",
   },
   // ── manter: a linha e o conteúdo ficam, por decisão ───────────────────────
+  automation_rule_contact_claims: {
+    decidida: "manter",
+    razao:
+      "Trava de corrida do dreno da automacao (#3267): guarda so identificadores (organizacao, regra, contato, evento) e o dado pessoal mora em `contacts`, que a cascata anonimiza. Apagar a linha aqui nao protege ninguem e destruiria a prova de que a regra ja executou — a chave unica e o proprio registro da corrida.",
+  },
+  automation_rule_runs: {
+    decidida: "manter",
+    razao:
+      "Recibo da execucao da regra automatica (#3267 acrescentou o `contact_id`, com `on delete set null` de proposito: o recibo sobrevive ao expurgo do contato). Guarda status, erro e o resultado das acoes — so as falhas vao detalhadas —, e o dado pessoal mora em `contacts`, que a cascata anonimiza. Apagar o recibo destruiria a prova de que a regra executou, que e justamente o que a opcao \"no maximo uma vez por contato\" precisa auditar; a coluna do contato zera sozinha no expurgo.",
+  },
   before_send_traces: {
     decidida: "manter",
     razao: "Traço de decisão do gate de envio (vetoed_gate/vetoed_code) para auditoria de POR QUE a mensagem não saiu; é código de vocabulário, não o conteúdo enviado — o corpo mora em messages.",
