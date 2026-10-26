@@ -77,7 +77,7 @@ async function mostrar(page: Page, base: string, historia: Historia, receita: Re
     await page.getByTestId("case-detail").waitFor({ state: "visible" });
     const acao = receita.cenas[indice]!.acao_humana;
     if (acao) {
-      await page.getByRole("radio", { name: ROTULO_ACAO_HUMANA[acao], exact: true }).click();
+      await page.getByRole("radio").filter({ has: page.getByText(ROTULO_ACAO_HUMANA[acao], { exact: true }) }).click();
       return { role: "radiogroup", nome: "O que você quer fazer?" };
     }
     return { testid: "case-detail" };
