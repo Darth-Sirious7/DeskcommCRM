@@ -49,13 +49,15 @@
         "id": "acao",
         "superficie": "tarefa",
         "mensagem": "Podem conferir e me dizer o que falta?",
-        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável."
+        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável.",
+        "tarefa_status": "pending"
       },
       {
         "id": "continuidade",
         "superficie": "tarefa",
         "mensagem": "Consegui separar os itens que estavam pendentes.",
-        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável."
+        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável.",
+        "tarefa_status": "done"
       }
     ]
   },
@@ -79,7 +81,8 @@
         "id": "acao",
         "superficie": "caso",
         "mensagem": "Prefiro falar com o profissional responsável.",
-        "resposta": "Essa decisão precisa da equipe. Seu pedido está separado para análise."
+        "resposta": "Essa decisão precisa da equipe. Seu pedido está separado para análise.",
+        "acao_humana": "escalate"
       },
       {
         "id": "continuidade",
@@ -170,7 +173,8 @@
         "id": "acao",
         "superficie": "caso",
         "mensagem": "Quero falar com alguém da clínica sobre isso.",
-        "resposta": "Essa decisão precisa da equipe. Seu pedido está separado para análise."
+        "resposta": "Essa decisão precisa da equipe. Seu pedido está separado para análise.",
+        "acao_humana": "escalate"
       },
       {
         "id": "continuidade",
@@ -230,7 +234,8 @@
         "id": "acao",
         "superficie": "caso",
         "mensagem": "Prefiro que o consultor explique.",
-        "resposta": "Essa decisão precisa da equipe. Seu pedido está separado para análise."
+        "resposta": "Essa decisão precisa da equipe. Seu pedido está separado para análise.",
+        "acao_humana": "escalate"
       },
       {
         "id": "continuidade",
@@ -260,13 +265,15 @@
         "id": "acao",
         "superficie": "tarefa",
         "mensagem": "Podem conferir a pendência com a equipe?",
-        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável."
+        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável.",
+        "tarefa_status": "pending"
       },
       {
         "id": "continuidade",
         "superficie": "tarefa",
         "mensagem": "Recebi a orientação e vou separar o que falta.",
-        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável."
+        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável.",
+        "tarefa_status": "done"
       }
     ]
   },
@@ -290,13 +297,15 @@
         "id": "acao",
         "superficie": "tarefa",
         "mensagem": "Podem conferir o que ainda preciso organizar?",
-        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável."
+        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável.",
+        "tarefa_status": "pending"
       },
       {
         "id": "continuidade",
         "superficie": "tarefa",
         "mensagem": "Vou acompanhar a conferência com a equipe.",
-        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável."
+        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável.",
+        "tarefa_status": "done"
       }
     ]
   },
@@ -320,13 +329,15 @@
         "id": "acao",
         "superficie": "tarefa",
         "mensagem": "A equipe consegue verificar na fonte autorizada?",
-        "resposta": "A consulta depende de uma fonte autorizada. Vou pedir que a equipe confira."
+        "resposta": "A consulta depende de uma fonte autorizada. Vou pedir que a equipe confira.",
+        "tarefa_status": "pending"
       },
       {
         "id": "continuidade",
         "superficie": "tarefa",
         "mensagem": "Podem me avisar depois da conferência?",
-        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável."
+        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável.",
+        "tarefa_status": "in_progress"
       }
     ]
   },
@@ -411,13 +422,16 @@
         "id": "acao",
         "superficie": "caso",
         "mensagem": "Podem conferir com a equipe antes de confirmar?",
-        "resposta": "Essa decisão precisa da equipe. Seu pedido está separado para análise."
+        "resposta": "Você chegou a usar o produto? A equipe precisa dessa informação antes de analisar a troca.",
+        "acao_humana": "need_lead_info"
       },
       {
         "id": "continuidade",
         "superficie": "conversa",
-        "mensagem": "Estou aguardando a orientação da equipe.",
-        "resposta": "A equipe está acompanhando a conversa e vai conferir os próximos passos."
+        "mensagem": "Não usei o produto. Quais são as orientações de envio?",
+        "resposta": "Vou conferir a política e a compra antes de orientar o envio. A troca ainda não está aprovada.",
+        "responde_ao_caso": true,
+        "acao_humana": "escalate"
       }
     ]
   },
@@ -441,13 +455,15 @@
         "id": "acao",
         "superficie": "tarefa",
         "mensagem": "Podem conferir as opções para me orientar?",
-        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável."
+        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável.",
+        "tarefa_status": "pending"
       },
       {
         "id": "continuidade",
         "superficie": "negocio",
         "mensagem": "Quero avaliar as opções antes de comprar.",
-        "resposta": "Seu interesse ficou registrado. A equipe vai acompanhar antes de qualquer confirmação."
+        "resposta": "Seu interesse ficou registrado. A equipe vai acompanhar antes de qualquer confirmação.",
+        "tarefa_status": "in_progress"
       }
     ]
   },
@@ -477,7 +493,8 @@
         "id": "continuidade",
         "superficie": "tarefa",
         "mensagem": "Vou acompanhar os próximos passos com a secretaria.",
-        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável."
+        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável.",
+        "tarefa_status": "in_progress"
       }
     ]
   },
@@ -501,13 +518,15 @@
         "id": "acao",
         "superficie": "tarefa",
         "mensagem": "Podem verificar o que falta para avançar?",
-        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável."
+        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável.",
+        "tarefa_status": "pending"
       },
       {
         "id": "continuidade",
         "superficie": "negocio",
         "mensagem": "Vou aguardar a análise antes de confirmar a matrícula.",
-        "resposta": "Seu interesse ficou registrado. A equipe vai acompanhar antes de qualquer confirmação."
+        "resposta": "Seu interesse ficou registrado. A equipe vai acompanhar antes de qualquer confirmação.",
+        "tarefa_status": "in_progress"
       }
     ]
   },
@@ -531,7 +550,8 @@
         "id": "acao",
         "superficie": "caso",
         "mensagem": "Prefiro conversar com a pessoa responsável.",
-        "resposta": "Essa decisão precisa da equipe. Seu pedido está separado para análise."
+        "resposta": "Essa decisão precisa da equipe. Seu pedido está separado para análise.",
+        "acao_humana": "escalate"
       },
       {
         "id": "continuidade",
@@ -567,7 +587,8 @@
         "id": "continuidade",
         "superficie": "tarefa",
         "mensagem": "Depois da visita quero revisar as opções.",
-        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável."
+        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável.",
+        "tarefa_status": "in_progress"
       }
     ]
   },
@@ -591,13 +612,15 @@
         "id": "acao",
         "superficie": "tarefa",
         "mensagem": "Posso organizar as pendências.",
-        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável."
+        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável.",
+        "tarefa_status": "pending"
       },
       {
         "id": "continuidade",
         "superficie": "negocio",
         "mensagem": "Vou aguardar a análise antes de considerar aprovado.",
-        "resposta": "Seu interesse ficou registrado. A equipe vai acompanhar antes de qualquer confirmação."
+        "resposta": "Seu interesse ficou registrado. A equipe vai acompanhar antes de qualquer confirmação.",
+        "tarefa_status": "in_progress"
       }
     ]
   },
@@ -652,7 +675,8 @@
         "id": "acao",
         "superficie": "caso",
         "mensagem": "A aula 3 é a única que não abre.",
-        "resposta": ""
+        "resposta": "",
+        "acao_humana": "need_lead_info"
       },
       {
         "id": "continuidade",
@@ -683,13 +707,15 @@
         "id": "acao",
         "superficie": "tarefa",
         "mensagem": "Podem conferir uma indicação para meu objetivo?",
-        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável."
+        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável.",
+        "tarefa_status": "pending"
       },
       {
         "id": "continuidade",
         "superficie": "negocio",
         "mensagem": "Quero avaliar a formação antes de decidir.",
-        "resposta": "Seu interesse ficou registrado. A equipe vai acompanhar antes de qualquer confirmação."
+        "resposta": "Seu interesse ficou registrado. A equipe vai acompanhar antes de qualquer confirmação.",
+        "tarefa_status": "in_progress"
       }
     ]
   },
@@ -713,7 +739,8 @@
         "id": "acao",
         "superficie": "caso",
         "mensagem": "Prefiro conversar com a equipe responsável.",
-        "resposta": "Essa decisão precisa da equipe. Seu pedido está separado para análise."
+        "resposta": "Essa decisão precisa da equipe. Seu pedido está separado para análise.",
+        "acao_humana": "escalate"
       },
       {
         "id": "continuidade",
@@ -743,13 +770,15 @@
         "id": "acao",
         "superficie": "tarefa",
         "mensagem": "Podem preparar as informações para o corretor?",
-        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável."
+        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável.",
+        "tarefa_status": "pending"
       },
       {
         "id": "continuidade",
         "superficie": "passagem",
         "mensagem": "Quero conversar com o corretor antes de contratar.",
-        "resposta": "Vou encaminhar seu pedido para a pessoa responsável."
+        "resposta": "Vou encaminhar seu pedido para a pessoa responsável.",
+        "tarefa_status": "in_progress"
       }
     ]
   },
@@ -773,13 +802,15 @@
         "id": "acao",
         "superficie": "tarefa",
         "mensagem": "Podem pedir ao corretor para revisar?",
-        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável."
+        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável.",
+        "tarefa_status": "pending"
       },
       {
         "id": "continuidade",
         "superficie": "conversa",
         "mensagem": "Vou conversar com a equipe antes de renovar.",
-        "resposta": "A equipe está acompanhando a conversa e vai conferir os próximos passos."
+        "resposta": "A equipe está acompanhando a conversa e vai conferir os próximos passos.",
+        "tarefa_status": "in_progress"
       }
     ]
   },
@@ -803,7 +834,8 @@
         "id": "acao",
         "superficie": "caso",
         "mensagem": "Preciso da análise da equipe.",
-        "resposta": "Essa decisão precisa da equipe. Seu pedido está separado para análise."
+        "resposta": "Essa decisão precisa da equipe. Seu pedido está separado para análise.",
+        "acao_humana": "escalate"
       },
       {
         "id": "continuidade",
@@ -839,7 +871,8 @@
         "id": "continuidade",
         "superficie": "tarefa",
         "mensagem": "Quero acompanhar a avaliação da equipe.",
-        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável."
+        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável.",
+        "tarefa_status": "in_progress"
       }
     ]
   },
@@ -863,7 +896,8 @@
         "id": "acao",
         "superficie": "caso",
         "mensagem": "Preciso conversar com a equipe sobre o orçamento.",
-        "resposta": "Essa decisão precisa da equipe. Seu pedido está separado para análise."
+        "resposta": "Essa decisão precisa da equipe. Seu pedido está separado para análise.",
+        "acao_humana": "escalate"
       },
       {
         "id": "continuidade",

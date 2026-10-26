@@ -6,7 +6,7 @@ import path from "node:path";
 import { createClient } from "@supabase/supabase-js";
 import { exigirHttpLocal } from "./seguranca";
 import { exigir, semErro, type Contexto } from "./semear-demonstracao";
-import { idDaHistoria, lerHistorias, receitas, type Historia, type Receita } from "./receitas-jornadas";
+import { idDaHistoria, lerHistorias, receitas, evolucaoDoCaso, type Historia, type Receita } from "./receitas-jornadas";
 
 export async function contextoDaBancada(): Promise<Contexto> {
   const url = exigirHttpLocal(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "");
@@ -50,6 +50,8 @@ export async function semearCena(ctx: Contexto, historia: Historia, receita: Rec
   let contato = id(1), sessaoDaHistoria = sessao;
   let contatoExistente = false;
   let compromisso = id(3);
+  let inicioCompromisso: string | null = null;
+  let fusoCompromisso = "America/Sao_Paulo", statusCompromisso = "confirmed";
   let responsavelAgenda = historia.id === "clinicas-remarcar-sessao" ? pessoa.ana : pessoa.helena;
   const titulo = historia.id === "clinicas-primeira-consulta" ? "Avaliação Postural — Marina Exemplo"
     : historia.id === "clinicas-remarcar-sessao" ? "Sessão de fisioterapia — Rui"
@@ -105,14 +107,18 @@ export async function semearCena(ctx: Contexto, historia: Historia, receita: Rec
   if (!superficies.includes("agenda")) semErro(await db.from("calendar_appointments").delete().eq("organization_id", org).eq("id", compromisso), "limpar compromisso próprio");
   if (superficies.includes("agenda")) {
     const comeca = historia.id === "clinicas-primeira-consulta" ? "2026-10-27T12:30:00.000Z" : horarioDaHistoria(historia.id === "clinicas-remarcar-sessao" && indice >= 2);
+    inicioCompromisso = comeca;
     // O piloto real permanece intacto. Quando presente, a foto lê seu compromisso original.
     const piloto = historia.id === "clinicas-primeira-consulta"
-      ? exigir(await db.from("calendar_appointments").select("id, owner_user_id").eq("organization_id", org).eq("title", titulo).eq("starts_at", comeca).in("status", ["confirmed", "pending"]).neq("id", compromisso), "compromisso do piloto") as Array<{ id: string; owner_user_id: string | null }>
+      ? exigir(await db.from("calendar_appointments").select("id, owner_user_id, starts_at, time_zone, status").eq("organization_id", org).eq("title", titulo).eq("starts_at", comeca).in("status", ["confirmed", "pending"]).neq("id", compromisso), "compromisso do piloto") as Array<{ id: string; owner_user_id: string | null; starts_at: string; time_zone: string; status: string }>
       : [];
     if (piloto.length > 1) throw new Error("piloto clínico ambíguo: mais de um compromisso");
     if (piloto[0]) {
       compromisso = piloto[0].id;
       responsavelAgenda = piloto[0].owner_user_id ?? pessoa.helena;
+      inicioCompromisso = piloto[0].starts_at;
+      fusoCompromisso = piloto[0].time_zone;
+      statusCompromisso = piloto[0].status;
     }
     else {
       const campos = { organization_id: org, contact_id: contato, title: titulo,
@@ -133,19 +139,27 @@ export async function semearCena(ctx: Contexto, historia: Historia, receita: Rec
     }
     semErro(await db.from("crm_leads").insert({ id: negocio, organization_id: org, pipeline_id: funil.id, stage_id: funil.etapas[indice >= 3 ? 2 : 0], contact_id: contato, title: titulo, status: "open", value_cents: 0, currency: "BRL" }), "negócio aberto");
   }
+  const tarefaStatus = receita.cenas[indice]!.tarefa_status;
+  if (superficies.includes("tarefa") && !tarefaStatus) throw new Error("receita sem situação da tarefa nesta cena");
   if (superficies.includes("tarefa")) semErro(await db.from("crm_tasks").insert({ id: tarefa, organization_id: org, title: titulo,
-    description: cena.operacao, contact_id: contato, lead_id: superficies.includes("negocio") ? negocio : null, status: indice === 3 ? "in_progress" : "pending", priority: "medium", assigned_to: pessoa.helena, created_by: pessoa.helena, due_date: horarioDaHistoria() }), "tarefa da equipe");
+    description: cena.operacao, contact_id: contato, lead_id: superficies.includes("negocio") ? negocio : null, status: tarefaStatus, priority: "medium", assigned_to: pessoa.helena, created_by: pessoa.helena, due_date: horarioDaHistoria() }), "tarefa da equipe");
   if (superficies.includes("caso")) {
+    const evolucao = evolucaoDoCaso(receita, indice);
     semErro(await db.from("agent_cases").insert({ id: caso, organization_id: org, conversation_id: conversa, agent_id: agenteId,
-      status: indice >= 3 ? (historia.id === "infoprodutos-acesso" ? "awaiting_lead" : "escalated") : "awaiting_human", kind: "duvida", source: "agent", title: casoTitulo, summary: historia.contexto, blocker: historia.cenas[1]!.operacao,
-      opened_at: em(1), closed_at: indice >= 3 && historia.id !== "infoprodutos-acesso" ? em(3) : null }), "caso demonstrativo");
+      status: evolucao.status, kind: "duvida", source: "agent", title: casoTitulo, summary: historia.contexto, blocker: historia.cenas[1]!.operacao,
+      opened_at: em(1), closed_at: evolucao.fechado ? em(indice + 1) : null }), "caso demonstrativo");
     semErro(await db.from("agent_case_events").insert({ organization_id: org, case_id: caso, kind: "opened", actor_kind: "system", body: "Estado semeado para o roteiro demonstrativo; não é execução observada de IA.", created_at: em(1) }), "origem do exemplo");
-    if (indice >= 3) semErro(await db.from("agent_case_events").insert({ organization_id: org, case_id: caso, kind: "human_replied", actor_kind: "human", actor_user_id: pessoa.helena, human_action: historia.id === "infoprodutos-acesso" ? "need_lead_info" : "escalate", body: historia.cenas[2]!.operacao, created_at: em(2) }), "encaminhamento demonstrativo");
+    if (evolucao.eventos.length) semErro(await db.from("agent_case_events").insert(evolucao.eventos.map((evento, i) => ({
+      organization_id: org, case_id: caso, kind: evento.kind, actor_kind: evento.actor_kind,
+      actor_user_id: evento.actor_kind === "human" ? pessoa.helena : null,
+      human_action: evento.human_action ?? null, body: evento.body,
+      created_at: new Date(Date.parse(em(evento.cena)) + i * 1000).toISOString(),
+    }))), "evolução demonstrativa do caso");
   }
   if (superficies.includes("configuracao-externa") || superficies.includes("fonte-externa")) {
     semErro(await db.from("platform_config").upsert({ chave: "MODULO_BANCO_EXTERNO", valor: "ligado", eh_segredo: false, semeado_do_env: false, updated_by: pessoa.helena }, { onConflict: "chave" }), "habilitar tela de configuração");
   }
-  return { contato, conversa, compromisso, tarefa, negocio, caso, titulo, casoTitulo, empresa, responsavelAgenda };
+  return { contato, conversa, compromisso, tarefa, negocio, caso, titulo, casoTitulo, empresa, responsavelAgenda, inicioCompromisso, fusoCompromisso, statusCompromisso, tarefaStatus };
 }
 
 async function main() {

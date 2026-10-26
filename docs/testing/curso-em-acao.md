@@ -12,7 +12,7 @@ O catálogo contém dez nichos, trinta histórias e quatro cenas por história. 
 
 Use a instalação local de teste com baseline aplicado, dono criado e a base de `curso/semear-demonstracao.ts` preparada. Pare os workers antes de semear: mensagens inseridas emitem eventos reais. Mantenha as credenciais no ambiente privado da bancada e `curso/saida/contas.json` fora do Git. Não copie segredos para comandos publicados, receitas ou assets.
 
-O app fotografado pode usar uma versão publicada diferente do checkout do curso. Informe a versão realmente executada:
+O app fotografado pode usar uma versão publicada diferente do checkout do curso. Informe obrigatoriamente a versão realmente executada. A captura recusa a execução antes de semear se `CURSO_VERSAO_FOTOS` estiver ausente, em vez de presumir uma release:
 
 ```bash
 CURSO_URL=http://127.0.0.1:3460 CURSO_VERSAO_FOTOS=1.89.0 \
@@ -38,6 +38,10 @@ pnpm exec tsx curso/semear-jornadas.ts clinicas-remarcar-sessao acao
 
 O helper das jornadas reaproveita contas, organização, canal e agente da base. Só limpa entidades do prefixo `deca0000` declarado no catálogo; não apaga pilotos ou volumes. Muda os nomes de organização/canal/agente e etapas do funil para a história fotografada. Retira somente as três respostas rápidas clínicas conhecidas da base; a busca da Inbox filtra o personagem pela interface. Os pilotos usam estado de atendimento automático nas etapas correspondentes, sem ligar worker. A primeira cena remove histórias anteriores; as seguintes evoluem o estado. Casos semeados usam o sufixo “· demonstração”, distinguindo-os de casos originais do piloto ou de controles diretos sem escolher uma linha por posição. Remarcação mantém o mesmo ID de compromisso e usa UPDATE explícito após o primeiro INSERT. A sessão de Rui pertence à Ana, preservando o compromisso de equipe já existente na agenda de Helena. Quando o compromisso do piloto clínico existe, a captura o lê sem modificar ou criar uma segunda reserva. Negócios permanecem abertos; tarefas não equivalem a venda, matrícula ou autorização concluída.
 
+As receitas declaram a ação humana por cena (`acao_humana`) e a situação da tarefa (`tarefa_status`). A cena de decisão mostra a opção escolhida antes do envio; a continuidade reconstitui os eventos correspondentes. Na troca de tamanho, a equipe pede informação, a cliente responde e a demanda passa ao humano sem aprovação automática. Apenas as três conferências narradas como encerradas (documentos jurídicos, cadastro de consórcio e documentos mensais da contabilidade) recebem `done`; as outras tarefas permanecem abertas. Para fotografar a conclusão, o capturador escolhe “Concluída” no filtro da lista e exige a ação “Reabrir a tarefa” na linha.
+
+A agenda usa o `starts_at`, fuso e situação efetivos do compromisso. Lê os dias desenhados na grade, navega pelos botões de período anterior/seguinte e abre a aba correta, inclusive “Passados”. Não usa `?data=`, que a tela não consome. Isso permite voltar à semana histórica de 27/10 após ela ter passado, sem alterar o produto ou a data da prova.
+
 Falha de seletor ou medição interrompe a execução. O manifesto é salvo após cada foto bem-sucedida, preservando capturas antigas e permitindo retomar pelo filtro da história. A conta e a sessão autenticada não entram no manifesto. Importar os helpers não lê contas, exige credenciais ou abre conexão.
 
 ## Pilotos e alcance da evidência
@@ -58,7 +62,7 @@ Nos exemplos de seguros, contabilidade e assistência técnica, a tela de Dados 
 ## Verificação e montagem
 
 ```bash
-pnpm exec vitest run curso/receitas-jornadas.test.ts curso/jornada.test.ts curso/licoes.test.ts
+pnpm exec vitest run curso/receitas-jornadas.test.ts curso/navegar-agenda.test.ts curso/jornada.test.ts curso/licoes.test.ts
 CURSO_BASE=/curso/ pnpm exec tsx curso/montar.ts
 ```
 

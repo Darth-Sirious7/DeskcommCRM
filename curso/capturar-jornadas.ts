@@ -1,14 +1,15 @@
 /** Fotografa as receitas do catálogo, sem chamar o motor ou enviar mensagens.
- * CURSO_URL=http://127.0.0.1:3460 pnpm exec tsx curso/capturar-jornadas.ts [jornada]
+ * CURSO_VERSAO_FOTOS=1.89.0 CURSO_URL=http://127.0.0.1:3460 pnpm exec tsx curso/capturar-jornadas.ts [jornada]
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { chromium, type Page } from "@playwright/test";
 import { CSS_DE_FOTO, entrar, esperarCarregar, medir, tirarFocoDeClique, type Captura } from "./capturar";
 import { exigirHttpLocal } from "./seguranca";
-import { chaveDaCena, lerHistorias, receitas, type Historia, type Receita } from "./receitas-jornadas";
-import { contextoDaBancada, horarioDaHistoria, semearCena } from "./semear-jornadas";
+import { chaveDaCena, lerHistorias, receitas, ROTULO_ACAO_HUMANA, exigirVersaoDaFoto, type Historia, type Receita } from "./receitas-jornadas";
+import { contextoDaBancada, semearCena } from "./semear-jornadas";
 import type { Alvo } from "./licao";
+import { navegarAgendaAte } from "./navegar-agenda";
 
 const SAIDA = path.join(path.dirname(new URL(import.meta.url).pathname), "saida");
 type Estado = Awaited<ReturnType<typeof semearCena>>;
@@ -24,16 +25,15 @@ async function mostrar(page: Page, base: string, historia: Historia, receita: Re
     return { css: "div[class~='group/conversa']" };
   }
   if (superficie === "agenda") {
-    const dia = horarioDaHistoria(historia.id === "clinicas-remarcar-sessao" && indice >= 2).slice(0, 10);
-    await page.goto(`${base}/app/agenda?data=${dia}`);
+    if (!estado.inicioCompromisso) throw new Error("cena de agenda sem compromisso semeado");
+    await page.goto(`${base}/app/agenda`);
     await esperarCarregar(page);
     if (historia.id === "clinicas-primeira-consulta" && indice === 1) {
       await page.getByTestId(`botao-pessoa-${estado.responsavelAgenda}`).click();
       await esperarCarregar(page);
     }
+    await navegarAgendaAte(page, estado.inicioCompromisso, estado.fusoCompromisso, estado.statusCompromisso);
     const linha = page.getByTestId(`linha-${estado.compromisso}`);
-    // Se amanhã mudou de semana, a navegação real avança um período.
-    if (!(await linha.isVisible())) await page.getByTestId("periodo-seguinte").click();
     await linha.waitFor({ state: "visible", timeout: 12_000 });
     if (indice === 2) {
       await linha.getByRole("link").click();
@@ -44,7 +44,12 @@ async function mostrar(page: Page, base: string, historia: Historia, receita: Re
   if (superficie === "tarefa") {
     await page.goto(`${base}/app/tasks`);
     await esperarCarregar(page);
+    if (estado.tarefaStatus === "done") {
+      await page.getByRole("combobox").filter({ hasText: "Em aberto" }).click();
+      await page.getByRole("option", { name: "Concluída", exact: true }).click();
+    }
     const linha = page.locator("div.group.rounded-lg").filter({ hasText: estado.titulo });
+    if (estado.tarefaStatus === "done") await linha.getByRole("checkbox", { name: "Reabrir a tarefa", exact: true }).waitFor({ state: "visible" });
     await linha.scrollIntoViewIfNeeded();
     if (indice === 2) {
       await linha.hover();
@@ -70,8 +75,9 @@ async function mostrar(page: Page, base: string, historia: Historia, receita: Re
     await esperarCarregar(page);
     await page.getByTestId("case-item").filter({ hasText: estado.casoTitulo }).click();
     await page.getByTestId("case-detail").waitFor({ state: "visible" });
-    if (indice === 2) {
-      await page.getByRole("radio", { name: historia.id === "infoprodutos-acesso" ? "Preciso de info do cliente" : "Não consigo — passar pra humano" }).click();
+    const acao = receita.cenas[indice]!.acao_humana;
+    if (acao) {
+      await page.getByRole("radio", { name: ROTULO_ACAO_HUMANA[acao], exact: true }).click();
       return { role: "radiogroup", nome: "O que você quer fazer?" };
     }
     return { testid: "case-detail" };
@@ -92,6 +98,7 @@ async function mostrar(page: Page, base: string, historia: Historia, receita: Re
 }
 
 async function main() {
+  const versao = exigirVersaoDaFoto(process.env.CURSO_VERSAO_FOTOS);
   const base = exigirHttpLocal(process.env.CURSO_URL ?? "http://127.0.0.1:3460");
   const historias = lerHistorias().filter((h) => !process.argv[2] || h.id === process.argv[2] || h.id.startsWith(`${process.argv[2]}-`));
   if (!historias.length) throw new Error("filtro sem jornadas");
@@ -117,7 +124,7 @@ async function main() {
         const caixa = await medir(pagina, alvo);
         const foto = `capturas/${chave}.jpg`;
         await pagina.screenshot({ path: path.join(SAIDA, foto), type: "jpeg", quality: 72 });
-        const captura: Captura = { foto, clicar: null, destaques: [{ ...caixa, rotulo: cena.titulo, tipo: "caixa" }], versao: (process.env.CURSO_VERSAO_FOTOS ?? "1.89.0").replace(/^v/, ""), capturado_em: new Date().toISOString() };
+        const captura: Captura = { foto, clicar: null, destaques: [{ ...caixa, rotulo: cena.titulo, tipo: "caixa" }], versao, capturado_em: new Date().toISOString() };
         manifesto.capturas[chave] = captura;
         // Uma falha posterior conserva as fotos concluídas e nunca registra a que falhou.
         writeFileSync(arquivo, JSON.stringify(manifesto, null, 2));
