@@ -36,13 +36,14 @@ const campos = [
 test.describe.configure({ timeout: 90_000 });
 
 test.beforeAll(async () => {
+  const ambiente = credenciaisSupabaseDeTeste();
+  // A recusa vem ANTES dos seeds: eles escrevem no destino configurado.
+  if (!destinoEhLocal(ambiente.url)) throw new Error("A prova exige Supabase local de teste.");
+  if (!ambiente.dbUrl || !destinoEhLocal(ambiente.dbUrl)) throw new Error("A corrida exige Postgres local de teste.");
   if (!existsSync(arquivo)) {
     execFileSync("npx", ["tsx", "scripts/seed-e2e-credentials.ts"], { stdio: "inherit" });
   }
   creds = JSON.parse(readFileSync(arquivo, "utf8")) as Creds;
-  const ambiente = credenciaisSupabaseDeTeste();
-  if (!destinoEhLocal(ambiente.url)) throw new Error("A prova exige Supabase local de teste.");
-  if (!ambiente.dbUrl || !destinoEhLocal(ambiente.dbUrl)) throw new Error("A corrida exige Postgres local de teste.");
   pool = new pg.Pool({ connectionString: ambiente.dbUrl, max: 3 });
   admin = createClient(ambiente.url, ambiente.serviceRole, {
     auth: { autoRefreshToken: false, persistSession: false },
@@ -203,11 +204,21 @@ test("revisão antiga recebe 409 após outra pessoa decidir e preserva o card", 
   await expect.poll(() => gravado(c.leadId)).toEqual({ medida: 0, localizador: "ANTES" });
 });
 
-async function aguardarPedidosBloqueados(quantidade: number): Promise<void> {
+async function aguardarPedidosBloqueados(quantidade: number, trava: pg.PoolClient): Promise<void> {
+  const { rows: conexao } = await trava.query<{ pid: number }>("select pg_backend_pid() as pid");
+  const pid = conexao[0]!.pid;
   await expect.poll(async () => {
-    const { rows } = await pool.query<{ total: string }>(`select count(*)::text as total
-      from pg_stat_activity where pid <> pg_backend_pid() and wait_event_type = 'Lock'
-        and query ilike '%lead_field_proposals%'`);
+    // Inclui quem espera pelo dono da linha e quem espera atrás dele na fila;
+    // uma sessão alheia bloqueada noutra proposta não antecipa a liberação.
+    const { rows } = await pool.query<{ total: string }>(`with recursive bloqueados(pid) as (
+      select a.pid from pg_stat_activity a where $1=any(pg_blocking_pids(a.pid))
+      union
+      select a.pid from pg_stat_activity a
+        join bloqueados b on b.pid=any(pg_blocking_pids(a.pid))
+    )
+    select count(*)::text as total from pg_stat_activity a
+      join bloqueados b on b.pid=a.pid
+      where a.wait_event_type='Lock' and a.query ilike '%lead_field_proposals%'`, [pid]);
     return Number(rows[0]!.total);
   }, { timeout: 20_000 }).toBeGreaterThanOrEqual(quantidade);
 }
@@ -224,7 +235,7 @@ test("duas decisões que leram pending disputam a mesma linha: só uma grava", a
       page.request.post(`/api/v1/leads/${c.leadId}/field-proposals/${c.medidaId}`, { data: { decision } })));
     // Os dois pedidos já leram pending e chegaram ao UPDATE antes da liberação.
     // Remover o predicado pending faria ambos vencerem, mesmo com essa trava.
-    await aguardarPedidosBloqueados(2);
+    await aguardarPedidosBloqueados(2, trava);
     await trava.query("commit");
     const recebidas = await respostas;
     expect(recebidas.map((r) => r.status()).sort()).toEqual([200, 409]);
@@ -255,7 +266,7 @@ test("expiração vence entre a leitura e a gravação da confirmação", async 
     resposta = page.request.post(`/api/v1/leads/${c.leadId}/field-proposals/${c.medidaId}`, {
       data: { decision: "accept" },
     });
-    await aguardarPedidosBloqueados(1);
+    await aguardarPedidosBloqueados(1, trava);
     await trava.query("commit");
     expect((await resposta).status()).toBe(409);
     expect(await gravado(c.leadId)).toEqual({ medida: 0, localizador: "ANTES" });
