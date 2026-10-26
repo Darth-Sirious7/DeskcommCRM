@@ -8314,6 +8314,9 @@ export const DICIONARIO: Traducoes = {
   Anexar: { es: "Adjuntar" },
   "Fotos e vídeos": { es: "Fotos y videos" },
   Documento: { es: "Documento" },
+  // Cartão do documento sem nome original (#2613): a extensão identificada como
+  // extensão. `{ext}` é PDF/XLSX/…, e o espanhol usa a mesma palavra.
+  "Documento {ext}": { es: "Documento {ext}" },
   "Enviar anexo": { es: "Enviar adjunto" },
   "Legenda (opcional)": { es: "Descripción (opcional)" },
   Legenda: { es: "Descripción" },
