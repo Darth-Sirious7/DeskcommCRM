@@ -3944,3 +3944,20 @@ Capturas dos dois casos e traces foram inspecionados; evidência local em
 iniciais com nome completo, um nome e fallback pelo e-mail: 8 vermelhos antes,
 8 verdes depois. **Não medido:** reconhecimento de voz em aparelho real e o
 fluxo inteiro em espanhol (a cobertura em espanhol aqui é do componente).
+
+## Rascunho da resposta e documento no cadastro — PRs #3490 / #3498 (2026-10-26)
+
+**Preparado, ainda NÃO EXECUTADO no navegador.** Os casos foram acrescentados a
+specs que já rodam no CI; este registro não declara PASS nem inventa captura.
+
+| Ação real | Spec | Evidência prevista, somente quando executar |
+|---|---|---|
+| Atendente assume uma conversa com mensagem recebida, escreve rascunho, toca a resposta rápida desligada e conserva o texto; apagar religa a barra e o `/` continua substituível | `inbox-responder-citando.spec.ts`, caso #3354 | `testInfo.outputPath`: `rascunho-preservado.png`, `resposta-preparada-no-campo.png` + trace |
+| Gerente abre Novo contato, digita documento inválido, sai do campo e vê o erro ligado por aria; tentativa inválida não chega à API, corrigir permite criar; outro contato sem documento continua criando | `contato-salva-email.spec.ts`, caso #3496 | `testInfo.outputPath`: `documento-invalido-junto-do-campo.png`, `contatos-criados-apos-validacao.png` + trace |
+
+As precondições usam conta e banco reais de teste e a resposta rápida é criada pela
+rota autenticada. Nenhum request é dublado. O aceite visual exige executar estes
+casos sobre build de produção e baseline fresco, abrir os traces/capturas e atualizar
+este estado com o head realmente medido. Não cobre nesta rodada mídia durante
+download, interação por toque em aparelho real ou cadastro sob perfil não brasileiro;
+a regra de país continua coberta pelos testes de componente existentes.

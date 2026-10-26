@@ -12,7 +12,7 @@
  * mensagem existe antes do submit.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render as renderRTL, screen } from "@testing-library/react";
+import { cleanup, render as renderRTL, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -68,6 +68,29 @@ describe("documento do contato: a tela valida no campo", () => {
 
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByLabelText(/CPF/i).getAttribute("aria-invalid")).toBeNull();
+  });
+
+  it("submit inválido não envia; corrigir apaga o erro e permite criar", async () => {
+    const usuario = userEvent.setup();
+    api.post.mockResolvedValue({ data: { contact: { id: "contato-teste" } } });
+    render(<NewContactDialog open onOpenChange={() => {}} />);
+    await usuario.type(screen.getByLabelText(/^Email$/), "contato@example.test");
+    const campo = screen.getByLabelText(/CPF/i);
+    await usuario.type(campo, "123.456.789-00");
+    await usuario.click(screen.getByRole("button", { name: "Criar contato" }));
+    await screen.findByRole("alert");
+    expect(api.post).not.toHaveBeenCalled();
+
+    await usuario.clear(campo);
+    await usuario.type(campo, "529.982.247-25");
+    await usuario.tab();
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    await usuario.click(screen.getByRole("button", { name: "Criar contato" }));
+    await waitFor(() => expect(api.post).toHaveBeenCalledOnce());
+    expect(api.post).toHaveBeenCalledWith(
+      "/api/v1/contacts",
+      expect.objectContaining({ cpf: "529.982.247-25" }),
+    );
   });
 
   it("vazio continua opcional: sair do campo sem digitar não acusa", async () => {
