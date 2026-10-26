@@ -56,8 +56,14 @@ interface Props {
   leadId: string;
   /** Só quem pode editar o card pode decidir; abaixo disso a fila é leitura. */
   podeDecidir: boolean;
-  /** Chamado após uma confirmação aceita, para o card recarregar o dado novo. */
-  aoDecidir?: () => void;
+  /** O valor que o servidor confirmou, para atualizar só este campo do card. */
+  aoDecidir?: (confirmado: CampoConfirmadoDoDocumento) => void;
+}
+
+export interface CampoConfirmadoDoDocumento {
+  leadId: string;
+  campo: string;
+  valor: unknown;
 }
 
 /**
@@ -154,8 +160,11 @@ export function RevisaoDoDocumento({ leadId, podeDecidir, aoDecidir }: Props) {
         delete proximo[id];
         return proximo;
       });
+      const confirmacao = decision === "accept"
+        ? (await r.json()) as { data: { campo: string; valor: unknown } }
+        : null;
       await carregar();
-      if (decision === "accept") aoDecidir?.();
+      if (confirmacao) aoDecidir?.({ leadId, ...confirmacao.data });
     } catch {
       setErro(t("Não foi possível registrar a decisão."));
     } finally {

@@ -27,11 +27,12 @@
     { "id": "e5", "from": "decisao", "to": "card", "label": "agent; revalida sem mudar a escala numérica" },
     { "id": "e6", "from": "decisao", "to": "fila", "label": "decisão condicional enquanto pending" },
     { "id": "e7", "from": "card", "to": "registro", "label": "atividade e trilha da confirmação" },
-    { "id": "e8", "from": "registro", "to": "revisao", "label": "dossiê recarrega o valor confirmado" },
+    { "id": "e8", "from": "decisao", "to": "revisao", "label": "valor confirmado atualiza só o campo, preservando outros rascunhos" },
     { "id": "e9", "from": "card", "to": "leitura", "label": "valor humano confirmado passa ao contexto do próximo atendimento" },
     { "id": "e10", "from": "fila", "to": "cron", "label": "pendências cujo prazo passou" },
     { "id": "e11", "from": "cron", "to": "fila", "label": "encerra como expired" },
     { "id": "e12", "from": "fila", "to": "lgpd", "label": "dados do negócio incluídos no export" },
-    { "id": "e13", "from": "lgpd", "to": "fila", "label": "redige trecho, valores e motivo; preserva decisão" }
+    { "id": "e13", "from": "lgpd", "to": "fila", "label": "redige trecho, valores e motivo; preserva decisão" },
+    { "id": "e14", "from": "registro", "to": "revisao", "label": "atividade lead_edited aparece na linha do tempo do dossiê" }
   ]
 }

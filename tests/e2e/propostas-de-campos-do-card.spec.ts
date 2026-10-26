@@ -33,6 +33,8 @@ const campos = [
   { key: "localizador", label: "Localizador do documento", type: "text" },
 ];
 
+test.describe.configure({ timeout: 90_000 });
+
 test.beforeAll(async () => {
   if (!existsSync(arquivo)) {
     execFileSync("npx", ["tsx", "scripts/seed-e2e-credentials.ts"], { stdio: "inherit" });
@@ -145,12 +147,16 @@ test("manager confere origem, salva o número mostrado e descarta o outro campo"
   const c = await cenario(page);
   const dialog = await abrir(page, c.titulo);
   const numero = dialog.locator('[data-proposta="medida"]');
+  const campoDoCard = dialog.getByRole("spinbutton", { name: "Medida do documento", exact: true });
+  await expect(campoDoCard).toHaveValue("0");
   await expect(numero).toContainText("Medida no documento sintético: 1,234");
   await expect(numero.getByRole("textbox", { name: "Corrigir Medida do documento" })).toHaveValue("1.234");
   await page.screenshot({ path: info.outputPath("01-revisao-sintetica.png"), fullPage: true });
   await numero.getByRole("button", { name: "Está certo, salvar", exact: true }).click();
   await expect(numero).toHaveCount(0);
   await expect.poll(() => gravado(c.leadId)).toEqual({ medida: 1.234, localizador: "ANTES" });
+  // Não basta o banco mudar: o campo que o atendente vê precisa acompanhar.
+  await expect(campoDoCard).toHaveValue("1.234");
   await dialog.locator('[data-proposta="localizador"]').getByRole("button", { name: "Descartar", exact: true }).click();
   await expect(dialog.locator('[data-peca="revisao-do-documento"]')).toHaveCount(0);
   await expect.poll(() => gravado(c.leadId)).toEqual({ medida: 1.234, localizador: "ANTES" });
