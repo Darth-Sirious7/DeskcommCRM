@@ -21,6 +21,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { type User, createClient } from "@supabase/supabase-js";
+import pg from "pg";
+
+import { exigirBancoLocal, validarOrganizacoesExtras } from "./seguranca";
 
 const URL_SUPABASE = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const CHAVE = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
@@ -224,7 +227,7 @@ const DA_INSTALACAO = {
 /** Colunas da organização que uma tela pode mudar (fuso, idioma, retenção, marca, suspensão…). */
 const DA_ORGANIZACAO = [
   "slug", "legal_name", "display_name", "cnpj", "status", "timezone", "locale", "ai_budget_cents",
-  "media_retention_days", "settings", "dpo_email", "privacy_policy_url", "suspended_at", "redacted_at", "suspended_reason", "suspended_by",
+  "country", "currency", "media_retention_enforced", "media_retention_days", "settings", "dpo_email", "privacy_policy_url", "suspended_at", "redacted_at", "suspended_reason", "suspended_by",
 ] as const;
 type Linha = Record<string, unknown>;
 
@@ -237,11 +240,15 @@ async function voltarAoEstadoDeFabrica(org: string, saida: string) {
     const linha = exigir(await db.from("organizations").select("*").eq("id", org).single(), "fábrica org") as Linha;
     const organizacao = Object.fromEntries(DA_ORGANIZACAO.filter((c) => c in linha).map((c) => [c, linha[c]]));
     mkdirSync(saida, { recursive: true });
-    writeFileSync(arquivo, JSON.stringify({ tabelas, organizacao }, null, 2));
+    const appMeta = exigir(await db.from("platform_meta_app").select("*"), "fábrica App da Meta");
+    writeFileSync(arquivo, JSON.stringify({ tabelas, organizacao, appMeta }, null, 2));
     console.info("estado de fábrica guardado");
     return;
   }
-  const fabrica = JSON.parse(readFileSync(arquivo, "utf8")) as { tabelas: Record<string, Linha[]>; organizacao: Linha };
+  const fabrica = JSON.parse(readFileSync(arquivo, "utf8")) as { tabelas: Record<string, Linha[]>; organizacao: Linha; appMeta?: Linha[] };
+  // Snapshot antigo não contém estas colunas. Defaults do baseline, nunca o valor já alterado
+  // por uma lição: copiar o estado atual aqui perpetuaria a contaminação que queremos desfazer.
+  const organizacao = { country: null, currency: "BRL", media_retention_enforced: true, ...fabrica.organizacao };
   for (const [t, chave] of Object.entries(DA_INSTALACAO)) {
     const guardadas = fabrica.tabelas[t] ?? [];
     const agora = exigir(await db.from(t).select(chave), `estado ${t}`) as unknown as Linha[];
@@ -249,7 +256,25 @@ async function voltarAoEstadoDeFabrica(org: string, saida: string) {
     if (sobrando.length) semErro(await db.from(t).delete().in(chave, sobrando as string[]), `voltar ${t}`);
     if (guardadas.length) semErro(await db.from(t).upsert(guardadas, { onConflict: chave }), `voltar ${t}`);
   }
-  semErro(await db.from("organizations").update(fabrica.organizacao).eq("id", org), "voltar a organização");
+  semErro(await db.from("organizations").update(organizacao).eq("id", org), "voltar a organização");
+  // A Meta não concede DELETE ao service_role. Como no módulo admin-meta, só a bancada local
+  // pode restaurar a linha inteira (incluindo o estado "Nunca configurado por aqui").
+  const metaAtual = exigir(await db.from("platform_meta_app").select("*"), "App da Meta atual") as Linha[];
+  const appMeta = fabrica.appMeta ?? [];
+  if (JSON.stringify(metaAtual) !== JSON.stringify(appMeta)) {
+    const cli = new pg.Client({ connectionString: exigirBancoLocal(process.env.SUPABASE_DB_URL) });
+    await cli.connect();
+    try {
+      // SUPABASE_DB_URL pode apontar por engano para OUTRO Postgres local. A organização
+      // resolvida pelo client precisa existir também na conexão direta antes do DELETE.
+      const identidade = await cli.query("select id from public.organizations where id = $1", [org]);
+      if (identidade.rowCount !== 1) throw new Error("Postgres direto não corresponde à organização da bancada Supabase");
+      await cli.query("delete from public.platform_meta_app where id = 1");
+      if (appMeta.length) semErro(await db.from("platform_meta_app").upsert(appMeta), "restaurar App da Meta");
+    } finally {
+      await cli.end();
+    }
+  }
 }
 
 async function main(): Promise<Contexto> {
@@ -273,6 +298,9 @@ async function main(): Promise<Contexto> {
   // todas as fotos. Saem pelo caminho do produto (fn_excluir_organizacao desarma as armadilhas da
   // cascata), depois de tirar a assinatura de exemplo que trava a exclusão.
   const extras = exigir(await db.from("organizations").select("id, slug").neq("id", org), "organizações extras") as Array<{ id: string; slug: string }>;
+  // Recusar dados desconhecidos ANTES do primeiro DELETE: este script só limpa a bancada do curso.
+  // Todos os ids de empresas de exemplo são declarados nestas sementes.
+  validarOrganizacoesExtras(org, extras);
   for (const x of extras) {
     semErro(await db.from("cobranca_assinaturas").delete().eq("organization_id", x.id), `assinatura de ${x.slug}`);
     semErro(await db.from("organizations").update({ status: "suspended", suspended_kind: "administrativa", suspended_at: new Date().toISOString() }).eq("id", x.id), `suspender ${x.slug}`);
@@ -304,6 +332,20 @@ async function main(): Promise<Contexto> {
   };
 
   // ---------- recomeça do zero ----------
+  // O plaintext desta chave aparece numa foto pública. Mesmo numa rodada parcial ela não
+  // pode continuar válida depois que a bancada for preparada para a próxima lição.
+  semErro(await db.from("api_tokens").update({ revoked_at: new Date().toISOString(), revoked_by: pessoa.helena })
+    .eq("organization_id", org).eq("name", "Prontuário eletrônico da clínica").is("revoked_at", null), "revogar chave fotografada");
+  // Só ids próprios do curso: pedidos e regras não podem contaminar a próxima tela, nem
+  // acordar efeitos externos quando uma lição de outro módulo cria um lead de teste.
+  semErro(await db.from("lgpd_requests").delete().eq("organization_id", org).in("id", [
+    "7c41e9a2-5b10-4d3e-9f21-be7000000001", "2a8f03d6-91c4-4e7a-8b55-be7000000002",
+    "d415b7e0-3a62-4f19-a8c3-be7000000003", "9e06c2f8-7d35-4b81-b6e4-be7000000004",
+  ]), "limpar pedidos LGPD da demonstração");
+  semErro(await db.from("automation_rules").update({ is_active: false }).eq("organization_id", org)
+    .eq("id", "a0d00000-0000-4000-8000-000000000001"), "desarmar regra de IA de outro módulo");
+  semErro(await db.from("followup_flow_pointers").update({ status: "disabled" }).eq("organization_id", org)
+    .in("id", [1, 2, 3].map((n) => `be300000-0000-4000-8000-${String(n).padStart(12, "0")}`)), "desarmar fluxos da demonstração");
   semErro(await db.from("conversations").delete().eq("organization_id", org), "limpar conversas");
   semErro(await db.from("crm_leads").delete().eq("organization_id", org), "limpar leads");
   semErro(await db.from("contacts").delete().eq("organization_id", org), "limpar contatos");

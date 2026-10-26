@@ -75,6 +75,10 @@ if (modulos.some((m) => m.tela.startsWith("/admin/"))) {
 }
 
 const versao = (() => {
+  // Fotos podem vir de rodadas antigas: a base local de git não diz qual app foi fotografado.
+  if (process.env.CURSO_VERSAO_FOTOS) return process.env.CURSO_VERSAO_FOTOS.replace(/^v/, "");
+  const versoes = [...new Set((Object.values(capturas) as Array<{ versao?: string }>).map((c) => c.versao).filter(Boolean))];
+  if (versoes.length) return versoes.join(" / ");
   try {
     return execFileSync("git", ["describe", "--tags", "--abbrev=0"], { cwd: RAIZ, encoding: "utf8" }).trim().replace(/^v/, "");
   } catch {
@@ -89,7 +93,8 @@ for (const c of Object.values(capturas) as Array<{ foto: string }>) c.foto = BAS
 
 const dados = {
   versao,
-  gerado: new Date().toISOString().slice(0, 10),
+  gerado: process.env.CURSO_DATA_FOTOS ?? new Date().toISOString().slice(0, 10),
+  datas_das_fotos: [...new Set((Object.values(capturas) as Array<{ capturado_em?: string }>).map((c) => c.capturado_em?.slice(0, 10)).filter(Boolean))].sort(),
   largura,
   altura,
   modulos,
