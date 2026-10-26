@@ -1333,6 +1333,15 @@ export const AUDIT_ACTIONS = [
   // cala a cobrança da organização inteira, e "quem desligou, e quando" só tem
   // resposta na trilha — a coluna guarda só o valor de agora.
   "ai.lembrete_de_caso_configurado",
+  // Materiais do acervo (criar, enviar arquivo, editar, arquivar, reindexar).
+  // O metadata leva só ids e contagens: o texto do material nunca entra — a
+  // tabela é append-only e a cascata de LGPD não a alcança. Criar e enviar
+  // arquivo usam o MESMO código: para quem lê a trilha a pergunta é "quem pôs
+  // este material no acervo", não por qual das duas portas ele entrou.
+  "ai.knowledge_source_created",
+  "ai.knowledge_source_updated",
+  "ai.knowledge_source_archived",
+  "ai.knowledge_source_reindexed",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

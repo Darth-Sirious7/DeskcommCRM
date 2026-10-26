@@ -2090,13 +2090,18 @@ jobs:
         timeout-minutes: 12
         run: |
           set -euo pipefail
+          source scripts/ci/apt-e2e-failover.sh
+          log="$(mktemp)"
+          trap 'rm -f "$log"' EXIT
+          atualizar=""
           for tentativa in 1 2 3; do
-            if timeout -k 20 180 pnpm exec playwright install --with-deps chromium; then exit 0; fi
-            echo "::warning title=Preparo do e2e: nova tentativa::a tentativa ${tentativa} de 3 de instalar o browser não terminou em 180 s (espelho do apt travado?)"
-            sudo pkill -KILL -x apt-get || :
-            sudo dpkg --configure -a
+            if timeout -k 20 180 bash -c "${atualizar} pnpm exec playwright install --with-deps chromium" 2>&1 | tee "$log"; then exit 0; else codigos=("${PIPESTATUS[@]}"); fi
+            test "${codigos[1]}" -eq 0 || exit 1
+            recuperar_apt_e2e "${codigos[0]}" "$log" "$tentativa"
+            atualizar="sudo apt-get update -q --error-on=any &&"
+            echo "::warning title=Preparo do e2e: nova tentativa::a tentativa ${tentativa} de 3 de instalar o browser falhou no transporte APT (código ${codigos[0]}); cada tentativa tem limite de 180 s"
           done
-          echo "::error title=O preparo não instalou o browser::3 tentativas de 180 s sem terminar. É o espelho do apt, não o PR — rerode a parte."
+          echo "::error title=O preparo não instalou o browser::3 tentativas limitadas a 180 s falharam no transporte APT. Consulte a fonte e o erro nos logs acima."
           exit 1
 
       # Salva logo depois de instalar, e não no fim do job: o `actions/cache`
@@ -2140,20 +2145,23 @@ jobs:
         timeout-minutes: 12
         run: |
           set -euo pipefail
+          source scripts/ci/apt-e2e-failover.sh
+          log="$(mktemp)"
+          trap 'rm -f "$log"' EXIT
           if ! command -v ffmpeg >/dev/null; then
             debs="$HOME/.cache/ffmpeg-apt"
             mkdir -p "$debs/partial"
             atualizar=""
             for tentativa in 1 2 3; do
-              if timeout -k 20 180 bash -c "${atualizar} sudo apt-get install -y -q --no-install-recommends -o Dir::Cache::Archives=$debs/ ffmpeg"; then break; fi
-              echo "::warning title=Preparo do e2e: nova tentativa::a tentativa ${tentativa} de 3 de instalar o ffmpeg não terminou em 180 s (espelho do apt travado?)"
+              if timeout -k 20 180 bash -c "${atualizar} sudo apt-get install -y -q --no-install-recommends -o Dir::Cache::Archives=$debs/ ffmpeg" 2>&1 | tee "$log"; then break; else codigos=("${PIPESTATUS[@]}"); fi
+              test "${codigos[1]}" -eq 0 || exit 1
+              recuperar_apt_e2e "${codigos[0]}" "$log" "$tentativa"
+              echo "::warning title=Preparo do e2e: nova tentativa::a tentativa ${tentativa} de 3 de instalar o ffmpeg falhou no transporte APT (código ${codigos[0]}); cada tentativa tem limite de 180 s"
               if [ "$tentativa" -eq 3 ]; then
-                echo "::error title=O preparo não instalou o ffmpeg::3 tentativas de 180 s sem terminar. É o espelho do apt, não o PR — rerode a parte."
+                echo "::error title=O preparo não instalou o ffmpeg::3 tentativas limitadas a 180 s falharam no transporte APT. Consulte a fonte e o erro nos logs acima."
                 exit 1
               fi
-              sudo pkill -KILL -x apt-get || :
-              sudo dpkg --configure -a
-              atualizar="sudo apt-get update -q &&"
+              atualizar="sudo apt-get update -q --error-on=any &&"
             done
           fi
           ffmpeg -hide_banner -encoders | grep -E ' (aac|libopus) '
