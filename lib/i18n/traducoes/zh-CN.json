@@ -2234,6 +2234,7 @@
   "Pode ser que esta mensagem já tenha chegado. Confira no WhatsApp do cliente antes de enviar de novo.": "这条消息可能已经送达。再次发送前，请先在客户的 WhatsApp 中确认。",
   "Enviar de novo": "再次发送",
   "O WhatsApp não confirmou o envio a tempo. Pode ser que a mensagem tenha chegado.": "WhatsApp 未能及时确认发送。消息可能已经送达。",
+  "O WhatsApp devolveu um erro para esta mensagem depois de aceitá-la. Pode ser que ela tenha chegado; confira na conversa antes de reenviar.": "WhatsApp 在接收此消息后返回了错误。消息可能已送达；重新发送前请先在对话中确认。",
   "Este número está desativado. Reative em Conexões para enviar.": "此号码已停用。请在“连接”中重新启用以发送。",
   "Este número não tem WhatsApp.": "此号码没有 WhatsApp。",
   "A janela de 24 horas fechou. Envie um modelo aprovado ou aguarde o cliente escrever.": "24 小时窗口已关闭。请发送已批准的模板，或等待客户发消息。",

@@ -6496,6 +6496,9 @@ export const DICIONARIO: Traducoes = {
   "O WhatsApp não confirmou o envio a tempo. Pode ser que a mensagem tenha chegado.": {
     es: "WhatsApp no confirmó el envío a tiempo. Puede que el mensaje haya llegado.",
   },
+  "O WhatsApp devolveu um erro para esta mensagem depois de aceitá-la. Pode ser que ela tenha chegado; confira na conversa antes de reenviar.": {
+    es: "WhatsApp devolvió un error para este mensaje después de aceptarlo. Puede que haya llegado; revisa la conversación antes de reenviarlo.",
+  },
   "Este número está desativado. Reative em Conexões para enviar.": {
     es: "Este número está desactivado. Reactívalo en Conexiones para enviar.",
   },
