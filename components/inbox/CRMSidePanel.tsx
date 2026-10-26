@@ -961,7 +961,19 @@ export function CRMSidePanel({ conversation, recolhido = false, onAlternarRecolh
           {t("Contato")}
         </h3>
         <Card className="mt-2 space-y-2 p-3 text-sm">
-          <div className="font-medium">{displayName}</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="font-medium">{displayName}</div>
+            {/*
+              O TIPO DO CONTATO (issue 3005, fatia 1): lido da COLUNA
+              (`contacts.contact_type`, migration 0763), nunca da etiqueta
+              `fornecedor` — mesma régua do selo "Pessoal" da ficha: remover a
+              tag não pode apagar o que o banco diz. Só o fornecedor ganha selo
+              porque cliente é o padrão; um selo em toda conversa não informa nada.
+            */}
+            {contact?.contact_type === "fornecedor" && (
+              <Badge variant="secondary">{t("Fornecedor")}</Badge>
+            )}
+          </div>
           {contact?.phone_number && (
             <div className="text-xs text-muted-foreground">{phoneForDisplay(contact.phone_number)}</div>
           )}
