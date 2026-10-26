@@ -1,0 +1,225 @@
+{
+  "id": "e-commerce",
+  "titulo": "E-commerce",
+  "resumo": "Pedidos, trocas e venda consultiva com leitura externa condicionada à integração disponível.",
+  "jornadas": [
+    {
+      "id": "e-commerce-consultar-pedido",
+      "titulo": "Onde está meu pedido?",
+      "empresa": "Casa das Trilhas (fictícia)",
+      "contexto": "Bia quer saber se a mochila comprada já foi despachada.",
+      "resultado": "Informação disponível no sistema de origem ou encaminhamento explícito se a consulta falhar.",
+      "tipo": "roteiro-demonstrativo",
+      "nota": "Roteiro demonstrativo: empresas, pessoas e mensagens desta história são fictícias. As fotos mostram telas reais de uma empresa fictícia usada no curso; seus nomes e dados ilustram os recursos, não correspondem aos personagens deste roteiro. A sequência narrada não comprova execução do motor de IA. Fotos específicas e comprovação serão preparadas separadamente.",
+      "dependencias": "Requer conexão externa ativa, tabelas e colunas autorizadas, capacidades de leitura no agente e regra da loja para conferir identidade e vínculo com o pedido. Não consulta qualquer loja por padrão, não altera pedido e não garante entrega.",
+      "montagem": [
+        {
+          "modulo": "agentes",
+          "licao": "instrucoes-e-capacidades",
+          "porque": "Configurar e publicar somente as capacidades necessárias ao agente do roteiro."
+        },
+        {
+          "modulo": "dados-externos",
+          "licao": "cadastrar-conexao",
+          "porque": "Cadastrar a fonte externa com credenciais de leitura e testar o acesso antes do atendimento."
+        },
+        {
+          "modulo": "inbox",
+          "licao": "conhecendo-a-tela",
+          "porque": "Reconhecer a conversa e a ficha do contato."
+        },
+        {
+          "modulo": "inbox",
+          "licao": "nota-interna",
+          "porque": "Guardar contexto visível somente para a equipe."
+        },
+        {
+          "modulo": "dados-externos",
+          "licao": "o-que-o-assistente-ve",
+          "porque": "Entender a leitura externa e o recorte autorizado."
+        },
+        {
+          "modulo": "tarefas",
+          "licao": "tarefas-criar-uma-tarefa",
+          "porque": "Criar um próximo passo explícito para a equipe."
+        }
+      ],
+      "cenas": [
+        {
+          "id": "chegada",
+          "titulo": "Uma compra anterior",
+          "cliente": "Bia pergunta sobre o envio da mochila.",
+          "operacao": "O roteiro identifica que é pós-venda, sem criar uma nova oportunidade de compra para responder ao pedido.",
+          "valor": "A demanda segue pelo contexto correto.",
+          "captura": "inbox--conhecendo-a-tela--p1"
+        },
+        {
+          "id": "qualificacao",
+          "titulo": "Conferir antes de expor",
+          "cliente": "Bia fornece a referência do pedido.",
+          "operacao": "A equipe aplica a regra de identificação da loja antes de liberar dados; um número informado sozinho não comprova titularidade.",
+          "valor": "A consulta não deve expor compras de outra pessoa.",
+          "captura": "inbox--nota-interna--p1"
+        },
+        {
+          "id": "acao",
+          "titulo": "Ler a fonte disponível",
+          "cliente": "Bia pergunta se a encomenda saiu.",
+          "operacao": "No roteiro, o agente consulta somente os campos liberados da conexão e relata o estado encontrado, indicando quando o dado não existe.",
+          "valor": "A resposta depende da fonte, sem inventar transportadora ou previsão.",
+          "captura": "dados-externos--o-que-o-assistente-ve--p2"
+        },
+        {
+          "id": "continuidade",
+          "titulo": "Quando falta informação",
+          "cliente": "Bia diz que o estado informado não esclareceu sua dúvida.",
+          "operacao": "Se a fonte não responder ou estiver incompleta, a equipe cria tarefa de conferência com a operação da loja e combina a continuidade.",
+          "valor": "Uma falha de consulta vira próximo passo, sem falsa confirmação de envio.",
+          "captura": "tarefas--tarefas-criar-uma-tarefa--p2"
+        }
+      ]
+    },
+    {
+      "id": "e-commerce-troca-tamanho",
+      "titulo": "Troca de tamanho com conferência humana",
+      "empresa": "Veste Aurora (fictícia)",
+      "contexto": "Cris recebeu um calçado e precisa de outro tamanho.",
+      "resultado": "Solicitação contextualizada e encaminhada à equipe que decide a troca.",
+      "tipo": "roteiro-demonstrativo",
+      "nota": "Roteiro demonstrativo: empresas, pessoas e mensagens desta história são fictícias. As fotos mostram telas reais de uma empresa fictícia usada no curso; seus nomes e dados ilustram os recursos, não correspondem aos personagens deste roteiro. A sequência narrada não comprova execução do motor de IA. Fotos específicas e comprovação serão preparadas separadamente.",
+      "dependencias": "Política de trocas cadastrada e equipe responsável; caso via agente exige capacidade habilitada. Nenhuma foto comprova concessão de troca, estoque, frete ou reembolso. Alterações na plataforma de venda são feitas fora deste fluxo.",
+      "montagem": [
+        {
+          "modulo": "agentes",
+          "licao": "instrucoes-e-capacidades",
+          "porque": "Configurar e publicar somente as capacidades necessárias ao agente do roteiro."
+        },
+        {
+          "modulo": "agentes",
+          "licao": "quando-responder-e-passar",
+          "porque": "Definir os limites e as situações em que a equipe continua o atendimento."
+        },
+        {
+          "modulo": "inbox",
+          "licao": "conhecendo-a-tela",
+          "porque": "Reconhecer a conversa e a ficha do contato."
+        },
+        {
+          "modulo": "casos",
+          "licao": "abrindo-um-caso",
+          "porque": "Ler a demanda que precisa de decisão da equipe."
+        },
+        {
+          "modulo": "casos",
+          "licao": "respondendo-um-caso",
+          "porque": "Pedir informação, registrar a decisão ou passar ao humano."
+        },
+        {
+          "modulo": "inbox",
+          "licao": "assumir-e-responder",
+          "porque": "Assumir o atendimento e responder pela equipe."
+        }
+      ],
+      "cenas": [
+        {
+          "id": "chegada",
+          "titulo": "O produto chegou",
+          "cliente": "Cris explica que o calçado ficou apertado.",
+          "operacao": "A conversa registra que se trata de troca, e não de uma nova venda.",
+          "valor": "A equipe consegue ler o motivo desde a primeira mensagem.",
+          "captura": "inbox--conhecendo-a-tela--p1"
+        },
+        {
+          "id": "qualificacao",
+          "titulo": "Detalhar a solicitação",
+          "cliente": "Cris indica o pedido e o tamanho desejado.",
+          "operacao": "No roteiro, o agente reúne a demanda em um caso para conferência da política e da compra pela equipe.",
+          "valor": "A exceção tem um lugar de acompanhamento.",
+          "captura": "casos--abrindo-um-caso--p1"
+        },
+        {
+          "id": "acao",
+          "titulo": "Falta uma informação",
+          "cliente": "Cris ainda não informou se o produto foi usado.",
+          "operacao": "A equipe usa a opção de pedir informação ao cliente, especificando o que falta para analisar, sem aprovar a troca antecipadamente.",
+          "valor": "A análise avança com uma pergunta concreta.",
+          "captura": "casos--respondendo-um-caso--p1"
+        },
+        {
+          "id": "continuidade",
+          "titulo": "A loja decide",
+          "cliente": "Cris responde e pede as orientações de envio.",
+          "operacao": "A pessoa responsável assume a conversa e comunica somente a decisão efetiva; eventual troca no sistema da loja é uma ação separada.",
+          "valor": "Atendimento e execução logística ficam distinguíveis.",
+          "captura": "inbox--assumir-e-responder--p1"
+        }
+      ]
+    },
+    {
+      "id": "e-commerce-venda-consultiva",
+      "titulo": "Escolher um kit sem perder o próximo passo",
+      "empresa": "Ateliê Semente (fictícia)",
+      "contexto": "Davi busca um presente e ainda não decidiu qual kit faz sentido.",
+      "resultado": "Oportunidade organizada com preferência e tarefa de atendimento.",
+      "tipo": "roteiro-demonstrativo",
+      "nota": "Roteiro demonstrativo: empresas, pessoas e mensagens desta história são fictícias. As fotos mostram telas reais de uma empresa fictícia usada no curso; seus nomes e dados ilustram os recursos, não correspondem aos personagens deste roteiro. A sequência narrada não comprova execução do motor de IA. Fotos específicas e comprovação serão preparadas separadamente.",
+      "dependencias": "Funil configurado, contato e equipe com permissão de edição. Preço, estoque, desconto e prazo dependem da loja; o CRM não garante disponibilidade nem pagamento.",
+      "montagem": [
+        {
+          "modulo": "inbox",
+          "licao": "conhecendo-a-tela",
+          "porque": "Reconhecer a conversa e a ficha do contato."
+        },
+        {
+          "modulo": "funis",
+          "licao": "novo-negocio",
+          "porque": "Criar uma oportunidade ligada ao contato."
+        },
+        {
+          "modulo": "tarefas",
+          "licao": "tarefas-criar-uma-tarefa",
+          "porque": "Criar um próximo passo explícito para a equipe."
+        },
+        {
+          "modulo": "funis",
+          "licao": "mover-e-fechar",
+          "porque": "Mover o negócio conforme o avanço real do atendimento."
+        }
+      ],
+      "cenas": [
+        {
+          "id": "chegada",
+          "titulo": "Um presente com intenção",
+          "cliente": "Davi quer presentear alguém que gosta de jardinagem.",
+          "operacao": "A equipe pergunta sobre o uso pretendido e as preferências antes de sugerir um kit.",
+          "valor": "A sugestão começa pela necessidade do comprador.",
+          "captura": "inbox--conhecendo-a-tela--p1"
+        },
+        {
+          "id": "qualificacao",
+          "titulo": "Preferência registrada",
+          "cliente": "Davi prefere um kit para varanda pequena.",
+          "operacao": "O atendente cria um negócio ligado ao contato e registra o interesse, sem atribuir receita a uma intenção de compra.",
+          "valor": "A oportunidade permanece identificada para outro atendente.",
+          "captura": "funis--novo-negocio--p1"
+        },
+        {
+          "id": "acao",
+          "titulo": "Conferir a composição",
+          "cliente": "Davi pergunta se pode incluir uma ferramenta diferente.",
+          "operacao": "A equipe cria uma tarefa para conferir a composição com quem monta os kits.",
+          "valor": "Uma pergunta que exige conferência não fica perdida no chat.",
+          "captura": "tarefas--tarefas-criar-uma-tarefa--p2"
+        },
+        {
+          "id": "continuidade",
+          "titulo": "Avançar com evidência",
+          "cliente": "Davi recebe as opções e pede para avaliar.",
+          "operacao": "A equipe move o negócio à etapa configurada que corresponde à análise e deixa o próximo passo registrado, sem marcar venda como ganha.",
+          "valor": "O quadro reflete a decisão real do comprador.",
+          "captura": "funis--mover-e-fechar--p1"
+        }
+      ]
+    }
+  ]
+}

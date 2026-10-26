@@ -1,0 +1,220 @@
+{
+  "id": "clinicas",
+  "titulo": "Clínicas",
+  "resumo": "Recepção, horários e continuidade do cuidado com decisões clínicas reservadas aos profissionais.",
+  "jornadas": [
+    {
+      "id": "clinicas-primeira-consulta",
+      "titulo": "Da pergunta ao horário combinado",
+      "empresa": "Clínica Ipê (fictícia)",
+      "contexto": "Lia procura uma primeira consulta e só consegue comparecer no fim do dia.",
+      "resultado": "Um compromisso com situação conferida pela recepção e contexto para o atendimento.",
+      "tipo": "roteiro-demonstrativo",
+      "nota": "Roteiro demonstrativo: empresas, pessoas e mensagens desta história são fictícias. As fotos mostram telas reais de uma empresa fictícia usada no curso; seus nomes e dados ilustram os recursos, não correspondem aos personagens deste roteiro. A sequência narrada não comprova execução do motor de IA. Fotos específicas e comprovação serão preparadas separadamente.",
+      "dependencias": "Requer canal conectado, agente publicado com capacidades de agenda, tipo de atendimento, profissional e expediente configurados. O roteiro não faz triagem clínica nem diagnóstico; só confirma a marcação após retorno da ferramenta, respeitando eventual aprovação da equipe.",
+      "montagem": [
+        {
+          "modulo": "agentes",
+          "licao": "instrucoes-e-capacidades",
+          "porque": "Configurar e publicar somente as capacidades necessárias ao agente do roteiro."
+        },
+        {
+          "modulo": "inbox",
+          "licao": "conhecendo-a-tela",
+          "porque": "Reconhecer a conversa e a ficha do contato."
+        },
+        {
+          "modulo": "agenda",
+          "licao": "agenda-de-cada-pessoa",
+          "porque": "Conferir a agenda de um profissional."
+        },
+        {
+          "modulo": "agenda",
+          "licao": "novo-agendamento",
+          "porque": "Registrar o compromisso com o contato e quem atende."
+        },
+        {
+          "modulo": "agenda",
+          "licao": "lista-de-compromissos",
+          "porque": "Acompanhar a situação do compromisso na lista."
+        }
+      ],
+      "cenas": [
+        {
+          "id": "chegada",
+          "titulo": "Uma primeira consulta",
+          "cliente": "Lia pergunta se pode marcar uma consulta inicial.",
+          "operacao": "O roteiro começa com a recepção identificando o serviço desejado, sem pedir um relato clínico detalhado no chat.",
+          "valor": "A conversa começa pelo que é necessário para organizar a visita.",
+          "captura": "inbox--conhecendo-a-tela--p1"
+        },
+        {
+          "id": "qualificacao",
+          "titulo": "Disponibilidade compatível",
+          "cliente": "Lia diz que precisa de um horário no fim do dia.",
+          "operacao": "O agente do roteiro consulta disponibilidade para o tipo de atendimento e profissional habilitado, sem inventar vagas.",
+          "valor": "Preferência e agenda são consideradas juntas.",
+          "captura": "agenda--agenda-de-cada-pessoa--p2"
+        },
+        {
+          "id": "acao",
+          "titulo": "Escolha explícita",
+          "cliente": "Lia escolhe uma das opções apresentadas.",
+          "operacao": "No roteiro, o agente solicita a marcação com o contato correto e só informa a situação devolvida: confirmada ou aguardando confirmação.",
+          "valor": "Escolher um horário não se confunde com garantir uma vaga sem registro.",
+          "captura": "agenda--novo-agendamento--p1"
+        },
+        {
+          "id": "continuidade",
+          "titulo": "A recepção acompanha",
+          "cliente": "Lia quer saber se precisa de outra confirmação.",
+          "operacao": "A recepção confere o compromisso na lista e esclarece a situação registrada; orientações clínicas ficam com o profissional.",
+          "valor": "A equipe consegue continuar a partir do compromisso, sem refazer a conversa.",
+          "captura": "agenda--lista-de-compromissos--p1"
+        }
+      ]
+    },
+    {
+      "id": "clinicas-remarcar-sessao",
+      "titulo": "Remarcar sem perder o compromisso",
+      "empresa": "Movimento Fisioterapia (fictícia)",
+      "contexto": "Rui precisa trocar a sessão já combinada, sem criar uma segunda reserva.",
+      "resultado": "A sessão existente é remarcada e a equipe acompanha o novo horário.",
+      "tipo": "roteiro-demonstrativo",
+      "nota": "Roteiro demonstrativo: empresas, pessoas e mensagens desta história são fictícias. As fotos mostram telas reais de uma empresa fictícia usada no curso; seus nomes e dados ilustram os recursos, não correspondem aos personagens deste roteiro. A sequência narrada não comprova execução do motor de IA. Fotos específicas e comprovação serão preparadas separadamente.",
+      "dependencias": "Agenda e acesso da recepção necessários. O roteiro mostra ação da equipe; não muda plano terapêutico, frequência de sessões nem avaliação do profissional.",
+      "montagem": [
+        {
+          "modulo": "inbox",
+          "licao": "conhecendo-a-tela",
+          "porque": "Reconhecer a conversa e a ficha do contato."
+        },
+        {
+          "modulo": "agenda",
+          "licao": "agenda-de-cada-pessoa",
+          "porque": "Conferir a agenda de um profissional."
+        },
+        {
+          "modulo": "agenda",
+          "licao": "remarcar-e-cancelar",
+          "porque": "Alterar o compromisso existente em vez de duplicá-lo."
+        },
+        {
+          "modulo": "inbox",
+          "licao": "nota-interna",
+          "porque": "Guardar contexto visível somente para a equipe."
+        }
+      ],
+      "cenas": [
+        {
+          "id": "chegada",
+          "titulo": "O horário deixou de servir",
+          "cliente": "Rui avisa que não consegue ir à sessão marcada.",
+          "operacao": "A recepção localiza a conversa e identifica qual compromisso ele quer alterar.",
+          "valor": "Evita mexer em outra sessão do mesmo paciente.",
+          "captura": "inbox--conhecendo-a-tela--p1"
+        },
+        {
+          "id": "qualificacao",
+          "titulo": "Mesmo profissional",
+          "cliente": "Rui prefere continuar com a mesma fisioterapeuta.",
+          "operacao": "A recepção filtra a agenda dela e confere alternativas antes de oferecer a troca.",
+          "valor": "Preserva a preferência sem prometer encaixe.",
+          "captura": "agenda--agenda-de-cada-pessoa--p2"
+        },
+        {
+          "id": "acao",
+          "titulo": "Trocar, sem duplicar",
+          "cliente": "Rui aceita uma alternativa disponível.",
+          "operacao": "A equipe remarca o compromisso existente, conferindo data, hora e responsável.",
+          "valor": "O histórico conserva a mudança e a agenda não ganha uma reserva paralela.",
+          "captura": "agenda--remarcar-e-cancelar--p1"
+        },
+        {
+          "id": "continuidade",
+          "titulo": "Contexto para quem recebe",
+          "cliente": "Rui pergunta se precisa recomeçar o atendimento.",
+          "operacao": "Uma nota interna registra apenas o motivo administrativo da troca; dúvidas sobre tratamento são encaminhadas ao profissional.",
+          "valor": "Quem recebe o paciente entende a alteração sem orientação clínica improvisada.",
+          "captura": "inbox--nota-interna--p1"
+        }
+      ]
+    },
+    {
+      "id": "clinicas-duvida-preparo",
+      "titulo": "Quando o preparo exige decisão profissional",
+      "empresa": "Clínica Vereda (fictícia)",
+      "contexto": "Nina pergunta se deve alterar um medicamento antes de um exame.",
+      "resultado": "A questão sai da resposta automática e chega à pessoa habilitada.",
+      "tipo": "roteiro-demonstrativo",
+      "nota": "Roteiro demonstrativo: empresas, pessoas e mensagens desta história são fictícias. As fotos mostram telas reais de uma empresa fictícia usada no curso; seus nomes e dados ilustram os recursos, não correspondem aos personagens deste roteiro. A sequência narrada não comprova execução do motor de IA. Fotos específicas e comprovação serão preparadas separadamente.",
+      "dependencias": "Requer agente publicado, capacidade de abrir caso e equipe responsável. Instruções de medicamentos, diagnóstico e preparo individualizado não são decididos pelo agente. A resposta posterior depende da equipe, IA e canal ativos.",
+      "montagem": [
+        {
+          "modulo": "agentes",
+          "licao": "instrucoes-e-capacidades",
+          "porque": "Configurar e publicar somente as capacidades necessárias ao agente do roteiro."
+        },
+        {
+          "modulo": "agentes",
+          "licao": "quando-responder-e-passar",
+          "porque": "Definir os limites e as situações em que a equipe continua o atendimento."
+        },
+        {
+          "modulo": "inbox",
+          "licao": "conhecendo-a-tela",
+          "porque": "Reconhecer a conversa e a ficha do contato."
+        },
+        {
+          "modulo": "casos",
+          "licao": "abrindo-um-caso",
+          "porque": "Ler a demanda que precisa de decisão da equipe."
+        },
+        {
+          "modulo": "casos",
+          "licao": "respondendo-um-caso",
+          "porque": "Pedir informação, registrar a decisão ou passar ao humano."
+        },
+        {
+          "modulo": "inbox",
+          "licao": "assumir-e-responder",
+          "porque": "Assumir o atendimento e responder pela equipe."
+        }
+      ],
+      "cenas": [
+        {
+          "id": "chegada",
+          "titulo": "Uma pergunta sensível",
+          "cliente": "Nina pergunta se deve suspender o medicamento que usa.",
+          "operacao": "O agente do roteiro reconhece que uma orientação individual precisa de avaliação profissional.",
+          "valor": "A recepção não transforma uma pergunta clínica em resposta genérica.",
+          "captura": "inbox--conhecendo-a-tela--p1"
+        },
+        {
+          "id": "qualificacao",
+          "titulo": "A dúvida ganha contexto",
+          "cliente": "Nina informa qual exame foi agendado.",
+          "operacao": "O roteiro abre um caso com a pergunta e o contexto administrativo, evitando espalhar detalhes sensíveis desnecessários.",
+          "valor": "A pessoa habilitada recebe uma demanda identificável.",
+          "captura": "casos--abrindo-um-caso--p1"
+        },
+        {
+          "id": "acao",
+          "titulo": "Responsabilidade definida",
+          "cliente": "Nina pede para falar com alguém da clínica.",
+          "operacao": "A equipe escolhe passar para atendimento humano, com recado sobre a dúvida que precisa ser tratada.",
+          "valor": "A decisão sobre medicamento permanece com o profissional.",
+          "captura": "casos--respondendo-um-caso--p1"
+        },
+        {
+          "id": "continuidade",
+          "titulo": "Continuidade pela equipe",
+          "cliente": "Nina retoma a conversa quando a equipe assume.",
+          "operacao": "A pessoa responsável atende pelo canal e registra o encaminhamento cabível, sem o roteiro antecipar uma orientação médica.",
+          "valor": "O histórico sustenta a continuidade sem prometer resultado clínico.",
+          "captura": "inbox--assumir-e-responder--p1"
+        }
+      ]
+    }
+  ]
+}

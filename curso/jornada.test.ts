@@ -34,11 +34,60 @@ describe("contrato das jornadas", () => {
   });
 });
 
-// Exerce o renderer estático com dados de teste, sem publicar uma história falsa.
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { vi } from "vitest";
+import { Modulo, chaveDoPasso } from "./licao";
 
+describe("catálogo público de jornadas", () => {
+  const pasta = path.join(process.cwd(), "curso");
+  const arquivos = readdirSync(path.join(pasta, "demonstracoes")).filter((f) => f.endsWith(".json")).sort();
+  const nichos = arquivos.map((f) => Nicho.parse(JSON.parse(readFileSync(path.join(pasta, "demonstracoes", f), "utf8"))));
+  const licoes = readdirSync(path.join(pasta, "licoes")).filter((f) => f.endsWith(".json")).map((f) => Modulo.parse(JSON.parse(readFileSync(path.join(pasta, "licoes", f), "utf8"))));
+  // A saída e as fotos são ignoradas pelo Git: o gate de unidade também roda no clone fresco.
+  // Aqui verificamos a chave canônica do passo; o montador confere manifesto e arquivo físico.
+  const fotos = Object.fromEntries(licoes.flatMap((m) => m.licoes.flatMap((l) => l.passos.map((p) => {
+    const chave = chaveDoPasso(m.id, l.id, p.id);
+    return [chave, { foto: `capturas/${chave}.jpg` }];
+  }))));
+
+  it("cobre os dez nichos com três histórias e ao menos quatro cenas por história", () => {
+    expect(nichos.map((n) => n.id).sort()).toEqual([
+      "advocacia", "clinicas", "consorcio", "contabilidade", "e-commerce",
+      "educacao", "imobiliarias", "infoprodutos", "seguros", "servicos",
+    ]);
+    for (const [i, n] of nichos.entries()) {
+      expect(arquivos[i]).toBe(`${n.id}.json`);
+      expect(n.jornadas).toHaveLength(3);
+      for (const j of n.jornadas) expect(j.cenas.length).toBeGreaterThanOrEqual(4);
+    }
+  });
+
+  it("mantém ids de jornada únicos no catálogo inteiro e prefixados pelo nicho", () => {
+    const ids = nichos.flatMap((n) => n.jornadas.map((j) => {
+      expect(j.id.startsWith(`${n.id}-`)).toBe(true);
+      return j.id;
+    }));
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("liga lições e chaves de captura a passos existentes do curso", () => {
+    expect(() => validarJornadas(nichos, licoes, fotos)).not.toThrow();
+  });
+
+  it("declara o caráter demonstrativo e distingue fotos reais, personagens e prova do motor", () => {
+    for (const n of nichos) for (const j of n.jornadas) {
+      expect(j.tipo).toBe("roteiro-demonstrativo");
+      expect(j.empresa).toContain("fictícia");
+      expect(j.nota).toContain("telas reais");
+      expect(j.nota).toContain("não correspondem aos personagens");
+      expect(j.nota).toContain("não comprova execução do motor");
+      expect(j.dependencias.length).toBeGreaterThan(80);
+    }
+  });
+});
+
+// Exerce o renderer estático com dados de teste, sem publicar uma história falsa.
 describe("apresentação estática", () => {
   it("recupera hashes inválidos, monta links de lição e indexa histórias", async () => {
     document.body.innerHTML = '<main id="teste" tabindex="-1"></main>';
