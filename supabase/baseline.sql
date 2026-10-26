@@ -60282,8 +60282,8 @@ notify pgrst, 'reload schema';
 
 -- ---- permissão de turno e aceite da organização (migration 0798) ----
 -- Forward-aware: inclui turn.context antes de recriar CHECK; não concede aceite.
--- Espelho de `20261026190100_0798_extensoes_permissao_de_turno.sql`. O bloco vai no FIM, e não
--- editando as cópias anteriores: o apêndice do bloco do módulo de dados (0611) tem de continuar
+-- Comportamento final das propostas 0798 e 0800, antes da varredura de anon e sem
+-- editar as cópias anteriores: o apêndice do bloco do módulo de dados (0611) tem de continuar
 -- byte a byte igual à migration dele (`apendice-do-baseline-espelha-a-migration`), e a definição
 -- que vale em runtime é a ÚLTIMA do arquivo (`apendice-do-baseline-nao-diverge-da-cadeia`).
 --
@@ -60431,7 +60431,7 @@ comment on column public.organization_extensions.accepted_permissions is
   'Permissões de EFEITO (turn.send/turn.handoff) que o dono da organização aceitou explicitamente. Vazio = nenhuma. A ativação não preenche esta coluna (#3076).';
 
 -- O CHECK aceita o vazio (nada aceito ainda) e, quando há conteúdo, exige o MESMO conjunto
--- fechado do manifesto — a função acima já é a de dez nomes neste ponto do arquivo.
+-- fechado do manifesto — a função acima já é a de onze nomes neste ponto do arquivo.
 alter table public.organization_extensions
   drop constraint if exists organization_extensions_accepted_permissions_check;
 alter table public.organization_extensions
@@ -63922,35 +63922,8 @@ comment on index public.idx_crm_leads_org_pipeline_position_id is
   'Página da aba Lista do funil (#3172): (organization_id, pipeline_id) por igualdade e (position_in_stage, id) na ordem da consulta. `id` é o desempate que torna a paginação determinística quando dois negócios têm a mesma position_in_stage.';
 
 -- ---- contexto opcional no turno (migration 0800) ----
--- manifest: Permissão opcional `turn.context` para o host resolver somente uma opção declarada a partir de OUTBOUND já selecionado no turno e com proveniência da mesma organização/conversa. Aceite próprio, sem backfill nem concessão automática; não libera consultas ao CRM, histórico novo ou código do pacote. A ativação continua exigindo envio/passagem, a leitura é opcional e a recusa 6-bis de alterar permissões entre versões permanece. Forward da proposta 0798, preparada para replay com o vocabulário completo sem conceder aceite.
-create or replace function public.fn_extensions_permissoes_validas(p_permissions jsonb)
-returns boolean language sql immutable set search_path = public, pg_temp as $$
-  select p_permissions is not null
-    and jsonb_typeof(p_permissions) = 'array'
-    and jsonb_array_length(p_permissions) between 1 and 11
-    and not exists (
-      select 1 from jsonb_array_elements(p_permissions) e
-      where jsonb_typeof(e.value) <> 'string'
-         or e.value #>> '{}' not in (
-              'navigation.tasks', 'navigation.inbox', 'navigation.kanban',
-              'navigation.contacts', 'navigation.agenda', 'navigation.radar',
-              'theme.apply', 'dados.proprios',
-              'turn.send', 'turn.handoff', 'turn.context')
-    )
-    and (select count(distinct e.value) from jsonb_array_elements(p_permissions) e)
-        = jsonb_array_length(p_permissions);
-$$;
-
-revoke execute on function public.fn_extensions_permissoes_validas(jsonb) from public, anon;
-revoke execute on function public.fn_extensions_permissoes_validas(jsonb) from authenticated;
-grant execute on function public.fn_extensions_permissoes_validas(jsonb) to service_role;
-
-
--- A proposta 0798 já admite o nome futuro antes de recriar o CHECK, para que
--- o replay integral passe com ON_ERROR_STOP=1 e aceite de leitura existente.
--- Reafirma aqui o CHECK final, sem apagar nem conceder consentimento.
-alter table public.organization_extensions
-  drop constraint if exists organization_extensions_accepted_permissions_check;
-alter table public.organization_extensions
-  add constraint organization_extensions_accepted_permissions_check
-  check (cardinality(accepted_permissions) = 0 or public.fn_extensions_permissoes_validas(to_jsonb(accepted_permissions)));
+-- O vocabulário final de onze nomes e o único CHECK de accepted_permissions
+-- estão no bloco 0798, ANTES da varredura de anon. A 0798 já reconhece turn.context
+-- antes de conferir dados existentes; o replay integral preserva esse aceite.
+-- A migration 0800 reafirma a mesma regra para quem usa a cadeia de migrations;
+-- no baseline não se recriam função nem constraint. Nenhum aceite é concedido.

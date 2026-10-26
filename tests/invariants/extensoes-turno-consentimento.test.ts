@@ -72,7 +72,10 @@ async function install(item = base, expected: number | null = null) {
 }
 function configure(id: string, revision: number, enabled: boolean, accepted: unknown = null,
   org = orgA, who = adminA, config: unknown = null, operation = randomUUID()) {
-  return rpc("configure", [who, org, id, operation, revision, enabled, config, accepted]);
+  // `pg` serializa array JS como array PostgreSQL; a RPC recebe JSONB.
+  // O nulo continua sendo "preservar aceite", sem conceder nada novo.
+  const acceptedJson = accepted === null ? null : JSON.stringify(accepted);
+  return rpc("configure", [who, org, id, operation, revision, enabled, config, acceptedJson]);
 }
 async function binding(org: string, id: string) {
   return (await pool.query("select enabled,revision,accepted_permissions from public.organization_extensions where organization_id=$1 and installation_id=$2", [org, id])).rows[0];
