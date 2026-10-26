@@ -95,8 +95,9 @@ describe("claim e relógio antes do tick de retenção (#2327)", () => {
   ])("não reivindica follow-up sob go-live (%s), não gasta tentativa nem gira o relógio", async (_nome, payload) => {
     await hold("go_live");
     const retorno = await job("followup_turn", payload);
-    await expect(faltaParaOProximoJob(pool)).resolves.toBeNull();
+    await expect(faltaParaOProximoJob(pool)).resolves.toBe(0);
     expect(await claim()).toEqual([]);
+    await expect(faltaParaOProximoJob(pool)).resolves.toBe(86_400_000);
     const { rows } = await pool.query(`select status, attempts from job_queue where id = $1`, [retorno.id]);
     expect(rows[0]).toEqual({ status: "pending", attempts: 0 });
   });
@@ -113,16 +114,18 @@ describe("claim e relógio antes do tick de retenção (#2327)", () => {
     await hold(razao);
     await job("followup_turn", pelaConversa());
     await job("inbound_turn", { channel_session_id: CANAL });
-    await expect(faltaParaOProximoJob(pool)).resolves.toBeNull();
+    await expect(faltaParaOProximoJob(pool)).resolves.toBe(0);
     expect(await claim()).toEqual([]);
+    await expect(faltaParaOProximoJob(pool)).resolves.toBe(86_400_000);
   });
 
   it("canal fora do ar impede os dois turnos mesmo sem linha de saúde", async () => {
     await pool.query(`update channel_sessions set status = 'STOPPED' where id = $1`, [CANAL]);
     await job("followup_turn", pelaConversa());
     await job("inbound_turn", { channel_session_id: CANAL });
-    await expect(faltaParaOProximoJob(pool)).resolves.toBeNull();
+    await expect(faltaParaOProximoJob(pool)).resolves.toBe(0);
     expect(await claim()).toEqual([]);
+    await expect(faltaParaOProximoJob(pool)).resolves.toBe(86_400_000);
   });
 
   it("o hold de um número não cala a conversa do mesmo contato em outro número", async () => {
@@ -159,5 +162,29 @@ describe("claim e relógio antes do tick de retenção (#2327)", () => {
     expect(rows[1]!.run_after.getTime() - rows[0]!.run_after.getTime()).toBe(5 * 60_000);
     expect(rows[2]!.run_after.getTime() - rows[1]!.run_after.getTime()).toBe(5 * 60_000);
     expect(rows.every((j) => !("held_run_after" in j.payload) && !("held_channel_session_id" in j.payload))).toBe(true);
+  });
+
+  it("retém no claim e libera espaçado mesmo quando o aviso é resolvido antes do próximo tick", async () => {
+    await hold("go_live");
+    for (let i = 0; i < 3; i++) await job("followup_turn", pelaConversa());
+    expect(await claim()).toEqual([]);
+    const retidos = await pool.query<{ retido: boolean; attempts: number }>(
+      `select run_after = 'infinity' and payload ? 'held_run_after'
+              and payload->>'held_channel_session_id' = $2 as retido, attempts
+         from job_queue where organization_id = $1`, [ORG, CANAL],
+    );
+    expect(retidos.rows).toHaveLength(3);
+    expect(retidos.rows.every((j) => j.retido && j.attempts === 0)).toBe(true);
+    await expect(faltaParaOProximoJob(pool)).resolves.toBe(86_400_000);
+
+    // O humano resolveu antes do tick: a rodada seguinte precisa encontrar as
+    // marcas de retenção, apesar de a saúde JÁ estar liberada quando ela começa.
+    await hold(null, false);
+    expect((await enforceHolds(pool)).released).toBe(3);
+    const { rows } = await pool.query<{ run_after: Date }>(
+      `select run_after from job_queue where organization_id = $1 order by run_after`, [ORG],
+    );
+    expect(rows[1]!.run_after.getTime() - rows[0]!.run_after.getTime()).toBe(5 * 60_000);
+    expect(rows[2]!.run_after.getTime() - rows[1]!.run_after.getTime()).toBe(5 * 60_000);
   });
 });

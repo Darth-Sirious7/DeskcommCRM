@@ -140,8 +140,8 @@ export const CANAL_DO_JOB_SQL = `coalesce(
  * O watchdog retém em lotes; o claim precisa respeitar a trava também entre
  * dois ticks. Go-live segura só o retorno que o negócio inicia. Canal fora do
  * ar e os demais holds de saúde seguram tanto retorno quanto resposta.
- * A mesma regra vai no relógio: job vencido mas inelegível não é motivo para
- * abrir transações de claim sem parar enquanto se espera a liberação.
+ * O claim retém o job, além de recusá-lo: a liberação precisa encontrar as
+ * marcas mesmo quando o humano resolve o aviso antes do próximo watchdog.
  */
 const JOB_SEM_HOLD_DE_CANAL_SQL = `(j.kind not in ('inbound_turn', 'followup_turn')
       or not exists (
@@ -156,11 +156,24 @@ const JOB_SEM_HOLD_DE_CANAL_SQL = `(j.kind not in ('inbound_turn', 'followup_tur
       ))`;
 
 const CLAIM_SQL = `
-  with dedup as (
+  with retidos as (
+    update job_queue j
+    set payload = jsonb_set(j.payload, '{held_run_after}', to_jsonb(j.run_after))
+                  || jsonb_build_object('held_channel_session_id', ${CANAL_DO_JOB_SQL}),
+        run_after = 'infinity'
+    where j.status = 'pending'
+      and not (j.payload ? 'held_run_after')
+      and not ${JOB_SEM_HOLD_DE_CANAL_SQL}
+    returning j.id
+  ),
+  dedup as (
     -- etapa (a): no máximo 1 job por lane por lote; lane sem lead = o próprio id
     select distinct on (coalesce(j.contact_id, j.id)) j.id
     from job_queue j
     where j.status = 'pending' and j.run_after <= now()
+      -- CTEs compartilham a foto anterior ao UPDATE. O RETURNING torna os
+      -- conjuntos disjuntos sem depender de enxergar run_after já alterado.
+      and not exists (select 1 from retidos where retidos.id = j.id)
       and ${JOB_SEM_HOLD_DE_CANAL_SQL}
       and (j.contact_id is null
            or not exists (select 1 from job_queue r
@@ -191,8 +204,9 @@ const CLAIM_SQL = `
  */
 /**
  * Quantos MILISSEGUNDOS faltam até o próximo job ficar claimável — `null` quando
- * não há nenhum `pending` elegível pelo canal. É o relógio que o loop consulta
- * ANTES de abrir o claim.
+ * não há nenhum `pending`. É o relógio que o loop consulta ANTES de abrir o claim.
+ * Inclui job sob hold ainda sem marca: acorda UMA vez para o claim retê-lo.
+ * Depois, `run_after = 'infinity'` faz o relógio dormir, sem girar em falso.
  *
  * Um `select` só, sem `connect`, sem `begin` e sem advisory lock: o claim custa 5
  * statements e 638 B de egress por rodada (medido no protocolo, fila vazia), e
@@ -204,10 +218,9 @@ const CLAIM_SQL = `
  * A garantia não é "o claim nunca perde um job por causa desta leitura". Ela é
  * MAIS FRACA e é a verdadeira: como a leitura é uma FOTO (o `now()` dela é o
  * instante da própria transação), um job que vence entre a foto e o despertar
- * fica esperando — mas só até a próxima foto enquanto o canal permanece
- * elegível. Hold ativo exclui o job das duas consultas; ao liberar, a próxima
- * foto volta a vê-lo. Ou seja: **a foto nunca esconde um job elegível por mais
- * de um `QUEUE_POLL_INTERVAL_MS`**. Medido: 1.300 estados de fronteira em fuzz
+ * fica esperando — mas só até a próxima foto, porque nada no produto tira uma
+ * linha de `pending`+vencida. Ou seja: **a foto nunca esconde um job por mais de
+ * um `QUEUE_POLL_INTERVAL_MS`**. Medido: 1.300 estados de fronteira em fuzz
  * diferencial contra o `claimJobs` real, zero casos de job escondido.
  *
  * Três armadilhas, todas com caso em tests/invariants/queue-relogio.test.ts:
@@ -242,9 +255,8 @@ export async function faltaParaOProximoJob(pool: Pool): Promise<number | null> {
                      0
                    )::int
             end as falta_ms
-       from job_queue j
-      where status = 'pending'
-        and ${JOB_SEM_HOLD_DE_CANAL_SQL}`,
+       from job_queue
+      where status = 'pending'`,
   );
   return rows[0]?.falta_ms ?? null;
 }
