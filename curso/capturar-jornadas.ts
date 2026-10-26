@@ -3,7 +3,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { chromium, type Page } from "@playwright/test";
+import { chromium, expect, type Page } from "@playwright/test";
 import { CSS_DE_FOTO, entrar, esperarCarregar, medir, tirarFocoDeClique, type Captura } from "./capturar";
 import { exigirHttpLocal } from "./seguranca";
 import { chaveDaCena, lerHistorias, receitas, ROTULO_ACAO_HUMANA, exigirVersaoDaFoto, type Historia, type Receita } from "./receitas-jornadas";
@@ -20,7 +20,9 @@ async function mostrar(page: Page, base: string, historia: Historia, receita: Re
     await page.goto(`${base}/app/inbox?filter=all&id=${estado.conversa}`);
     await esperarCarregar(page);
     await page.getByRole("textbox", { name: "Buscar conversas", exact: true }).fill(receita.pessoa);
-    await page.waitForTimeout(800);
+    await page.locator(`[data-conversation-id="${estado.conversa}"]`).waitFor({ state: "visible" });
+    await page.getByTestId("message-bubble").filter({ hasText: receita.cenas[indice]!.mensagem }).first().waitFor({ state: "visible" });
+    if (superficie === "nota") await page.getByText(`${receita.pessoa} · ${historia.cenas[indice]!.titulo}`, { exact: false }).waitFor({ state: "visible" });
     if (superficie === "nota") return { texto: `${receita.pessoa} · ${historia.cenas[indice]!.titulo}`, exato: false };
     return { css: "div[class~='group/conversa']" };
   }
@@ -37,6 +39,17 @@ async function mostrar(page: Page, base: string, historia: Historia, receita: Re
     await linha.waitFor({ state: "visible", timeout: 12_000 });
     if (indice === 2) {
       await linha.getByRole("link").click();
+      // O Sheet já está visível enquanto a consulta ainda mostra "Carregando…".
+      const detalhe = page.getByRole("dialog");
+      await detalhe.getByRole("heading", { name: estado.titulo, exact: true }).waitFor({ state: "visible", timeout: 15_000 });
+      const inicio = new Date(estado.inicioCompromisso);
+      const data = new Intl.DateTimeFormat("pt-BR", { timeZone: estado.fusoCompromisso, dateStyle: "medium" }).format(inicio);
+      const hora = new Intl.DateTimeFormat("pt-BR", { timeZone: estado.fusoCompromisso, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(inicio);
+      await expect(detalhe.getByTestId("compromisso-horario")).toContainText(data, { timeout: 15_000 });
+      await expect(detalhe.getByTestId("compromisso-horario")).toContainText(hora);
+      const situacao = ({ pending: "Aguardando confirmação", confirmed: "Agendado", completed: "Compareceu", no_show: "Faltou", cancelled: "Cancelado" } as Record<string, string>)[estado.statusCompromisso];
+      if (!situacao) throw new Error(`situação de compromisso sem rótulo de captura: ${estado.statusCompromisso}`);
+      await detalhe.getByText(situacao, { exact: true }).waitFor({ state: "visible" });
       return { role: "dialog" };
     }
     return { testid: `linha-${estado.compromisso}` };
@@ -54,6 +67,9 @@ async function mostrar(page: Page, base: string, historia: Historia, receita: Re
     if (indice === 2) {
       await linha.hover();
       await linha.getByRole("button", { name: "Editar a tarefa", exact: true }).click();
+      const formulario = page.getByRole("dialog", { name: "Editar tarefa", exact: true });
+      await expect(formulario.getByRole("textbox", { name: "O que precisa ser feito", exact: true })).toHaveValue(estado.titulo);
+      await expect(formulario.getByRole("textbox", { name: "Detalhes", exact: true })).toHaveValue(historia.cenas[indice]!.operacao);
       return { role: "dialog" };
     }
     return { css: `div.group.rounded-lg:has-text(${JSON.stringify(estado.titulo)})` };
@@ -66,6 +82,9 @@ async function mostrar(page: Page, base: string, historia: Historia, receita: Re
     await cartao.waitFor({ state: "visible" });
     if (indice >= 3) {
       await cartao.getByRole("button", { name: estado.titulo, exact: true }).click();
+      const dossie = page.getByRole("dialog", { name: estado.titulo, exact: true });
+      await dossie.getByRole("heading", { name: estado.titulo, exact: true }).waitFor({ state: "visible" });
+      await dossie.getByTestId("contato-do-negocio").getByText(receita.pessoa, { exact: true }).waitFor({ state: "visible", timeout: 15_000 });
       return { role: "dialog" };
     }
     return { role: "group", nome: `Lead: ${estado.titulo}`, exato: true };
@@ -74,7 +93,12 @@ async function mostrar(page: Page, base: string, historia: Historia, receita: Re
     await page.goto(`${base}/app/ai/cases`);
     await esperarCarregar(page);
     await page.getByTestId("case-item").filter({ hasText: estado.casoTitulo }).click();
-    await page.getByTestId("case-detail").waitFor({ state: "visible" });
+    // O contêiner existe antes dos dados; o vínculo identifica o caso aberto.
+    const detalhe = page.getByTestId("case-detail");
+    await detalhe.getByRole("heading", { name: receita.pessoa, exact: true }).waitFor({ state: "visible", timeout: 15_000 });
+    await expect(detalhe.getByRole("link", { name: "Ver conversa", exact: true })).toHaveAttribute("href", `/app/inbox/${estado.conversa}`);
+    await detalhe.getByText(historia.contexto, { exact: true }).waitFor({ state: "visible" });
+    await detalhe.getByRole("radiogroup", { name: "O que você quer fazer?", exact: true }).waitFor({ state: "visible" });
     const acao = receita.cenas[indice]!.acao_humana;
     if (acao) {
       await page.getByRole("radio").filter({ has: page.getByText(ROTULO_ACAO_HUMANA[acao], { exact: true }) }).click();
@@ -118,6 +142,10 @@ async function main() {
         const estado = await semearCena(ctx, historia, receita, indice);
         const alvo = await mostrar(pagina, base, historia, receita, indice, estado);
         await esperarCarregar(pagina);
+        // O helper legado só avisa quando há skeleton: fotografia nova deve falhar.
+        // As esperas de identidade acima evitam aceitar o vazio anterior à consulta.
+        await expect(pagina.locator("[data-esqueleto]:visible, .animate-pulse:visible, [aria-busy='true']:visible")).toHaveCount(0, { timeout: 15_000 });
+        await expect(pagina.getByText(/^Carregando(?:\b|…|\.{3})/).filter({ visible: true })).toHaveCount(0, { timeout: 15_000 });
         await pagina.addStyleTag({ content: CSS_DE_FOTO });
         await tirarFocoDeClique(pagina);
         await pagina.mouse.move(0, 899);

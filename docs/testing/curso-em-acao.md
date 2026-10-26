@@ -117,3 +117,16 @@ ffmpeg no mesmo arquivo também reproduzidas no controle da main `028b40c11`, al
 de um teste de falha esperada e um ignorado. Isso registra um limite do gate,
 sem converter a suíte global em verde. Os checks completos e a revisão final
 continuam sendo exigidos antes da publicação.
+
+
+### Correção das esperas de fotografia
+
+A revisão dos JPEGs encontrou cenas de ação da agenda com o drawer ainda em
+“Carregando…”. O aceite de navegação e decodificação acima não detectava essa
+incompletude visual. O capturador agora exige o título do compromisso, data e
+horário no fuso real e sua situação antes de medir. Casos exigem contato, vínculo
+da conversa, resumo e painel de decisão; dossiês de negócio exigem o contato
+carregado; edição de tarefas exige os valores da tarefa. Na Inbox, a espera fixa
+foi substituída pela conversa e mensagem da cena. Skeletons e textos de carregamento
+visíveis interrompem a fotografia, mesmo que o helper legado apenas avise.
+As fotos afetadas precisam ser recapturadas e revistas antes da publicação.
