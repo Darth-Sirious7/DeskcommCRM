@@ -26,7 +26,12 @@ let creds: Creds;
 let bearer: string;
 let pipelineId: string;
 let stageId: string;
-let admin: ReturnType<typeof createClient>;
+// ReturnType direto da função GENÉRICA perde a inferência da chamada e produz
+// tabelas never; esta fábrica conserva o mesmo tipo que createClient devolve.
+function clienteDaProva(url: string, chave: string) {
+  return createClient(url, chave, { auth: { autoRefreshToken: false, persistSession: false } });
+}
+let admin: ReturnType<typeof clienteDaProva>;
 let pool: pg.Pool;
 const campos = [
   { key: "medida", label: "Medida do documento", type: "number" },
@@ -45,9 +50,7 @@ test.beforeAll(async () => {
   }
   creds = JSON.parse(readFileSync(arquivo, "utf8")) as Creds;
   pool = new pg.Pool({ connectionString: ambiente.dbUrl, max: 3 });
-  admin = createClient(ambiente.url, ambiente.serviceRole, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
+  admin = clienteDaProva(ambiente.url, ambiente.serviceRole);
   execFileSync("npx", ["tsx", "scripts/seed-e2e-agente-mcp.ts"], { stdio: "inherit" });
   bearer = (JSON.parse(readFileSync(".e2e-agente-mcp.json", "utf8")) as { bearer: string }).bearer;
   const stamp = Date.now();

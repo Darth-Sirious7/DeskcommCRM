@@ -97,11 +97,11 @@ describe("confirmar no dossiê atualiza o campo visível sem apagar outro rascun
     expect(numero).toHaveValue(0);
     await user.clear(localizador);
     await user.type(localizador, "MANUAL456");
-    await user.click(await screen.findByRole("button", { name: "Está certo, salvar", exact: true }));
+    await user.click(await screen.findByRole("button", { name: /^Está certo, salvar$/ }));
 
     await waitFor(() => expect(numero).toHaveValue(1.234));
     expect(localizador).toHaveValue("MANUAL456");
-    await user.click(screen.getByRole("button", { name: "Salvar", exact: true }));
+    await user.click(screen.getByRole("button", { name: /^Salvar$/ }));
     await waitFor(() => expect(h.mutateAsync).toHaveBeenCalled());
     expect(h.mutateAsync.mock.calls[0]?.[0]).toMatchObject({
       patch: { custom_fields: { localizador: "MANUAL456" } },
@@ -113,7 +113,7 @@ describe("confirmar no dossiê atualiza o campo visível sem apagar outro rascun
     const user = userEvent.setup();
     const props = { open: true, onOpenChange: () => undefined, pipelineId: "funil-1", fieldDefs: FIELD_DEFS, stageName: "Novo" };
     const { rerender } = render(<LeadDossier {...props} lead={LEAD} />);
-    await user.click(await screen.findByRole("button", { name: "Está certo, salvar", exact: true }));
+    await user.click(await screen.findByRole("button", { name: /^Está certo, salvar$/ }));
     await waitFor(() => expect(screen.getByRole("spinbutton", { name: "Medida do documento" })).toHaveValue(1.234));
     rerender(<LeadDossier {...props} lead={{ ...LEAD, id: "outro-card", custom_fields: { medida: 7 } }} />);
     await waitFor(() => expect(screen.getByRole("spinbutton", { name: "Medida do documento" })).toHaveValue(7));
