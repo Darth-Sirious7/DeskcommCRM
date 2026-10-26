@@ -71,3 +71,73 @@ Os E2E genéricos de extensões não substituem essa jornada. Ainda não há evi
 visual nova de laudos para citar. O #3063 permanece aberto: a adaptação preserva
 a contribuição e não anuncia a promessa cumprida antes do gancho na main e da
 prova prevista nas decisões 139/167.
+
+## Jornada de navegador preparada para o CI
+
+`tests/e2e/extensoes-turno-laudos.spec.ts` acrescenta **uma** jornada de no máximo
+240 s, incluindo setup e todos os subpassos. Ainda não foi executada: lint, parse
+e cercas de cobertura não substituem o navegador nem o banco real.
+
+A preparação encontrou uma omissão no DTO: `accept_permissions` aceitava no
+máximo dois nomes, recusando com 422 o botão de contexto depois dos dois efeitos.
+O teste novo em `lib/extensions/requests.test.ts` reproduziu **1 falha e 3 acertos**
+com o schema anterior; o limite agora deriva de `PERMISSOES_DE_TURNO.length`.
+Não muda as permissões, o aceite próprio nem concede algo por omissão. A rodada
+dirigida posterior passou **89 testes em dez arquivos**, um worker, em 5,39 s;
+inclui DTO, serviço/consentimento, corpus do consumidor e cercas do workflow.
+ESLint dos seis TS alterados e parse dos quatro TS do E2E: RC 0.
+
+| ID | Medida prevista | Captura gerada somente pela execução |
+| --- | --- | --- |
+| TL01 | Admitir catálogo, instalar bytes exatos, nenhum aceite automático | `evidence/extensoes/turno-laudos/01-sem-aceite.png` |
+| TL02 | Viewer recusado; aceite de envio/passagem separado da leitura | `evidence/extensoes/turno-laudos/02-aceite-separado.png` |
+| TL03 | Biópsia, radiologia, patologia e escolha numérica; par com função pura | `evidence/extensoes/turno-laudos/03-passagem.png` |
+| TL04 | Saudação não coletada como nome; devolução à IA nos dois SDKs | `evidence/extensoes/turno-laudos/04-retorno-ia.png` |
+| TL05 | OUTBOUND selecionado, aceite próprio e outra conversa do mesmo contato | `evidence/extensoes/turno-laudos/05-contexto.png` |
+| TL06 | Outra organização não herda efeitos nem leitura opcional | `evidence/extensoes/turno-laudos/06-outra-organizacao.png` |
+| TL07 | Reconfigurar, desligar e reativar não retomam respostas da revisão antiga | `evidence/extensoes/turno-laudos/07-desativada.png` |
+
+Esses caminhos são **destinos futuros**, não imagens já observadas. O
+`manifesto.json` dessa pasta registra os IDs concluídos, tempo e contadores sem
+prompts, cabeçalhos ou respostas coletadas. O upload de evidências em sucesso
+já existente no workflow inclui a pasta; falhas mantêm os artifacts do Playwright.
+
+A instalação e os aceites passam pela UI/API reais. A fixture semeia somente
+atores, conversas e agente publicado, adquire apenas seu próprio job e chama
+`createInboundTurnHandler`; não usa a prévia, que exclui o gancho. O sink, as
+guardas, o ledger e a passagem são os canônicos, com receiver WAHA HTTP local.
+Cada rodada de coleta exige zero pedidos ao modelo e zero linhas em `llm_calls`.
+A devolução exige tool call, mensagem física e checkpoint reais pelos SDKs
+Anthropic Messages e OpenAI Responses contra receivers HTTP locais. O registry
+troca somente o endpoint: não mede credenciais externas, inferência ou egress do
+registry padrão. Os cinco idiomas continuam medidos pelo corpus literal unitário;
+a jornada de navegador usa os ramos em inglês nos dois provedores.
+
+A parte 2 do [e2e 40381355859](https://github.com/melgarafael/DeskcommCRM/actions/runs/40381355859)
+levou 1078 s de job. Somar 180 s **estimados** resulta em 1258 s, com 182 s até o
+orçamento de 1440 s e 422 s até o corte de 1680 s. A spec tem teto total de 240 s;
+não foi medida a duração nem a nova vizinhança. O workflow ganha somente o item
+da lista da parte 2, preservando as listas anteriores, os sete runners e os tetos.
+
+Reprodução no runner canônico já semeado, com o app de produção iniciado:
+
+```sh
+pnpm exec playwright test tests/e2e/extensoes-turno-laudos.spec.ts --workers=1
+```
+
+## Distribuição do consumidor e limite do laboratório
+
+O caminho versionado existente já contém `extensoes/pacotes/deskcomm/consulta-de-laudos-1.0.0.json`,
+os metadados em `extensoes/loja.json` e a entrada derivada em `extensoes/catalogo.json`.
+`scripts/gerar-catalogo-de-extensoes.ts --conferir` usa `parseManifest` e
+`checkCompatibility` reais: passou nesta preparação, quatro pacotes, revisão 3.
+Isso prova geração e integridade; não prova a publicação HTTP do domínio do catálogo.
+O próprio gerador mantém a publicação como ato do dono (DEC-007); não foi encontrado
+empacotamento desses arquivos no Dockerfile nem workflow de deploy do catálogo.
+
+O CLI de `experiments/extensoes/catalog/catalog.py` é laboratório local e seu
+`publish` ainda só valida `crm_cards`. A fixture nova valida os bytes pelo parser
+do host e prepara o SQLite temporário usando os helpers de entry/storage do CLI;
+`init`, `export` e `serve` continuam reais, assim como digest, download e instalação.
+Não se afirma que essa escrita de fixture seja publicação oficial, nem se altera o
+CLI experimental ou o contrato de capacidades para obter uma prova verde.

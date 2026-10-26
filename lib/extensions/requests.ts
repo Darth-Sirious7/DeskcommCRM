@@ -35,11 +35,11 @@ export const configureRequestSchema = z
     // está concedendo NESTE ato — o conjunto inteiro, e não um delta, porque um delta somado a
     // um aceite antigo esconderia uma permissão que a versão anterior aceitou e esta não pede.
     //
-    // Só as permissões de EFEITO viajam por aqui: navegação, tema e dados continuam cobertos
-    // pelo ato de instalar/ativar, e aceitá-los de novo seria pedir consentimento onde não há
-    // efeito novo. O serviço confere que cada nome está no manifesto vigente; o banco confere de
-    // novo (defesa em profundidade) e recusa a ativação sem cobertura.
-    accept_permissions: z.array(z.enum(PERMISSOES_DE_TURNO)).min(1).max(2).optional(),
+    // Envio/passagem e leitura opcional viajam por aqui; a UI oferece contexto num ato
+    // separado e envia a união com o que já foi aceito. O limite acompanha o vocabulário,
+    // sem conceder nada por omissão. Navegação, tema e dados seguem pelo ato de ativar.
+    // Serviço e banco revalidam a declaração e a cobertura necessária para ativação.
+    accept_permissions: z.array(z.enum(PERMISSOES_DE_TURNO)).min(1).max(PERMISSOES_DE_TURNO.length).optional(),
   })
   .strict();
 export const openRequestSchema = z
