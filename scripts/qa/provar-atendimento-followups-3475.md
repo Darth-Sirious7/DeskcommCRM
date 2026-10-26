@@ -22,6 +22,8 @@ As fixtures pertencem a uma organização exclusiva cujo slug começa com `qa-34
 
 O schema Zod no início do `.ts` é o contrato completo. Campos:
 
+O arquivo `provar-atendimento-followups-3475.manifest.example.json` mostra o formato com identificadores fictícios. Ele não é uma fixture executável: substitua pelos registros da bancada reservada antes da prova.
+
 | Campo | Conteúdo e precondição |
 | --- | --- |
 | `schema`, `synthetic` | `1` e `true` |
