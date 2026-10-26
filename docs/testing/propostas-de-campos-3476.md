@@ -4,6 +4,23 @@ Banco dirigido e geração de tipos medidos em Postgres 17 próprio na VPS de
 teste. Navegador e verificação integral ainda aguardam a faixa reservada. Não
 iniciar Docker nem um segundo app na máquina compartilhada para esta prova.
 
+Retomada em 26/10/2026: o CI identificou cinco erros de consumidores dos tipos
+gerados e uma policy intermediária no baseline. Os consumidores agora estreitam
+JSON sem cast e o teste da view acompanha a nulabilidade emitida pelo gerador,
+mantendo a proibição do título pessoal. A criação intermediária da policy de
+escrita saiu do baseline; a migration 0772 original e a definição final da 0807
+permanecem intactas. A cerca correspondente e o teste da view passaram juntos
+(24 casos em 2 arquivos). **O install/update do baseline com esse último delta,
+a tipagem integral e a prova pela tela ainda estão pendentes.** A rodada de banco
+descrita abaixo precede esse último ajuste do baseline.
+
+A bancada própria na VPS recebeu o HEAD publicado, aplicou o baseline anterior
+em instalação e reaplicação e executou o bootstrap do dono. O Turbopack compilou
+em 120 segundos, mas a rodada foi encerrada durante o TypeScript por pressão de
+memória. Outro build e testes do curso estavam em execução na mesma máquina.
+Todos os processos e serviços desta bancada foram pausados; os do curso foram
+preservados. Não há prova de build completo nem de UI nessa tentativa.
+
 ## Banco
 
 O CI existente aplica o baseline em instalação e reaplicação e mede pg15 e pg17.

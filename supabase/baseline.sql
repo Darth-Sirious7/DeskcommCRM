@@ -61891,22 +61891,9 @@ create policy tenant_isolation_lead_field_proposals_select on public.lead_field_
       )
   );
 
-drop policy if exists tenant_isolation_lead_field_proposals_write on public.lead_field_proposals;
-create policy tenant_isolation_lead_field_proposals_write on public.lead_field_proposals
-  for all to authenticated
-  using (
-    organization_id in (select public.fn_user_org_ids())
-      and public.fn_role_at_least(organization_id, 'agent')
-      and exists (
-        select 1 from public.crm_leads l
-         where l.id = lead_field_proposals.lead_id
-           and l.organization_id = lead_field_proposals.organization_id
-      )
-  )
-  with check (
-    organization_id in (select public.fn_user_org_ids())
-      and public.fn_role_at_least(organization_id, 'agent')
-  );
+-- A escrita é instalada somente na definição final da 0807, abaixo. Recriar
+-- aqui a policy intermediária da 0772 reabriria o WITH CHECK mais largo a
+-- cada update até a correção final. A migration histórica permanece intacta.
 
 -- ---- módulos instalados são reaplicados, depois de toda tabela do núcleo (migration 0340) ----
 --
