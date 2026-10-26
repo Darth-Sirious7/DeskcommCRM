@@ -58197,7 +58197,7 @@ begin
  if changed then new.google_next_attempt_at:=now(); end if;
  return new;
 end;$$;
--- ---- nascimento CTWA causal e LeadSubmitted (migration 0768) ----
+-- ---- nascimento CTWA causal e LeadSubmitted (migration 0803) ----
 alter table public.ad_conversion_dispatches
   add column if not exists claim_token uuid,
   add column if not exists claimed_until timestamptz;
@@ -58433,7 +58433,7 @@ grant execute on function public.fn_solicitar_reenvio_conversao(uuid, uuid, text
 
 notify pgrst,'reload schema';
 
--- 0769: null desliga LeadSubmitted causal em toda organizacao.
+-- 0804: null desliga LeadSubmitted causal em toda organizacao.
 -- Coluna propria evita que um escritor antigo de settings restaure o estado.
 alter table public.organizations
   add column if not exists meta_lead_birth_enabled_at timestamptz;
@@ -58462,7 +58462,7 @@ revoke execute on function public.fn_definir_meta_lead_birth(uuid, boolean) from
 grant execute on function public.fn_definir_meta_lead_birth(uuid, boolean) to service_role;
 notify pgrst,'reload schema';
 
--- ---- LeadSubmitted por clique CTWA (migration 0770) ----
+-- ---- LeadSubmitted por clique CTWA (migration 0805) ----
 -- manifest: Registra cada clique CTWA inbound em livro proprio, atomico com a mensagem, para LeadSubmitted por clique sem mudar o ledger de Purchase e etapas.
 -- O ID da primeira mensagem sobrevive a exclusao da conversa; a exclusao LGPD
 -- do contato ou da organizacao remove a linha por cascata.
@@ -58676,8 +58676,8 @@ grant execute on function public.fn_solicitar_reenvio_meta_ctwa_click(uuid,uuid)
 notify pgrst,'reload schema';
 
 
--- ---- o clique em anúncio some na anonimização (migration 0771, doc 199) ----
--- manifest: **O registro de clique em anúncio (`meta_ctwa_click_dispatches`) some quando o contato é anonimizado (#3128, doc 199 pergunta 2 = A).** A tabela guarda o `ctwa_clid`, que liga a pessoa ao anúncio em que ela clicou na Meta — dado pessoal. A anonimização não exclui o contato, então o `on delete cascade` da tabela nunca dispara num pedido do titular. O gatilho `trg_contacts_anonimizado_apaga_cliques_ctwa` APAGA as linhas do contato na virada de `is_anonymized` (o mesmo desenho de `fn_apaga_propostas_de_contato_anonimizado`): a porta por onde os dois caminhos de anonimização passam. Custo aceito no doc 199: se a Meta reenviar um clique antigo dessa pessoa, ele é contado de novo. Idempotente; espelhado no apêndice do `baseline.sql` logo depois do bloco da 0770. Gates: `tests/invariants/meta-lead-por-clique.test.ts` e a decisão em `tests/invariants/lgpd-redact-unificado-alcanca-pelo-catalogo.test.ts`.
+-- ---- o clique em anúncio some na anonimização (migration 0806, doc 199) ----
+-- manifest: **O registro de clique em anúncio (`meta_ctwa_click_dispatches`) some quando o contato é anonimizado (#3128, doc 199 pergunta 2 = A).** A tabela guarda o `ctwa_clid`, que liga a pessoa ao anúncio em que ela clicou na Meta — dado pessoal. A anonimização não exclui o contato, então o `on delete cascade` da tabela nunca dispara num pedido do titular. O gatilho `trg_contacts_anonimizado_apaga_cliques_ctwa` APAGA as linhas do contato na virada de `is_anonymized` (o mesmo desenho de `fn_apaga_propostas_de_contato_anonimizado`): a porta por onde os dois caminhos de anonimização passam. Custo aceito no doc 199: se a Meta reenviar um clique antigo dessa pessoa, ele é contado de novo. Idempotente; espelhado no apêndice do `baseline.sql` logo depois do bloco da 0805. Gates: `tests/invariants/meta-lead-por-clique.test.ts` e a decisão em `tests/invariants/lgpd-redact-unificado-alcanca-pelo-catalogo.test.ts`.
 create or replace function public.fn_apaga_cliques_ctwa_de_contato_anonimizado()
   returns trigger
   language plpgsql

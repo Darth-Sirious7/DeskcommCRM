@@ -295,7 +295,7 @@ const DECISOES: Record<string, Decisao> = {
   meta_ctwa_click_dispatches: {
     decidida: "redigir",
     caminho: "gatilho",
-    razao: "Doc 199 (pergunta 2 = A): ctwa_clid liga a pessoa ao anúncio em que clicou na Meta; fn_apaga_cliques_ctwa_de_contato_anonimizado (0771) APAGA as linhas do contato na virada de is_anonymized. Custo aceito: clique antigo reenviado pela Meta seria contado de novo.",
+    razao: "Doc 199 (pergunta 2 = A): ctwa_clid liga a pessoa ao anúncio em que clicou na Meta; fn_apaga_cliques_ctwa_de_contato_anonimizado (0806) APAGA as linhas do contato na virada de is_anonymized. Custo aceito: clique antigo reenviado pela Meta seria contado de novo.",
   },
   // ── manter: a linha e o conteúdo ficam, por decisão ───────────────────────
   before_send_traces: {

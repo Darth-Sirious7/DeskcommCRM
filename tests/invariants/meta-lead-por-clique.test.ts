@@ -287,7 +287,7 @@ describe("LeadSubmitted por clique: banco", () => {
  * Doc 199, pergunta 2 = A: o clique em anúncio é dado pessoal (`ctwa_clid` liga a
  * pessoa ao anúncio na Meta). A anonimização não EXCLUI o contato, então o
  * `on delete cascade` nunca dispara num pedido do titular — quem apaga é o
- * gatilho da virada de `is_anonymized` (migration 0771). O controle negativo é o
+ * gatilho da virada de `is_anonymized` (migration 0806). O controle negativo é o
  * contato vizinho: um `delete` sem o filtro de contato apagaria os dele também.
  */
 describe("LeadSubmitted por clique: anonimização (LGPD)", () => {

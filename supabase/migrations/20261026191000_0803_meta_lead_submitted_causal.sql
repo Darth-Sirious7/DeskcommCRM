@@ -1,5 +1,5 @@
 -- manifest: Nascimento CTWA causal: ancora reservada em messages.metadata, prova imutavel no lead, lead.created atomico e claim exclusivo de LeadSubmitted. A funcao antiga de nascimento e os consumidores de Purchase/etapa permanecem intactos.
--- 0768 — Meta LeadSubmitted do nascimento de uma mensagem inbound com clique real.
+-- 0803 — Meta LeadSubmitted do nascimento de uma mensagem inbound com clique real.
 -- Porte sobre a main oficial: preserva a definição atual de reenvio e acrescenta somente LeadSubmitted.
 
 alter table public.ad_conversion_dispatches
