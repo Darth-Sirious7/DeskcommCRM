@@ -93,4 +93,5 @@ estruturas anteriores à proposta e requer avaliação na tipagem integral.
 
 Depois que o slot do Mac for liberado: typecheck integral e lint; o CI mede a
 suíte completa e build. Antes de sair do draft, reconciliar os resultados reais,
-incluindo as adições herdadas de invariantes que seguem sob revisão do mantenedor.
+preservando o escopo autorizado das adições herdadas de invariantes: somente
++6/−0 e +20/−0 nos dois arquivos identificados, sem alterar assertivas anteriores.
