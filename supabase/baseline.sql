@@ -60116,6 +60116,34 @@ $$;
 
 revoke execute on function public.fn_enfileirar_midia_vencida(integer) from public, anon, authenticated;
 grant execute on function public.fn_enfileirar_midia_vencida(integer) to service_role;
+-- ---- 0563: contato pessoal — a coluna e a saída de campanha (spec 21, fatia 1) ----
+-- Espelho idempotente da migration 0563. É este apêndice que chega a todo
+-- self-host: o install.sh aplica o baseline num banco novo e o update.sh o
+-- re-aplica num banco existente; nenhum dos dois roda as migrations.
+-- `is_personal` nasce desligado: contato novo é operacional até alguém marcar.
+-- O status `personal` é saída própria de campanha — nunca `opted_out`, para
+-- não inflar "pediu para parar".
+alter table public.contacts
+  add column if not exists is_personal boolean default false not null;
+
+comment on column public.contacts.is_personal is
+  'Contato de vida pessoal (spec 21): escondido da operação e inutilizado para envio. Só gerente/dono marca e desmarca, pela rota personal; quem/quando fica em auditoria + timeline, nunca aqui.';
+
+create index if not exists idx_contacts_org_personal
+  on public.contacts (organization_id)
+  where (is_personal = true);
+
+alter table public.campaign_recipients
+  drop constraint if exists campaign_recipients_status_check;
+
+alter table public.campaign_recipients
+  add constraint campaign_recipients_status_check check (status in (
+    'pending','queued','sending','sent','delivered','read','replied',
+    'failed','skipped','cancelled','opted_out','personal'
+  ));
+
+notify pgrst, 'reload schema';
+
 -- manifest: Preserva atendimento conjunto depois do escopo em lote da 0726, limita convite a leitura/resposta sem conceder controle e entrega entrada/saída pelo Realtime (#2542, integração #2848).
 -- ---- atendimento conjunto: controle e atualização da tela (migration 9016) ----
 -- A 0661 precede a 0726 na cadeia. Esta forward-fix reinstala a policy atual
@@ -62566,33 +62594,6 @@ create view public.external_db_connections_safe
 revoke all on public.external_db_connections_safe from anon;
 grant select on public.external_db_connections_safe to authenticated;
 
--- ---- 0563: contato pessoal — a coluna e a saída de campanha (spec 21, fatia 1) ----
--- Espelho idempotente da migration 0563. É este apêndice que chega a todo
--- self-host: o install.sh aplica o baseline num banco novo e o update.sh o
--- re-aplica num banco existente; nenhum dos dois roda as migrations.
--- `is_personal` nasce desligado: contato novo é operacional até alguém marcar.
--- O status `personal` é saída própria de campanha — nunca `opted_out`, para
--- não inflar "pediu para parar".
-alter table public.contacts
-  add column if not exists is_personal boolean default false not null;
-
-comment on column public.contacts.is_personal is
-  'Contato de vida pessoal (spec 21): escondido da operação e inutilizado para envio. Só gerente/dono marca e desmarca, pela rota personal; quem/quando fica em auditoria + timeline, nunca aqui.';
-
-create index if not exists idx_contacts_org_personal
-  on public.contacts (organization_id)
-  where (is_personal = true);
-
-alter table public.campaign_recipients
-  drop constraint if exists campaign_recipients_status_check;
-
-alter table public.campaign_recipients
-  add constraint campaign_recipients_status_check check (status in (
-    'pending','queued','sending','sent','delivered','read','replied',
-    'failed','skipped','cancelled','opted_out','personal'
-  ));
-
-notify pgrst, 'reload schema';
 
 -- ---- APÊNDICE 0580: a chave do servidor MCP externo vira coluna cifrada ----
 -- Espelho idempotente da migration 0580. É este apêndice que chega a todo

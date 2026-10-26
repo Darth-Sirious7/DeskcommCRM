@@ -2543,6 +2543,12 @@ jobs:
             test-results/
           retention-days: 7
 
+      - name: Gerar tipos do banco real para a prova de atendimento conjunto
+        if: ${{ success() && matrix.parte == 3 }}
+        env:
+          CANDIDATO_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: bash scripts/gerar-tipos-do-banco-e2e.sh evidencia-gerada/tipos-do-banco conversation_participants
+
       # A EVIDÊNCIA VISUAL TAMBÉM QUANDO PASSA. As specs gravam capturas em
       # evidence/<feature>/ (doutrina de QA Visual, DoD 12); sem este passo elas
       # morrem com o runner, e a prova pela tela só existe localmente, num ambiente
