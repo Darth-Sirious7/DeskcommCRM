@@ -41,6 +41,7 @@ interface ErroPg {
 export interface RespostaFalsa<T> {
   data: T | null;
   error: ErroPg | null;
+  count?: number | null;
 }
 
 function naoImplementado(metodo: string): never {
@@ -171,22 +172,33 @@ function projecaoSql(colunas: string, aliasExterno: string): { sql: string; temE
   return { sql, temEmbed };
 }
 
+/** Forma temporal usada pelos claims antigos: a condição continua no SQL. */
+function ouTemporal(expressao: string): { coluna: string; operador: string; valor: string } {
+  const m = /^([a-z_][a-z0-9_]*)\.is\.null,\1\.(lt|lte)\.(.+)$/.exec(expressao);
+  if (!m) return naoImplementado(`or(${expressao})`);
+  return { coluna: m[1]!, operador: m[2] === "lt" ? "<" : "<=", valor: m[3]! };
+}
+
 class ConsultaPg<T> implements PromiseLike<RespostaFalsa<T[]>> {
   /** [operador, coluna, valor] — o operador entra porque `.lt`/`.gt` existem. */
   private filtros: Array<[string, string, unknown]> = [];
   private ordem: { coluna: string; asc: boolean } | null = null;
   private teto: number | null = null;
+  private ou: ReturnType<typeof ouTemporal> | null = null;
 
   constructor(
     private readonly pool: pg.Pool,
     private readonly tabela: string,
     private readonly colunas: string,
+    private readonly opcoes?: { count?: "exact"; head?: boolean },
   ) {}
 
   eq(coluna: string, valor: unknown): this {
     this.filtros.push(["=", coluna, valor]);
     return this;
   }
+
+  or(expressao: string): this { this.ou = ouTemporal(expressao); return this; }
 
   /**
    * `is` — a coluna contra `null`/`true`/`false`.
@@ -294,7 +306,7 @@ class ConsultaPg<T> implements PromiseLike<RespostaFalsa<T[]>> {
     return naoImplementado("neq");
   }
 
-  private montar(): { texto: string; valores: unknown[] } {
+  private montar(contagem = false): { texto: string; valores: unknown[] } {
     const valores: unknown[] = [];
     const onde = this.filtros.map(([op, c, v]) => {
       // `is` não gasta placeholder: a palavra entra inline.
@@ -307,14 +319,18 @@ class ConsultaPg<T> implements PromiseLike<RespostaFalsa<T[]>> {
       if (op === "not = any") return `not ("${c}" = any($${valores.length}))`;
       return `"${c}" ${op} $${valores.length}`;
     });
+    if (this.ou) {
+      valores.push(this.ou.valor);
+      onde.push(`("${this.ou.coluna}" is null or "${this.ou.coluna}" ${this.ou.operador} $${valores.length})`);
+    }
     const projecao = projecaoSql(this.colunas, "linha");
-    let texto = `select ${projecao.sql} from public."${this.tabela}"`;
+    let texto = `select ${contagem ? "count(*)::int as quantidade" : projecao.sql} from public."${this.tabela}"`;
     // O alias só entra quando há embed: a subquery precisa apontar para a
     // coluna de FK DA LINHA EXTERNA, e sem alias a referência seria ambígua.
     if (projecao.temEmbed) texto += " linha";
     if (onde.length > 0) texto += ` where ${onde.join(" and ")}`;
-    if (this.ordem) texto += ` order by "${this.ordem.coluna}" ${this.ordem.asc ? "asc" : "desc"}`;
-    if (this.teto !== null) texto += ` limit ${this.teto}`;
+    if (this.ordem && !contagem) texto += ` order by "${this.ordem.coluna}" ${this.ordem.asc ? "asc" : "desc"}`;
+    if (this.teto !== null && !contagem) texto += ` limit ${this.teto}`;
     return { texto, valores };
   }
 
@@ -358,9 +374,21 @@ class ConsultaPg<T> implements PromiseLike<RespostaFalsa<T[]>> {
     aoResolver?: ((v: RespostaFalsa<T[]>) => R1 | PromiseLike<R1>) | null,
     aoRejeitar?: ((r: unknown) => R2 | PromiseLike<R2>) | null,
   ): PromiseLike<R1 | R2> {
-    return this.linhas()
-      .then(({ rows, error }) => (error ? { data: null, error } : { data: rows, error: null }))
-      .then(aoResolver, aoRejeitar);
+    const executar = async (): Promise<RespostaFalsa<T[]>> => {
+      try {
+        let count: number | undefined;
+        if (this.opcoes?.count === "exact") {
+          const q = this.montar(true);
+          const result = await this.pool.query(q.texto, q.valores);
+          count = Number(result.rows[0]?.quantidade);
+          if (!Number.isFinite(count)) throw new Error("pg_como_supabase_count_invalid");
+          if (this.opcoes.head) return { data: null, error: null, count };
+        }
+        const { rows, error } = await this.linhas();
+        return { data: error ? null : rows, error, ...(count === undefined ? {} : { count }) };
+      } catch (error) { return { data: null, error: erroDe(error), count: null }; }
+    };
+    return executar().then(aoResolver, aoRejeitar);
   }
 }
 
@@ -436,6 +464,7 @@ class AtualizacaoPg<T> implements PromiseLike<RespostaFalsa<unknown>> {
   /** [operador, coluna, valor] — mesmo contrato do `ConsultaPg`. */
   private filtros: Array<[string, string, unknown]> = [];
   private colunasDeVolta: string | null = null;
+  private ou: ReturnType<typeof ouTemporal> | null = null;
 
   constructor(
     private readonly pool: pg.Pool,
@@ -447,6 +476,9 @@ class AtualizacaoPg<T> implements PromiseLike<RespostaFalsa<unknown>> {
     this.filtros.push(["=", coluna, valor]);
     return this;
   }
+
+  lte(coluna: string, valor: unknown): this { this.filtros.push(["<=", coluna, valor]); return this; }
+  or(expressao: string): this { this.ou = ouTemporal(expressao); return this; }
 
   /**
    * `.is()` na ESCRITA — o caminho que motivou a peça.
@@ -501,6 +533,10 @@ class AtualizacaoPg<T> implements PromiseLike<RespostaFalsa<unknown>> {
       if (op === "not = any") return `not ("${c}" = any($${valores.length}))`;
       return `"${c}" ${op} $${valores.length}`;
     });
+    if (this.ou) {
+      valores.push(this.ou.valor);
+      onde.push(`("${this.ou.coluna}" is null or "${this.ou.coluna}" ${this.ou.operador} $${valores.length})`);
+    }
     let texto = `update public."${this.tabela}" set ${sets.join(", ")}`;
     if (onde.length > 0) texto += ` where ${onde.join(" and ")}`;
     if (this.colunasDeVolta) texto += ` returning ${colunasSql(this.colunasDeVolta)}`;
@@ -591,7 +627,7 @@ export function pgComoSupabase(pool: pg.Pool): SupabaseClient {
   return {
     from(tabela: string) {
       return {
-        select: (colunas = "*") => new ConsultaPg(pool, tabela, colunas),
+        select: (colunas = "*", opcoes?: { count?: "exact"; head?: boolean }) => new ConsultaPg(pool, tabela, colunas, opcoes),
         insert: (linha: Record<string, unknown>) => new InsercaoPg(pool, tabela, linha),
         update: (patch: Record<string, unknown>) => new AtualizacaoPg(pool, tabela, patch),
         delete: () => naoImplementado("delete"),

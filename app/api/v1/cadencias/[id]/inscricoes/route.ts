@@ -10,7 +10,6 @@
  * com `proximo_em = now()`. Quem lê essa fila e dispara o primeiro passo é o
  * worker do cron, agendado no scheduler da instalação.
  */
-import { contatoRestringido } from "@/lib/cadencias/guarda-do-contato";
 import { randomUUID } from "node:crypto";
 import { cadenciasLigadas } from "@/lib/cadencias/modulo";
 
@@ -77,93 +76,27 @@ export async function POST(
   const { lead_id, rastreio_consentido } = parsed.data;
 
   const supabase = createAdminClient();
-
-  const { data: cadencia } = await supabase
-    .from("email_cadences")
-    .select("id, status")
-    .eq("organization_id", org.orgId)
-    .eq("id", cadenceId)
-    .maybeSingle();
-  if (!cadencia) return fail("cadencia_nao_encontrada", t("Cadência não encontrada."), 404, { requestId });
-  if ((cadencia as { status: string }).status !== "ativa") {
-    return fail("cadencia_estado_invalido", t("Só uma cadência ativa aceita novas inscrições."), 409, { requestId });
-  }
-
-  // Confere o lead CONTRA A ORGANIZAÇÃO (mesmo motivo do `channel_sessions` em
-  // `campaigns/route.ts`) e traz o e-mail do contato — sem ele não há para
-  // onde mandar, e a inscrição nunca deveria nascer para nunca sair do lugar.
-  const { data: lead, error: erroLead } = await supabase
-    .from("crm_leads").select("id, contact_id").eq("organization_id", org.orgId).eq("id", lead_id).maybeSingle();
-  if (erroLead) return fail("internal_error", t("Não foi possível buscar os negócios."), 500, { requestId });
-  if (!lead?.contact_id) return fail("cadencia_lead_indisponivel", t("Lead não encontrado nesta organização."), 409, { requestId });
-  const { data: contato, error: erroContato } = await supabase.from("contacts")
-    .select("id, email, is_anonymized, is_blocked, is_personal, consent")
-    .eq("id", lead.contact_id).eq("organization_id", org.orgId).maybeSingle();
-  if (erroContato) return fail("internal_error", t("Não foi possível buscar os negócios."), 500, { requestId });
-  if (!contato) return fail("cadencia_lead_indisponivel", t("Lead não encontrado nesta organização."), 409, { requestId });
-  if (contatoRestringido(contato)) return fail("cadencia_lead_indisponivel", t("Este contato não pode receber cadências pelas preferências registradas."), 409, { requestId });
-  if (!contato.email || contato.is_anonymized) {
-    return fail("cadencia_lead_indisponivel", t("Este lead não tem e-mail para receber a cadência."), 409, {
-      requestId,
-    });
-  }
-
-  // O contato pediu para sair de QUALQUER cadência desta organização
-  // (`.../cadencia-descadastro`, que suprime por contato, não só pela
-  // cadência clicada) — reinscrever aqui reabriria o que o LGPD exige ficar
-  // fechado. Só um humano decide contornar isso, e não é esta rota: é preciso
-  // apagar a linha de supressão a mão (fora de escopo hoje), nunca uma
-  // reinscrição comum.
-  const { data: descadastrado, error: erroSupressao } = await supabase
-    .from("email_cadence_enrollments")
-    .select("id")
-    .eq("organization_id", org.orgId)
-    .eq("contact_id", contato.id)
-    .eq("motivo_parada", "descadastro")
-    .limit(1)
-    .maybeSingle();
-  if (erroSupressao) return fail("internal_error", t("Não foi possível carregar as inscrições."), 500, { requestId });
-  if (descadastrado) {
-    return fail(
-      "cadencia_lead_indisponivel",
-      t("Este contato já pediu para não receber e-mails desta organização."),
-      409,
-      { requestId },
-    );
-  }
-
-  const { data, error } = await supabase
-    .from("email_cadence_enrollments")
-    .insert({
-      organization_id: org.orgId,
-      cadence_id: cadenceId,
-      lead_id,
-      contact_id: contato.id,
-      status: "ativa",
-      origem: "manual",
-      rastreio_consentido,
-      consentimento_em: rastreio_consentido ? new Date().toISOString() : null,
-      inscrito_por: user.id,
-    })
-    .select("id, lead_id, contact_id, status, origem, proximo_em, created_at")
-    .single();
-  if (error) {
-    // `email_cadence_enrollments_unica`: o mesmo lead já está nesta cadência.
-    if ((error as { code?: string }).code === "23505") {
-      return fail("cadencia_inscricao_existente", t("Este lead já está nesta cadência."), 409, { requestId });
-    }
-    return fail("internal_error", error.message, 500, { requestId });
-  }
-
-  const inscricao = data as unknown as { id: string };
-  await supabase.from("email_cadence_events").insert({
-    organization_id: org.orgId,
-    cadence_id: cadenceId,
-    enrollment_id: inscricao.id,
-    lead_id,
-    tipo: "inscrito",
-    ator_user_id: user.id,
+  const { data, error } = await supabase.rpc("fn_cadencia_inscrever", {
+    p_organization_id: org.orgId, p_cadence_id: cadenceId, p_lead_id: lead_id,
+    p_actor: user.id, p_rastreio_consentido: rastreio_consentido,
   });
+  if (error) {
+    if (error.code === "23505") return fail("cadencia_inscricao_existente", t("Este lead já está nesta cadência."), 409, { requestId });
+    const mensagens: Record<string, { texto: string; status: number }> = {
+      cadencia_modulo_indisponivel: { texto: "Módulo indisponível.", status: 404 },
+      cadencia_nao_encontrada: { texto: "Cadência não encontrada.", status: 404 },
+      cadencia_estado_invalido: { texto: "Só uma cadência ativa aceita novas inscrições.", status: 409 },
+      cadencia_lead_indisponivel: { texto: "Lead não encontrado nesta organização.", status: 409 },
+      cadencia_sem_email: { texto: "Este lead não tem e-mail para receber a cadência.", status: 409 },
+      cadencia_contato_restrito: { texto: "Este contato não pode receber cadências pelas preferências registradas.", status: 409 },
+      cadencia_descadastrado: { texto: "Este contato já pediu para não receber e-mails desta organização.", status: 409 },
+    };
+    const recusa = mensagens[error.message];
+    if (recusa) return fail(error.message, t(recusa.texto), recusa.status, { requestId });
+    return fail("internal_error", t("Não foi possível inscrever o negócio."), 500, { requestId });
+  }
+  if (!data || typeof data !== "object" || typeof data.id !== "string") return fail("internal_error", t("Não foi possível inscrever o negócio."), 500, { requestId });
+  const inscricao = data as { id: string };
 
   void audit({
     action: "cadencia.lead_inscrito",

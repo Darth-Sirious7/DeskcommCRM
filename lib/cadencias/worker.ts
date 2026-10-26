@@ -37,6 +37,7 @@
  * em vez de achar que o envio travou sem motivo.
  */
 import { contatoRestringido } from "./guarda-do-contato";
+import { audit } from "@/lib/audit";
 import { dentroDaJanela } from "./janela";
 import { avancarDiasUteis } from "./dias-uteis";
 import { passoParaExecutar, primeiroDoLado, proximoIrmao } from "./proximo-passo";
@@ -54,9 +55,6 @@ import type { createAdminClient } from "@/lib/supabase/admin";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
-const LOTE = 50;
-/** Trava otimista: quem reivindica a linha é dono por isso — cobre a duração de um tick lento. */
-const JANELA_DE_TRAVA_MS = 3 * 60 * 1000;
 
 /**
  * Bucket ÚNICO (sem sufixo de organização) — de propósito: é a MESMA caixa de
@@ -84,6 +82,7 @@ export interface InscricaoRow {
   inscrito_por: string | null;
   rastreio_consentido?: boolean;
   envio_pendente_passo_id?: string | null;
+  processamento_id?: string | null;
 }
 
 export interface ResultadoDoTick {
@@ -178,11 +177,14 @@ async function executarPassoEmail(
   if (!(await cadenciasLigadas(admin, inscricao.organization_id))) return { ok: false, erro: "cadencia_desligada" };
   // Persistir ANTES do efeito: um timeout pode significar que o provedor aceitou.
   // Outra rodada nunca repete um envio cuja confirmação local ficou incerta.
-  const { data: reserva, error: erroReserva } = await admin.from("email_cadence_enrollments")
-    .update({ envio_pendente_passo_id: passo.id })
-    .eq("id", inscricao.id).eq("organization_id", inscricao.organization_id)
-    .eq("status", "ativa").is("envio_pendente_passo_id", null).select("id").maybeSingle();
-  if (erroReserva || !reserva) return { ok: false, erro: "cadencia_send_not_reserved" };
+  const { data: reserva, error: erroReserva } = await admin.rpc("fn_cadencia_reservar_envio", {
+    p_organization_id: inscricao.organization_id, p_enrollment_id: inscricao.id,
+    p_processamento_id: inscricao.processamento_id, p_passo_id: passo.id,
+  });
+  if (erroReserva?.message === "cadencia_claim_lost") throw new Error("cadencia_claim_lost");
+  if (erroReserva?.message === "cadencia_modulo_indisponivel") return { ok: false, erro: "cadencia_desligada" };
+  if (erroReserva?.message === "cadencia_descadastrado" || erroReserva?.message === "cadencia_contato_restrito") return { ok: false, erro: "cadencia_contact_restricted" };
+  if (erroReserva || reserva !== true) return { ok: false, erro: "cadencia_send_not_reserved" };
   const resultado = await sendEmail({
     to: contato.email,
     subject: assunto || "(sem assunto)",
@@ -223,6 +225,7 @@ export function avaliarRamo(
   passo: Extract<Passo, { tipo: "ramo" }>,
   inscricao: InscricaoRow,
   agora: Date,
+  aberturasNoPrazo?: number,
 ): boolean | null {
   const desde = inscricao.ultimo_email_em ? new Date(inscricao.ultimo_email_em) : null;
   const prazoVenceu = desde
@@ -230,7 +233,7 @@ export function avaliarRamo(
     : true; // nunca houve e-mail: nada a esperar, decide já
 
   if (passo.condicao.tipo === "abriu") {
-    if ((inscricao.aberturas_ultimo_email ?? inscricao.aberturas) >= passo.condicao.vezes) return true;
+    if ((aberturasNoPrazo ?? inscricao.aberturas_ultimo_email ?? inscricao.aberturas) >= passo.condicao.vezes) return true;
     return prazoVenceu ? false : null;
   }
   // `clicou`/`respondeu`: sem fonte de dado ainda — nunca resolve pra "sim",
@@ -302,7 +305,7 @@ async function processarInscricao(admin: Admin, inscricao: InscricaoRow, agora: 
         lead_id: inscricao.lead_id,
         tipo: "limite_diario_atingido",
         passo_id: passo.id,
-        metadata: { limite: env.CADENCIA_LIMITE_EMAILS_POR_DIA, contagem: teto.count },
+        metadata: { escopo: !tetoDaCadencia.allowed ? "cadencia" : "instalacao", limite: !tetoDaCadencia.allowed ? cadencia.configuracao.limiteDiarioPorCaixa : env.CADENCIA_LIMITE_EMAILS_POR_DIA, contagem: !tetoDaCadencia.allowed ? tetoDaCadencia.count : teto.count },
       });
       await liberarSemAvancar(admin, inscricao, agora, MINUTOS_DE_ESPERA_POR_TETO);
       return { desfecho: "adiada" as const };
@@ -392,7 +395,7 @@ async function processarInscricao(admin: Admin, inscricao: InscricaoRow, agora: 
   }
 
   if (passo.tipo === "tarefa") {
-    await criarTarefaDoPasso(admin, passo, inscricao);
+    await criarTarefaDoPasso(admin, passo, inscricao, cadencia.configuracao, agora, requestId);
     const proximo = proximoIrmao(cadencia.passos, passo.id);
     await avancar(admin, inscricao, {
       passoAtualId: proximo?.id ?? null,
@@ -403,7 +406,19 @@ async function processarInscricao(admin: Admin, inscricao: InscricaoRow, agora: 
   }
 
   if (passo.tipo === "ramo") {
-    const decisao = avaliarRamo(passo, inscricao, agora);
+    // O contador total não diz QUANDO o sinal chegou. Mesmo com cron atrasado,
+    // só eventos do e-mail anterior dentro do prazo podem decidir o lado Sim.
+    let noPrazo = 0;
+    if (passo.condicao.tipo === "abriu" && inscricao.ultimo_email_em && inscricao.ultimo_email_passo_id) {
+      const limite = new Date(new Date(inscricao.ultimo_email_em).getTime() + passo.condicao.dentroDeDias * 86_400_000).toISOString();
+      const { count, error } = await admin.from("email_cadence_events").select("id", { count: "exact", head: true })
+        .eq("organization_id", inscricao.organization_id).eq("enrollment_id", inscricao.id)
+        .eq("tipo", "aberto").eq("passo_id", inscricao.ultimo_email_passo_id)
+        .gte("created_at", inscricao.ultimo_email_em).lte("created_at", limite);
+      if (error || typeof count !== "number") throw new Error("cadencia_open_count_failed");
+      noPrazo = count;
+    }
+    const decisao = avaliarRamo(passo, inscricao, agora, noPrazo);
     if (decisao === null) {
       // Ainda dentro do prazo, sem sinal: reconfere em 15 min — nem martela a
       // cada minuto, nem deixa o lead esperando demais depois que o prazo vencer.
@@ -434,57 +449,31 @@ async function processarInscricao(admin: Admin, inscricao: InscricaoRow, agora: 
 }
 
 async function criarTarefaDoPasso(
-  admin: Admin,
-  passo: Extract<Passo, { tipo: "tarefa" }>,
-  inscricao: InscricaoRow,
+  admin: Admin, passo: Extract<Passo, { tipo: "tarefa" }>, inscricao: InscricaoRow,
+  configuracao: Cadencia["configuracao"], agora: Date, requestId: string,
 ) {
-  const { data: leadRow } = await admin
-    .from("crm_leads")
-    .select("owner_user_id")
-    .eq("id", inscricao.lead_id)
-      .eq("organization_id", inscricao.organization_id)
-    .maybeSingle();
+  const { data: leadRow } = await admin.from("crm_leads").select("owner_user_id")
+    .eq("id", inscricao.lead_id).eq("organization_id", inscricao.organization_id).maybeSingle();
   const ownerId = (leadRow as { owner_user_id: string | null } | null)?.owner_user_id ?? inscricao.inscrito_por;
-
-  const dueDate = avancarDiasUteis(new Date(), passo.prazoDias).toISOString();
-  const { data: tarefa, error } = await admin
-    .from("crm_tasks")
-    .insert({
-      organization_id: inscricao.organization_id,
-      title: passo.titulo || "Tarefa da cadência",
-      due_date: dueDate,
-      priority: "medium",
-      status: "pending",
-      lead_id: inscricao.lead_id,
-      contact_id: inscricao.contact_id,
-      assigned_to: ownerId,
-      created_by: null,
-    })
-    .select("id, title, due_date, priority, lead_id, contact_id")
-    .single();
-
-  if (error || !tarefa) {
-    throw new Error("cadencia_task_create_failed");
+  const { data: contato } = await admin.from("contacts").select("name, display_name")
+    .eq("id", inscricao.contact_id).eq("organization_id", inscricao.organization_id).maybeSingle();
+  let nomeDoVendedor: string | null = null;
+  if (ownerId && passo.titulo.includes("{{vendedor}}")) {
+    const { data } = await admin.auth.admin.getUserById(ownerId);
+    nomeDoVendedor = (data?.user?.user_metadata?.full_name as string | undefined) ?? null;
   }
-
-  await admin.from("email_cadence_events").insert({
-    organization_id: inscricao.organization_id,
-    cadence_id: inscricao.cadence_id,
-    enrollment_id: inscricao.id,
-    lead_id: inscricao.lead_id,
-    tipo: "tarefa_criada",
-    passo_id: passo.id,
-    metadata: { task_id: (tarefa as { id: string }).id },
+  const titulo = renderizarComLead(passo.titulo, { nomeDoContato: nomeDoContato(contato), nomeDoVendedor, segmento: configuracao.tagDoSegmento });
+  if (/\{\{\s*[a-z_]+\s*\}\}/.test(titulo)) throw new Error("cadencia_variable_missing");
+  const { data, error } = await admin.rpc("fn_cadencia_criar_tarefa", {
+    p_organization_id: inscricao.organization_id, p_enrollment_id: inscricao.id,
+    p_processamento_id: inscricao.processamento_id, p_passo_id: passo.id, p_titulo: titulo,
+    p_due_date: avancarDiasUteis(agora, passo.prazoDias).toISOString(), p_assigned_to: ownerId,
   });
-
-  // A tarefa foi criada pelo motor, não pela pessoa que inscreveu o negócio.
+  if (error || !data) throw new Error(error?.message === "cadencia_claim_lost" ? "cadencia_claim_lost" : "cadencia_task_create_failed");
+  if (!data.criada_agora || !data.tarefa) return;
+  void audit({ action: "crm_task.created", organizationId: inscricao.organization_id, resourceType: "crm_task", resourceId: data.tarefa.id, bypassedRls: true, requestId, metadata: { origem: "cadencias", cadence_id: inscricao.cadence_id, enrollment_id: inscricao.id, passo_id: passo.id } });
   const { registraAtividadeDaTarefa } = await import("@/lib/tarefas/atividade");
-  await registraAtividadeDaTarefa(admin, {
-    organizationId: inscricao.organization_id,
-    tarefa,
-    tipo: "task_created",
-    actor: { type: "webhook_source", id: "cadencias" },
-  });
+  await registraAtividadeDaTarefa(admin, { organizationId: inscricao.organization_id, tarefa: data.tarefa, tipo: "task_created", actor: { type: "webhook_source", id: "cadencias" } });
 }
 
 async function avancar(
@@ -498,29 +487,33 @@ async function avancar(
   },
 ) {
   const terminou = args.concluirSeSemProximo && args.passoAtualId === null;
-  const { error } = await admin
+  const { data, error } = await admin
     .from("email_cadence_enrollments")
     .update({
       passo_atual_id: args.passoAtualId,
       proximo_em: args.proximoEm.toISOString(),
       processando_ate: null,
+      processamento_id: null,
       updated_at: new Date().toISOString(),
       ...args.extras,
       ...(terminou ? { status: "concluida", concluida_em: new Date().toISOString() } : {}),
     })
     .eq("id", inscricao.id)
-    .eq("organization_id", inscricao.organization_id).eq("status", "ativa");
+    .eq("organization_id", inscricao.organization_id).eq("status", "ativa").eq("processamento_id", inscricao.processamento_id ?? "00000000-0000-0000-0000-000000000000").select("id").maybeSingle();
   if (error) throw new Error("cadencia_progress_write_failed");
+  if (!data) throw new Error("cadencia_claim_lost");
   if (terminou) await admin.from("email_cadence_events").insert({ organization_id: inscricao.organization_id, cadence_id: inscricao.cadence_id, enrollment_id: inscricao.id, lead_id: inscricao.lead_id, tipo: "concluida" });
 }
 
 async function concluirInscricao(admin: Admin, inscricao: InscricaoRow) {
   const agora = new Date().toISOString();
-  await admin
+  const { data: mudou, error: erroGravacao } = await admin
     .from("email_cadence_enrollments")
-    .update({ status: "concluida", concluida_em: agora, processando_ate: null, updated_at: agora })
+    .update({ status: "concluida", concluida_em: agora, processando_ate: null, processamento_id: null, updated_at: agora })
     .eq("id", inscricao.id)
-    .eq("organization_id", inscricao.organization_id).eq("status", "ativa");
+    .eq("organization_id", inscricao.organization_id).eq("status", "ativa").eq("processamento_id", inscricao.processamento_id ?? "00000000-0000-0000-0000-000000000000").select("id").maybeSingle();
+  if (erroGravacao) throw new Error("cadencia_progress_write_failed");
+  if (!mudou) return;
   await admin.from("email_cadence_events").insert({
     organization_id: inscricao.organization_id,
     cadence_id: inscricao.cadence_id,
@@ -537,18 +530,21 @@ async function pararInscricao(
   erro?: string,
 ) {
   const agora = new Date().toISOString();
-  await admin
+  const { data: mudou, error: erroGravacao } = await admin
     .from("email_cadence_enrollments")
     .update({
       status: "parada",
       motivo_parada: motivo,
       parada_em: agora,
       processando_ate: null,
+      processamento_id: null,
       updated_at: agora,
       ...(erro ? { ultimo_erro: erro } : {}),
     })
     .eq("id", inscricao.id)
-    .eq("organization_id", inscricao.organization_id).eq("status", "ativa");
+    .eq("organization_id", inscricao.organization_id).eq("status", "ativa").eq("processamento_id", inscricao.processamento_id ?? "00000000-0000-0000-0000-000000000000").select("id").maybeSingle();
+  if (erroGravacao) throw new Error("cadencia_progress_write_failed");
+  if (!mudou) return;
   await admin.from("email_cadence_events").insert({
     organization_id: inscricao.organization_id,
     cadence_id: inscricao.cadence_id,
@@ -559,27 +555,29 @@ async function pararInscricao(
   });
 }
 
-async function registrarTentativaFalha(admin: Admin, inscricao: InscricaoRow, erro: string) {
-  const agora = new Date();
+async function registrarTentativaFalha(admin: Admin, inscricao: InscricaoRow, erro: string, agora: Date) {
   const tentativas = inscricao.tentativas + 1;
-  // Backoff simples: 5 min, 15 min, 45 min... até 3 tentativas, depois para de
+  // Backoff da fonte: 5 min, 10 min; a terceira falha para de
   // vez — envio em dobro (reenviar cego pra sempre) é pior que registrar a falha
   // e deixar visível na Atividade.
   if (tentativas >= 3) {
     await pararInscricao(admin, inscricao, "falha", erro);
     return;
   }
-  await admin
+  const { data: mudou, error: erroGravacao } = await admin
     .from("email_cadence_enrollments")
     .update({
       tentativas,
       ultimo_erro: erro,
       proximo_em: new Date(agora.getTime() + tentativas * 5 * 60 * 1000).toISOString(),
       processando_ate: null,
+      processamento_id: null,
       updated_at: agora.toISOString(),
     })
     .eq("id", inscricao.id)
-    .eq("organization_id", inscricao.organization_id).eq("status", "ativa");
+    .eq("organization_id", inscricao.organization_id).eq("status", "ativa").eq("processamento_id", inscricao.processamento_id ?? "00000000-0000-0000-0000-000000000000").select("id").maybeSingle();
+  if (erroGravacao) throw new Error("cadencia_progress_write_failed");
+  if (!mudou) return;
   await admin.from("email_cadence_events").insert({
     organization_id: inscricao.organization_id,
     cadence_id: inscricao.cadence_id,
@@ -596,40 +594,22 @@ async function liberarSemAvancar(admin: Admin, inscricao: InscricaoRow, agora: D
     .update({
       proximo_em: new Date(agora.getTime() + minutos * 60 * 1000).toISOString(),
       processando_ate: null,
+      processamento_id: null,
     })
     .eq("id", inscricao.id)
-    .eq("organization_id", inscricao.organization_id).eq("status", "ativa");
+    .eq("organization_id", inscricao.organization_id).eq("status", "ativa").eq("processamento_id", inscricao.processamento_id ?? "00000000-0000-0000-0000-000000000000");
 }
 
 export async function processarCadencias(admin: Admin, agora: Date, requestId: string): Promise<ResultadoDoTick> {
   const vazio: ResultadoDoTick = { processadas: 0, emailsEnviados: 0, concluidas: 0, paradas: 0, falhas: 0 };
   if (!(await moduloLigado(admin, "cadencias"))) return vazio;
-  const { data: candidatas, error: erroLeitura } = await admin
-    .from("email_cadence_enrollments")
-    .select(
-      "id, organization_id, cadence_id, lead_id, contact_id, passo_atual_id, ultimo_email_em, ultimo_email_passo_id, aberturas, emails_enviados, tentativas, inscrito_por, processando_ate, rastreio_consentido, envio_pendente_passo_id, aberturas_ultimo_email",
-    )
-    .eq("status", "ativa")
-    .lte("proximo_em", agora.toISOString())
-    .limit(LOTE);
-
-  if (erroLeitura) throw new Error("cadencia_queue_read_failed");
+  const { data: candidatas, error: erroLeitura } = await admin.rpc("fn_cadencias_reivindicar", { p_agora: agora.toISOString() });
+  if (erroLeitura || !Array.isArray(candidatas)) throw new Error("cadencia_queue_claim_failed");
   const resultado: ResultadoDoTick = vazio;
-  for (const linha of (candidatas ?? []) as (InscricaoRow & { processando_ate: string | null })[]) {
-    if (!(await cadenciasLigadas(admin, linha.organization_id))) continue;
-    // Claim otimista: só processa se ninguém mais é dono da linha agora.
-    const { data: reivindicada } = await admin
-      .from("email_cadence_enrollments")
-      .update({ processando_ate: new Date(agora.getTime() + JANELA_DE_TRAVA_MS).toISOString() })
-      .eq("id", linha.id)
-      .eq("organization_id", linha.organization_id)
-      .lte("proximo_em", agora.toISOString())
-      .eq("status", "ativa")
-      .or(`processando_ate.is.null,processando_ate.lt.${agora.toISOString()}`)
-      .select("id")
-      .maybeSingle();
-    if (!reivindicada) continue; // outra rodada (ou instância) já pegou
-
+  for (const linha of candidatas as InscricaoRow[]) {
+    if (!linha.processamento_id) throw new Error("cadencia_invalid_claim");
+    // A linha é o estado ATUAL devolvido pelo claim atômico, nunca um snapshot
+    // lido antes de outro worker avançar o passo e liberar a inscrição.
     resultado.processadas++;
     try {
       const desfecho = await processarInscricao(admin, linha, agora, requestId);
@@ -637,12 +617,15 @@ export async function processarCadencias(admin: Admin, agora: Date, requestId: s
       if (desfecho.desfecho === "concluida") resultado.concluidas++;
       if (desfecho.desfecho === "parada") resultado.paradas++;
       if (desfecho.desfecho === "falha") resultado.falhas++;
-    } catch {
+    } catch (erro) {
+      if (erro instanceof Error && erro.message === "cadencia_claim_lost") continue;
       logger.error("[cadencia-worker] inscrição falhou", {
         enrollment_id: linha.id,
         erro: "cadencia_processing_failed",
       });
-      await registrarTentativaFalha(admin, linha, "cadencia_processing_failed");
+      const codigo = erro instanceof Error && ["cadencia_variable_missing", "cadencia_task_create_failed", "cadencia_open_count_failed"].includes(erro.message) ? erro.message : "cadencia_processing_failed";
+      if (codigo === "cadencia_variable_missing") await pararInscricao(admin, linha, "falha", codigo);
+      else await registrarTentativaFalha(admin, linha, codigo, agora);
       resultado.falhas++;
     }
   }

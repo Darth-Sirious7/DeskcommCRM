@@ -38,7 +38,7 @@ async function carregar(supabase: ReturnType<typeof createAdminClient>, orgId: s
     .eq("organization_id", orgId)
     .eq("id", id)
     .maybeSingle();
-  return data as { id: string; status: "rascunho" | "ativa" | "pausada"; versao: number } | null;
+  return data as { id: string; status: "rascunho" | "ativa" | "pausada"; versao: number; passos: Passo[]; configuracao: Cadencia["configuracao"] } | null;
 }
 
 export async function GET(
@@ -110,17 +110,11 @@ export async function PATCH(
     }
 
     if (novoStatus === "ativa") {
-      const { data: comPassos } = await supabase
-        .from("email_cadences")
-        .select("passos, configuracao")
-        .eq("organization_id", org.orgId)
-        .eq("id", id)
-        .single();
-      const passos = ((comPassos as { passos: Passo[] } | null)?.passos ?? []) as Passo[];
+      const passos = atual.passos;
       if (passos.length === 0) {
         return fail("cadencia_sem_passos", t("A cadência precisa de pelo menos um e-mail."), 422, { requestId });
       }
-      const problemas = problemasParaAtivar({ passos, configuracao: (comPassos as { configuracao: Cadencia["configuracao"] }).configuracao }, t);
+      const problemas = problemasParaAtivar({ passos, configuracao: atual.configuracao }, t);
       if (problemas.length > 0) return fail("validation_failed", problemas[0]!, 422, { requestId });
       if (validarPassos(passos).size > 0) {
         return fail("cadencia_sem_passos", t("Há passos com problema — eles estão marcados em vermelho."), 422, {
@@ -131,10 +125,10 @@ export async function PATCH(
 
     const { data, error } = await supabase
       .from("email_cadences")
-      .update({ status: novoStatus, updated_by: user.id })
+      .update({ status: novoStatus, updated_by: user.id, versao: atual.versao + 1, updated_at: new Date().toISOString() })
       .eq("organization_id", org.orgId)
       .eq("id", id)
-      .eq("status", atual.status)
+      .eq("status", atual.status).eq("versao", atual.versao)
       .select(COLUNAS)
       .maybeSingle();
     if (error) return fail("internal_error", error.message, 500, { requestId });
@@ -175,7 +169,7 @@ export async function PATCH(
   }
   const entrada = parsed.data;
 
-  const mudanca: Record<string, unknown> = { updated_by: user.id };
+  const mudanca: Record<string, unknown> = { updated_by: user.id, versao: atual.versao + 1, updated_at: new Date().toISOString() };
   if (entrada.name !== undefined) mudanca.name = entrada.name;
   if (entrada.configuracao !== undefined) mudanca.configuracao = entrada.configuracao;
   if (entrada.passos !== undefined) {
@@ -183,21 +177,18 @@ export async function PATCH(
     if (erroFila) return fail("internal_error", t("Não foi possível carregar as inscrições."), 500, { requestId });
     if (emCurso?.length) return fail("cadencia_nao_editavel", t("Termine ou retire as inscrições ativas antes de mudar os passos."), 409, { requestId });
     mudanca.passos = entrada.passos;
-    // Sobe a versão: a inscrição guarda o passo por id e o worker (quando
-    // existir) confere que o id ainda existe na versão atual — comentário da
-    // migration 0428.
-    mudanca.versao = atual.versao + 1;
+    // A revisão já sobe para toda edição; a escrita compara a leitura original.
   }
 
   const { data, error } = await supabase
     .from("email_cadences")
     .update(mudanca)
     .eq("organization_id", org.orgId)
-    .eq("id", id)
+    .eq("id", id).eq("status", atual.status).eq("versao", atual.versao)
     .select(COLUNAS)
     .maybeSingle();
   if (error) return fail("internal_error", error.message, 500, { requestId });
-  if (!data) return fail("cadencia_nao_encontrada", t("Cadência não encontrada."), 404, { requestId });
+  if (!data) return fail("cadencia_estado_invalido", t("O estado da cadência mudou. Recarregue a tela."), 409, { requestId });
 
   // Editar rascunho/pausada NÃO audita — nada saiu dela, mesmo critério de
   // `campaign.*` (edição de rascunho não audita).
@@ -235,7 +226,7 @@ export async function DELETE(
     .from("email_cadences")
     .delete()
     .eq("organization_id", org.orgId)
-    .eq("id", id).eq("status", atual.status).select("id").maybeSingle();
+    .eq("id", id).eq("status", atual.status).eq("versao", atual.versao).select("id").maybeSingle();
   if (error) return fail("internal_error", error.message, 500, { requestId });
   if (!excluida) return fail("cadencia_estado_invalido", t("O estado da cadência mudou. Recarregue a tela."), 409, { requestId });
 

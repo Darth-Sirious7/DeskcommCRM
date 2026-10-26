@@ -7,6 +7,7 @@ import type { Passo } from "./tipos";
 const mocks = vi.hoisted(() => ({ modulo: vi.fn(), empresa: vi.fn(), enviar: vi.fn(), atividade: vi.fn() }));
 vi.mock("@/lib/instalacao/modulos", () => ({ moduloLigado: mocks.modulo }));
 vi.mock("./modulo", () => ({ cadenciasLigadas: mocks.empresa }));
+vi.mock("@/lib/audit", () => ({ audit: vi.fn() }));
 vi.mock("@/lib/tarefas/atividade", () => ({ registraAtividadeDaTarefa: mocks.atividade }));
 vi.mock("@/lib/email/roteador", () => ({ sendEmail: mocks.enviar }));
 vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({ checkRateLimit: async () => ({ allowed: true, count: 1 }) }));
@@ -53,7 +54,31 @@ function bancada(opcoes: { consentimento?: boolean; pendente?: string; falhaAoAv
     };
     return q;
   }
-  return { admin: { from } as unknown as ReturnType<typeof createAdminClient>, inscricao, eventos, tarefas, leituras: () => leituras };
+  let sequencia = 7;
+  const rpc = async (nome: string, args: Record<string, unknown>) => {
+    leituras++;
+    if (nome === "fn_cadencias_reivindicar") {
+      const instante = String(args.p_agora);
+      if (inscricao.status !== "ativa" || String(inscricao.proximo_em) > instante) return { data: [], error: null };
+      const token = id(sequencia++);
+      inscricao.processamento_id = token;
+      return { data: [{ ...inscricao }], error: null };
+    }
+    if (nome === "fn_cadencia_reservar_envio") {
+      if (inscricao.status !== "ativa" || inscricao.processamento_id !== args.p_processamento_id || inscricao.envio_pendente_passo_id !== null) return { data: null, error: { message: "cadencia_claim_lost" } };
+      inscricao.envio_pendente_passo_id = args.p_passo_id;
+      return { data: true, error: null };
+    }
+    if (nome === "fn_cadencia_criar_tarefa") {
+      const anterior = eventos.find((e) => e.tipo === "tarefa_criada" && e.passo_id === args.p_passo_id);
+      if (anterior) return { data: { criada_agora: false, tarefa: tarefas[0] }, error: null };
+      const tarefa = { id: id(6), title: args.p_titulo, due_date: args.p_due_date, priority: "medium", lead_id: inscricao.lead_id, contact_id: inscricao.contact_id, created_by: null };
+      tarefas.push(tarefa); eventos.push({ tipo: "tarefa_criada", passo_id: args.p_passo_id });
+      return { data: { criada_agora: true, tarefa }, error: null };
+    }
+    throw new Error(`RPC inesperada: ${nome}`);
+  };
+  return { admin: { from, rpc } as unknown as ReturnType<typeof createAdminClient>, inscricao, eventos, tarefas, leituras: () => leituras };
 }
 afterEach(() => vi.unstubAllEnvs());
 beforeEach(() => {
@@ -89,9 +114,9 @@ describe("efeitos do worker de cadências", () => {
     expect(pixel).toBeTruthy(); expect(saida).toBeTruthy(); expect(pixel).not.toBe(saida);
   });
   it("tarefa automática assina atividade como sistema mesmo sem usuário inscritor", async () => {
-    const b = bancada({ passos: [{ id: "tarefa-1", tipo: "tarefa", titulo: "Retornar", prazoDias: 1 }, email] });
+    const b = bancada({ passos: [{ id: "tarefa-1", tipo: "tarefa", titulo: "Ligar para {{primeiro_nome}}", prazoDias: 1 }, email] });
     await processarCadencias(b.admin, agora, "request-sintetico");
-    expect(b.tarefas).toHaveLength(1); expect(b.tarefas[0]!.created_by).toBeNull();
+    expect(b.tarefas).toHaveLength(1); expect(b.tarefas[0]!.created_by).toBeNull(); expect(b.tarefas[0]!.title).toBe("Ligar para Pessoa");
     expect(mocks.atividade).toHaveBeenCalledWith(b.admin, expect.objectContaining({ actor: { type: "webhook_source", id: "cadencias" } }));
     expect(b.inscricao.passo_atual_id).toBe("email-1");
   });
