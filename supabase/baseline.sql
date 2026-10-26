@@ -54453,26 +54453,6 @@ create policy tenant_isolation_conversation_participants_select
     and user_id = auth.uid()
   );
 
--- O drop e o create vão num ÚNICO bloco DO: o update.sh aplica o baseline sem
--- ON_ERROR_STOP e em autocommit. Soltos, um create que falhasse depois do drop
--- deixaria `conversations` com RLS e SEM policy de SELECT — o inbox sumiria
--- para todos. Dentro do DO, a falha desfaz o drop e a policy anterior fica.
-do $conversations_select$ begin
-  drop policy if exists "conversations_select" on public.conversations;
-  create policy "conversations_select" on public.conversations
-    for select using (
-      public.fn_can_view_conversation(organization_id, assigned_to_user_id)
-      or exists (
-        select 1
-          from public.conversation_participants cp
-         where cp.conversation_id = conversations.id
-           and cp.organization_id = conversations.organization_id
-           and cp.user_id = auth.uid()
-           and cp.left_at is null
-      )
-    );
-end $conversations_select$;
-
 do $f$ begin perform public.fn_aplicar_travas_de_suporte(); end $f$;
 
 -- manifest: **O entregue e o lido da API oficial chegam ao destinatário da campanha (issue #2937).** `fn_campanha_sincroniza_ack` saía cedo quando `new.status is not distinct from old.status` e o gatilho escutava só `after update of status`: na API oficial o webhook de entrega/leitura mantém `messages.status = 'sent'` e grava apenas `delivered_at`/`read_at` (`lib/channels/meta/status-update.ts:23-31`), então o gatilho nem disparava ou saía no primeiro `if` — `campaign_recipients.delivered_at`/`read_at` ficavam nulos para sempre e as taxas de entrega/leitura da campanha, zeradas. A função passa a derivar o "status efetivo" dos carimbos quando o canal não muda o `status`, e o gatilho passa a escutar exatamente as três colunas que aquele ack toca (`status`, `delivered_at`, `read_at`). O caminho do canal não oficial (o `status` chega `delivered`/`read`, `lib/waha/ingest.ts`), a regra de "status analítico nunca retrocede" e o caminho de `failed` seguem idênticos. Gate: `tests/invariants/ack-da-api-oficial-alcanca-o-destinatario.test.ts` (vermelho na main, verde aqui).
