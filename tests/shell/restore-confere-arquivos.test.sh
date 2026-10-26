@@ -173,6 +173,17 @@ tar czf "$STORAGE" -C "$WORK/vazio" .
 rodar
 check 'Storage vazio mas íntegro continua sendo restaurável' igual "$RC" 0
 
+# Um tar sem entradas também é válido. O padding pode continuar depois do
+# marcador de fim: quem lista o arquivo pode parar ali, mas a conferência não
+# pode matar o gunzip com SIGPIPE e recusar um backup íntegro por causa disso.
+preparar
+{
+  tar cf - -T /dev/null
+  dd if=/dev/zero bs=1024 count=1024 2>/dev/null
+} | gzip > "$STORAGE"
+rodar
+check 'tar sem entradas com padding longo continua sendo restaurável' igual "$RC" 0
+
 preparar
 printf 'SINGLE_SERVER="0"\n' >> "$PROJ/.env"
 printf 'snapshot local alheio ao modo nuvem\n' > "$STORAGE"

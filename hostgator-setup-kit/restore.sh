@@ -38,7 +38,16 @@ STORAGE_TAR="$(dirname "$DUMP")/storage-$(basename "$DUMP" .sql.gz | sed 's/^db-
 
 conferir_snapshot() {
   [ -f "$1" ] || return 0
-  if ! gzip -t "$1" 2>/dev/null || ! tar tzf "$1" >/dev/null 2>&1; then
+  # O GNU tar pode aceitar um gzip de texto curto como se fosse um tar vazio.
+  # Descompactar fora dele e listar o stdin faz o mesmo conteúdo ser recusado.
+  # Drene o padding depois do fim do tar: sem isso o gunzip pode receber SIGPIPE
+  # e o pipefail recusaria também um tar íntegro com blocos de preenchimento.
+  if ! gzip -t "$1" 2>/dev/null || ! gunzip -c "$1" 2>/dev/null | (
+    rc_tar=0
+    tar tf - >/dev/null 2>&1 || rc_tar=$?
+    cat >/dev/null || exit 1
+    exit "$rc_tar"
+  ); then
     die "O snapshot $1 está corrompido, incompleto ou não é um tar.gz válido: nada foi restaurado nem apagado. Recupere uma cópia íntegra do backup antes de tentar de novo."
   fi
 }
