@@ -34,7 +34,12 @@ import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useContactTagVocabulary } from "@/hooks/contacts/useContactTagVocabulary";
 import { useConversationTagVocabulary } from "@/hooks/inbox/useConversationTags";
 import { useConversationCounts } from "@/hooks/inbox/useConversationCounts";
-import { roleAtLeast, type Role, type VisibilityMode } from "@/lib/auth/types";
+import {
+  roleAtLeast,
+  visibilidadeRestritaAoAtendente,
+  type Role,
+  type VisibilityMode,
+} from "@/lib/auth/types";
 import { SeletorDeAtendente } from "@/components/inbox/SeletorDeAtendente";
 
 export type InboxTab = "unassigned" | "mine" | "all" | "closed" | "archived" | "ai";
@@ -72,7 +77,10 @@ const INBOX_TABS: { value: InboxTab; label: string }[] = [
  * É apenas cosmético — a RLS (G4-01) é quem garante o escopo mesmo via ?filter=all.
  */
 export function visibleInboxTabs(role: Role, mode: VisibilityMode | undefined): InboxTab[] {
-  const hideAll = role === "agent" && mode !== "all";
+  // A pergunta "este modo restringe o Atendente?" mora num lugar só
+  // (`visibilidadeRestritaAoAtendente`), porque o catálogo de recursos e a
+  // própria #3479 precisam da MESMA resposta — ver o comentário do predicado.
+  const hideAll = role === "agent" && visibilidadeRestritaAoAtendente(mode);
   return INBOX_TABS.filter((t) => !(t.value === "all" && hideAll)).map((t) => t.value);
 }
 
