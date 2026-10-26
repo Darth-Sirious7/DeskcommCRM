@@ -24,7 +24,9 @@ TEST_DB_IMAGE=pgvector/pgvector:pg17 pnpm test:db \
   vínculo entre organização e negócio sem esconder o problema por uma policy de SELECT.
 - Atualização com dados: aplica a 0772 original, cria proposta, anonimiza e
   comprova o motivo legado ainda legível; aplica a correção forward e exige
-  remoção do motivo com a linha preservada. Este caso também é diagnóstico:
+  remoção pelos vínculos direto e secundário, com a linha, decisão e data da
+  anonimização preservadas. Propostas de contatos vivos na mesma organização
+  e noutra mantêm seus conteúdos. Este caso também é diagnóstico:
   somente trocar o corpo da função não cura linhas já anonimizadas.
 
 ## Tela e concorrência
