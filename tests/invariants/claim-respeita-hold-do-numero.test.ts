@@ -187,4 +187,22 @@ describe("claim e relógio antes do tick de retenção (#2327)", () => {
     expect(rows[1]!.run_after.getTime() - rows[0]!.run_after.getTime()).toBe(5 * 60_000);
     expect(rows[2]!.run_after.getTime() - rows[1]!.run_after.getTime()).toBe(5 * 60_000);
   });
+
+  it("uma linha sob hold travada por outra conexão não bloqueia o claim saudável", async () => {
+    await hold("go_live");
+    const retido = await job("followup_turn", pelaConversa(), 1);
+    const saudavel = await job("followup_turn", pelaConversa(OUTRA_CONVERSA), 100);
+    const trava = await pool.connect();
+    const concorrente = new pg.Pool({ ...pool.options, max: 1, statement_timeout: 750 });
+    try {
+      await trava.query("begin");
+      await trava.query("select id from job_queue where id = $1 for update", [retido.id]);
+      const jobs = await claimJobs(concorrente, { workerId: "worker-vizinho-2327", maxConcurrency: 4 });
+      expect(jobs.map((j) => j.id)).toEqual([saudavel.id]);
+    } finally {
+      await trava.query("rollback");
+      trava.release();
+      await concorrente.end();
+    }
+  });
 });

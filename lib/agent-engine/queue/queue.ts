@@ -156,14 +156,26 @@ const JOB_SEM_HOLD_DE_CANAL_SQL = `(j.kind not in ('inbound_turn', 'followup_tur
       ))`;
 
 const CLAIM_SQL = `
-  with retidos as (
-    update job_queue j
-    set payload = jsonb_set(j.payload, '{held_run_after}', to_jsonb(j.run_after))
-                  || jsonb_build_object('held_channel_session_id', ${CANAL_DO_JOB_SQL}),
-        run_after = 'infinity'
+  -- Reter também respeita o contrato não-bloqueante do claim: uma linha
+  -- travada por outra conexão não segura o job saudável de outra lane. Usa
+  -- o mesmo tamanho de lote já calculado, sem varrer/escrever toda a fila.
+  with para_reter as materialized (
+    select j.id, ${CANAL_DO_JOB_SQL} as canal
+    from job_queue j
     where j.status = 'pending'
       and not (j.payload ? 'held_run_after')
       and not ${JOB_SEM_HOLD_DE_CANAL_SQL}
+    order by j.priority, j.run_after, j.id
+    limit $1
+    for update of j skip locked
+  ),
+  retidos as (
+    update job_queue j
+    set payload = jsonb_set(j.payload, '{held_run_after}', to_jsonb(j.run_after))
+                  || jsonb_build_object('held_channel_session_id', r.canal),
+        run_after = 'infinity'
+    from para_reter r
+    where j.id = r.id
     returning j.id
   ),
   dedup as (

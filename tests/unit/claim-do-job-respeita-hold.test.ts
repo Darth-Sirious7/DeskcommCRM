@@ -41,8 +41,12 @@ describe("a fila respeita o hold antes do tick do watchdog (#2327)", () => {
     expect(claim).toContain("health_hold_reason");
     expect(claim).toContain("go_live");
     expect(claim).toContain("followup_turn");
-    expect(claim).toMatch(/with retidos as\s*\(\s*update job_queue/);
+    expect(claim).toMatch(/retidos as\s*\(\s*update job_queue/);
     expect(claim).toContain("select 1 from retidos");
+    const candidatos = claim.slice(0, claim.indexOf("retidos as ("));
+    expect(candidatos).toContain("as materialized");
+    expect(candidatos).toContain("limit $1");
+    expect(candidatos).toContain("for update of j skip locked");
   });
 
   it("o claim guarda a retenção e o relógio continua vendo jobs que ainda precisam dela", async () => {
