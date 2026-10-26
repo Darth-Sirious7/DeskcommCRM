@@ -186,14 +186,46 @@ describe("aviso positivo nunca faz o status voltar (fatia 1)", () => {
   });
 });
 
-describe("linha failed não é tocada por aviso positivo (fatia 1)", () => {
-  it("failed + ack 2 e ack 3 → continua failed, e delivered_at/read_at continuam nulos", async () => {
-    const filas = [linha({ status: "failed", ack: null, error_code: "send_timeout", delivered_at: null, read_at: null })];
+describe("entrega confirmada recupera uma falha anterior", () => {
+  // A main já recuperava failed quando o aparelho confirmava a entrega. A
+  // versão inicial desta fatia congelava o erro oposto: manter failed com ACK
+  // 2/3 permite oferecer reenvio de algo que chegou. ACK 0/1 não confirma isso.
+  it.each(["send_timeout", "ack_error"])("%s + ack 2 e 3 → entregue e lida", async (errorCode) => {
+    const filas = [linha({ status: "failed", ack: -1, error_code: errorCode })];
     const { admin } = banco(filas);
     await chegarAviso(admin, 2);
-    expect(filas[0]).toMatchObject({ status: "failed", delivered_at: null, read_at: null });
+    expect(filas[0]).toMatchObject({ status: "delivered", ack: 2, read_at: null });
+    expect(filas[0]?.delivered_at).toEqual(expect.any(String));
+    const entregueEm = filas[0]?.delivered_at;
     await chegarAviso(admin, 3);
+    expect(filas[0]).toMatchObject({ status: "read", ack: 3, delivered_at: entregueEm });
+    expect(filas[0]?.read_at).toEqual(expect.any(String));
+  });
+
+  it.each([0, 1])("failed + ack %s não prova entrega nem recupera o status", async (ack) => {
+    const filas = [linha({ status: "failed", ack: -1, error_code: "send_timeout" })];
+    const { admin } = banco(filas);
+    await chegarAviso(admin, ack);
     expect(filas[0]).toMatchObject({ status: "failed", delivered_at: null, read_at: null });
+  });
+
+  it("erro, confirmação de leitura e erro atrasado: a prova do aparelho prevalece nas duas ordens", async () => {
+    const filas = [linha()];
+    const { admin, emitidos } = banco(filas);
+    await chegarAviso(admin, -1);
+    expect(filas[0]?.status).toBe("failed");
+    expect(emitidos).toHaveLength(1);
+
+    await chegarAviso(admin, 3);
+    expect(filas[0]).toMatchObject({ status: "read", ack: 3 });
+    const entregueEm = filas[0]?.delivered_at;
+    const lidaEm = filas[0]?.read_at;
+    expect(entregueEm).toEqual(expect.any(String));
+    expect(lidaEm).toEqual(expect.any(String));
+
+    await chegarAviso(admin, -1);
+    expect(filas[0]).toMatchObject({ status: "read", ack: 3, delivered_at: entregueEm, read_at: lidaEm });
+    expect(emitidos).toHaveLength(1);
   });
 });
 

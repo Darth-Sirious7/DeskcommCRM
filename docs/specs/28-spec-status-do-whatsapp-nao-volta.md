@@ -71,8 +71,11 @@ Em `handleAck` (`lib/waha/ingest.ts`), com a mesma régua do Zernio:
 
 - **Ordem:** `sending < sent < delivered < read`. O update de status só acontece
   quando o estado novo é **mais avançado** que o gravado (condição no próprio
-  `UPDATE`, sobre a linha vigente — não ler e depois escrever). `failed` não é
-  tocado por aviso positivo.
+  `UPDATE`, sobre a linha vigente — não ler e depois escrever). `failed` pode
+  avançar para `delivered`/`read` quando o aparelho confirma a entrega/leitura
+  (ACK 2/3), preservando a recuperação já existente na main. ACK 0/1 não prova
+  entrega e não recupera a falha. Erro atrasado depois dessa confirmação não
+  rebaixa a mensagem nem emite outra falha.
 - **Horas:** `delivered_at` e `read_at` são gravados **uma vez** (`is null`);
   `read` sem `delivered` antes carimba as duas com a mesma hora (como o Zernio).
 - **Aviso de erro (`ack = -1`):**

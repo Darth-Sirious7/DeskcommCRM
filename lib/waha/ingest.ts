@@ -1769,8 +1769,9 @@ async function handleOutboundFromUserPhone(
  *
  * A condição mora NO PRÓPRIO UPDATE (`.in("status", …)`), sobre a linha vigente;
  * não se lê o status antes para depois escrever. E as horas de entrega e de
- * leitura são gravadas uma vez só (`is null`). Aviso positivo não toca em linha
- * `failed`: nem o status, nem as horas (`.neq("status", "failed")` em `carimbarUmaVez`).
+ * leitura são gravadas uma vez só (`is null`). Uma confirmação do aparelho
+ * (ACK 2/3) recupera `failed`, como na main: a falha pode ter sido um timeout
+ * antes da confirmação. ACK 0/1 não prova entrega e não recupera a falha.
  */
 async function handleAck(admin: Admin, session: Session, p: WahaPayload): Promise<void> {
   if (!p.id) return;
@@ -1793,11 +1794,12 @@ async function handleAck(admin: Admin, session: Session, p: WahaPayload): Promis
   const status = ackToStatus(ack);
   if (status === null) return;
 
-  // Estados que ainda estão ANTES do novo na ordem. `failed` não está em
-  // nenhuma: aviso positivo não ressuscita uma falha já registrada.
+  // Estados que ainda estão ANTES do novo na ordem. `failed` também pode
+  // avançar para entregue/lida: a confirmação do aparelho prevalece sobre o
+  // timeout/erro anterior. O ACK 1, só do servidor, não prova essa entrega.
   const antes =
-    status === "read" ? ["sending", "sent", "delivered"]
-    : status === "delivered" ? ["sending", "sent"]
+    status === "read" ? ["sending", "sent", "delivered", "failed"]
+    : status === "delivered" ? ["sending", "sent", "failed"]
     : ["sending"];
   const { error } = await admin
     .from("messages")
@@ -1822,8 +1824,8 @@ async function carimbarUmaVez(
   coluna: "delivered_at" | "read_at",
   quando: string,
 ): Promise<void> {
-  // `failed` não é tocado por aviso positivo, nem nas horas: uma falha registrada
-  // não ganha hora de entrega ou de leitura.
+  // Só carimbar depois de a linha avançar: se o UPDATE de status falhou, uma
+  // linha ainda `failed` não ganha hora de entrega sem mudar seu estado.
   const { error } = await admin
     .from("messages")
     .update({ [coluna]: quando })
