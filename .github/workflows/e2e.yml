@@ -1163,6 +1163,7 @@ jobs:
         agenda-google-sync.spec.ts
         agenda-servicos.spec.ts
         encerramento-atendimento.spec.ts
+        atendimento-conjunto.spec.ts
         passagem-com-contexto.spec.ts
         interface-por-vinculo.spec.ts
         pipelines-gestao.spec.ts
@@ -1171,6 +1172,7 @@ jobs:
         qa-telas-descobertas-w4.spec.ts
         retorno-anti-morte.spec.ts
         webhooks.spec.ts
+        traco-do-turno-leitor.spec.ts
         designer-de-automacoes.spec.ts
         logo-moldura-no-tema-escuro.spec.ts
         historico-de-captacao.spec.ts
@@ -1500,6 +1502,7 @@ jobs:
         navegacao.spec.ts
         prova-painel-provedores.spec.ts
         comercial-no-celular.spec.ts
+        propostas-de-campos-do-card.spec.ts
 
       # ─── FORA_DO_CI — as que ficaram fora, e o motivo de cada uma ───
       #
@@ -1976,6 +1979,14 @@ jobs:
       # bloco `env:` fixava e que o app recusa.
       - name: Publicar o .env.e2e no ambiente do job
         run: grep -vE '^[[:space:]]*(#|$)' .env.e2e >> "$GITHUB_ENV"
+
+      - if: matrix.parte == 1
+        name: Provar importação após chat inválido (HTTP e banco reais)
+        shell: bash
+        run: |
+          mkdir -p evidence/historico-chat-invalido
+          pnpm exec tsx scripts/provas/historico-chat-invalido.ts --executar-banco-local \
+            | tee evidence/historico-chat-invalido/recibo.jsonl
 
       # `pnpm e2e:build`, não `pnpm build`: as três `NEXT_PUBLIC_*` são embutidas
       # no BUNDLE durante o build. Buildar com um env e trocar só no `next start`
@@ -2549,6 +2560,12 @@ jobs:
             playwright-report/
             test-results/
           retention-days: 7
+
+      - name: Gerar tipos do banco real para a prova de atendimento conjunto
+        if: ${{ success() && matrix.parte == 3 }}
+        env:
+          CANDIDATO_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: bash scripts/gerar-tipos-do-banco-e2e.sh evidencia-gerada/tipos-do-banco conversation_participants
 
       # A EVIDÊNCIA VISUAL TAMBÉM QUANDO PASSA. As specs gravam capturas em
       # evidence/<feature>/ (doutrina de QA Visual, DoD 12); sem este passo elas
