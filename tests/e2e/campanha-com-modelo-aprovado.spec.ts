@@ -452,9 +452,8 @@ test("campanha de texto prepara a reserva e o dado preenchido pelo mesmo fluxo d
       contatos.push(contato.data!.id as string);
     }
     await loginComoAdmin(page, lerCreds());
-    await page.goto("/app/inbox");
-    await page.getByTestId("tenant-switcher").click();
-    await page.getByTestId(`tenant-switcher-item-${cc.org_id}`).click();
+    // Uma organização no seed: o seletor é oculto por contrato. Canal,
+    // público e snapshot abaixo conferem a empresa real da sessão.
     await page.goto("/app/campaigns/new");
     await page.locator("#nome").fill(nome);
     await page.locator("#canal").selectOption(canal);

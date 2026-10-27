@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type pg from "pg";
+import pg from "pg";
+import { z } from "zod";
 
 import { createInboundTurnHandler } from "../../../lib/agent-engine/agent/inbound-turn";
 import { createFakeRegistry } from "../../../lib/agent-engine/edge/llm/providers";
@@ -79,4 +80,32 @@ export async function proximaAcaoNoTurno(
   await handler(rows[0]!, pool, { workerId: worker });
   await completeJob(pool, job.id, worker);
   if (geracoes < 2 || envios !== 1) throw new Error("O turno não atravessou o modelo e a resposta esperados.");
+}
+
+// Entrada exclusiva da prova: Node + tsx instalado, sem loader do Playwright.
+// Só o modelo/canal acima são dublês; handler, ferramentas e banco são reais.
+const argumento = process.argv.indexOf("--executar-proxima-acao");
+if (argumento >= 0) {
+  const executar = async () => {
+    const url = process.env.E2E_TURNO_DB_URL;
+    if (!url || !["127.0.0.1", "localhost"].includes(new URL(url).hostname)) {
+      throw new Error("A prova do turno exige um Postgres local do harness.");
+    }
+    const entrada = z
+      .object({
+        ids: z.object({ org: z.uuid(), contato: z.uuid(), canal: z.uuid(), conversa: z.uuid() }),
+        nextAction: z.string().nullable(),
+      })
+      .parse(JSON.parse(process.argv[argumento + 1] ?? "null"));
+    const pool = new pg.Pool({ connectionString: url, max: 1 });
+    try {
+      await proximaAcaoNoTurno(pool, entrada.ids, entrada.nextAction);
+    } finally {
+      await pool.end();
+    }
+  };
+  void executar().catch((erro: unknown) => {
+    process.stderr.write(`${erro instanceof Error ? erro.message : "Falha na prova do turno."}\n`);
+    process.exitCode = 1;
+  });
 }

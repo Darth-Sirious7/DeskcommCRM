@@ -660,7 +660,9 @@ test("próxima ação genérica preserva a proposta anterior e null limpa pelo t
   const { loginComoAdmin, lerCreds } = await import("./helpers/login-admin");
   const { applyLeadStateUpdate } = await import("../../lib/agent-engine/agent/lead-state");
   const { seedPlatformPlaybook } = await import("../../lib/agent-engine/agent/playbook-seed");
-  const { proximaAcaoNoTurno } = await import("./helpers/proxima-acao-no-turno");
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const executarTurno = promisify(execFile);
   const ambiente = credenciaisSupabaseDeTeste();
   expect(["127.0.0.1", "localhost"]).toContain(new URL(ambiente.dbUrl).hostname);
   const pool = new pg.Pool({ connectionString: ambiente.dbUrl, max: 2 });
@@ -705,7 +707,23 @@ test("próxima ação genérica preserva a proposta anterior e null limpa pelo t
     ]) {
       // O MESMO campo cru nos dois caminhos. O transporte LLM é sintético,
       // explicitamente; o handler e o writer usam o Postgres real da suíte.
-      await proximaAcaoNoTurno(pool, { org, contato: contatos[0]!, canal, conversa }, passo.texto);
+      // O grafo do motor usa o loader tsx do worker, em um filho isolado:
+      // não mistura sua resolução CJS/ESM com a transformação do Playwright.
+      await executarTurno(
+        process.execPath,
+        [
+          "--max-old-space-size=768",
+          "--import",
+          "tsx",
+          "tests/e2e/helpers/proxima-acao-no-turno.ts",
+          "--executar-proxima-acao",
+          JSON.stringify({
+            ids: { org, contato: contatos[0]!, canal, conversa },
+            nextAction: passo.texto,
+          }),
+        ],
+        { env: { ...process.env, E2E_TURNO_DB_URL: ambiente.dbUrl } },
+      );
       const direta = await applyLeadStateUpdate(pool, { tenantId: org, leadId: contatos[1]! }, { next_action: passo.texto });
       expect(direta.ok).toBe(true);
       const { rows } = await pool.query("select next_action, next_action_seq from lead_state where organization_id=$1 and contact_id=any($2::uuid[]) order by contact_id", [org, contatos]);

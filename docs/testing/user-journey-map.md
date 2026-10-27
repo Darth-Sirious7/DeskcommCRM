@@ -3983,8 +3983,9 @@ não foram alterados e os recursos exclusivos foram removidos ao fim.
 
 ## Preferências e textos da operação — resgate #3402/#3405/#3458
 
-Estado: **PREPARADO para o CI**, ainda sem execução das jornadas novas. Os testes
-dirigidos e a coleta do Playwright não são prova de UX. Contratos, consumidores
+Estado: a primeira execução real do CI encontrou quatro falhas nas jornadas
+novas. As fixtures e o loader foram corrigidos; a nova execução ainda está
+pendente. Testes dirigidos e coleção do Playwright não são prova de UX. Contratos, consumidores
 compartilhados, transporte sintético e limites em
 [antigos-core-3402-3405-3458.md](antigos-core-3402-3405-3458.md).
 

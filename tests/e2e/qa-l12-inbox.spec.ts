@@ -448,9 +448,8 @@ test("resposta rápida usa a reserva sem nome e preserva o nome preenchido no en
     conversa = await insere("conversations", { organization_id: cc.org_id, channel_session_id: canal, contact_id: contato, status: "open", assignee_kind: "user", assigned_to_user_id: cc.users.admin!.id });
     await insere("messages", { organization_id: cc.org_id, conversation_id: conversa, channel_session_id: canal, contact_id: contato, direction: "inbound", type: "text", body: "Olá", status: "delivered", sent_via: "external_device", sent_at: new Date().toISOString() });
     await loginComoAdmin(page, lerCreds());
-    await page.goto("/app/inbox");
-    await page.getByTestId("tenant-switcher").click();
-    await page.getByTestId(`tenant-switcher-item-${cc.org_id}`).click();
+    // O admin do seed tem uma organização: não existe seletor para trocar
+    // para a própria empresa. O recibo real da criação confirma o escopo.
     await page.goto("/app/templates");
     await page.getByRole("button", { name: "Nova resposta rápida", exact: true }).click();
     const dialog = page.getByRole("dialog");
@@ -463,7 +462,9 @@ test("resposta rápida usa a reserva sem nome e preserva o nome preenchido no en
       dialog.getByRole("button", { name: "Criar resposta rápida", exact: true }).click(),
     ]);
     expect(criada.ok()).toBe(true);
-    const templateId = ((await criada.json()) as { data: { id: string } }).data.id;
+    const recibo = (await criada.json()) as { data: { id: string; organization_id: string } };
+    expect(recibo.data.organization_id).toBe(cc.org_id);
+    const templateId = recibo.data.id;
     const escolher = async (esperado: string) => {
       await page.goto(`/app/inbox?id=${conversa}`);
       const campo = page.getByRole("textbox", { name: "Mensagem", exact: true });

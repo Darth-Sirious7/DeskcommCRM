@@ -215,8 +215,10 @@ test("número e Não lidos sobrevivem à recarga e permanecem na sua organizaç�
         organization_id: org, user_id: usuario.id, role: "admin", accepted_at: new Date().toISOString(),
       });
       expect(vinculo.error).toBeNull();
-      for (const reserva of [false, true]) {
-        const nome = `Número ${letra}${reserva ? " reserva" : ""} ${sufixo}`;
+      // Após excluir o escolhido, ainda ficam dois números. Com apenas um,
+      // o seletor some por contrato quando a pessoa limpa o filtro removido.
+      for (const reserva of [0, 1, 2]) {
+        const nome = `Número ${letra}${reserva ? ` reserva ${reserva}` : ""} ${sufixo}`;
         const id = await inserir("channel_sessions", {
           organization_id: org, display_name: nome, waha_session_name: `filtros-${randomUUID()}`,
           status: "WORKING", webhook_secret_encrypted: "\\x00",
