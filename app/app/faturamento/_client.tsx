@@ -55,7 +55,7 @@ type Relatorio = Totais & {
   por_moeda?: Record<string, Totais>;
 };
 
-type Pessoa = { user_id: string; name: string | null; email: string | null };
+type Pessoa = { user_id: string; full_name: string | null };
 
 /**
  * O período padrão do relatório no calendário de quem usa a tela (#2935).
@@ -122,7 +122,7 @@ export function Faturamento({
   const nomeDe = (id: string | null) => {
     if (!id) return t("Sem responsável");
     const p = (equipe.data ?? []).find((x) => x.user_id === id);
-    return p?.name ?? p?.email ?? t("Sem responsável");
+    return p?.full_name ?? t("Sem responsável");
   };
 
   // Os nomes dos clientes, pelo mesmo motivo dos da equipe: o relatório devolve
