@@ -306,25 +306,32 @@ export function InboxLayout({
     ...(tagNaUrl ? { tag: tagNaUrl } : {}),
   });
   // Lidos depois da hidratação: o servidor não enxerga o localStorage.
-  const filtrosRestaurados = useRef<string | null>(null);
+  const [orgDosFiltros, setOrgDosFiltros] = useState<string | null>(null);
   useEffect(() => {
-    if (!orgId || filtrosRestaurados.current === orgId) return;
-    filtrosRestaurados.current = orgId;
+    if (!orgId) return;
     const lembrados = lerFiltrosLembrados(armazenamentoDoNavegador(), orgId);
     setAux((atual) => ({
       ...atual,
       channel_session_id: lembrados.channel_session_id,
       onlyUnread: lembrados.onlyUnread ?? false,
     }));
+    // O contexto acompanha o estado restaurado no PRÓXIMO render. Uma ref
+    // marcada aqui liberaria o efeito de gravação com os filtros anteriores.
+    setOrgDosFiltros(orgId);
   }, [orgId]);
   useEffect(() => {
-    if (!orgId || filtrosRestaurados.current !== orgId) return;
+    if (!orgId || orgDosFiltros !== orgId) return;
     gravarFiltrosLembrados(armazenamentoDoNavegador(), orgId, {
       channel_session_id: aux.channel_session_id,
       onlyUnread: aux.onlyUnread,
     });
-  }, [orgId, aux.channel_session_id, aux.onlyUnread]);
-  const filterValue: InboxFiltersValue = { tab, ...aux };
+  }, [orgId, orgDosFiltros, aux.channel_session_id, aux.onlyUnread]);
+  const filterValue: InboxFiltersValue = {
+    tab,
+    ...aux,
+    // Uma troca de organização não leva o número anterior nem à consulta.
+    ...(orgDosFiltros !== orgId ? { channel_session_id: undefined, onlyUnread: false } : {}),
+  };
   const setFilterValue = useCallback(
     (next: InboxFiltersValue) => {
       if (next.tab !== tab) {

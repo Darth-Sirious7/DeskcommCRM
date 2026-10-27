@@ -3976,3 +3976,17 @@ Realtime perdia o toast; ausência de botão durante reload ainda vazio não pro
 estado. O runner foi corrigido e as tentativas/capturas antigas foram conservadas
 com esses limites. O manager original não foi promovido, os guards do produto
 não foram alterados e os recursos exclusivos foram removidos ao fim.
+
+
+## Preferências e textos da operação — resgate #3402/#3405/#3458
+
+Estado: **PREPARADO para o CI**, ainda sem execução das jornadas novas. Os testes
+dirigidos e a coleta do Playwright não são prova de UX. Contratos, consumidores
+compartilhados, transporte sintético e limites em
+[antigos-core-3402-3405-3458.md](antigos-core-3402-3405-3458.md).
+
+| Origem | Jornada preparada | Evidência a recolher |
+| --- | --- | --- |
+| #3402 | Número e Não lidos por organização, recarga, A/B/A, removido e armazenamento bloqueado | `inbox-busca-e-filtros-dizem-a-verdade.spec.ts`; PNG em `evidence/antigos-core-3402/` |
+| #3405 | Resposta rápida criada pela tela e texto recebido por HTTP; campanha prepara reserva e nome no snapshot real | `qa-l12-inbox.spec.ts` e `campanha-com-modelo-aprovado.spec.ts`; PNG em `evidence/antigos-core-3405/` |
+| #3458 | Par handler/ferramenta com resposta LLM sintética, SQL real e o card após genérica, concreta, preservação e null | `qa-l12-funil.spec.ts`; PNG em `evidence/antigos-core-3458/` |
