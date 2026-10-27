@@ -4002,3 +4002,39 @@ medido. Não provam este lote. As ofertas de campanha são capacidade nova do
 neste recorte. Não houve execução de build, typecheck, DB, Docker ou browser local.
 A aprovação continua dependendo dos checks obrigatórios e da inspeção dos
 artefatos produzidos no head do lote.
+
+## Respostas rápidas com conteúdos combinados — adaptação #3538
+
+**Preparado para o CI; sem execução local de navegador ou banco.** A fonte de
+@webtecnica (`48895c6f`) é preservada na composição. Destino: **núcleo**, pois
+cadastro, edição e uso de respostas rápidas pertencem ao atendimento comum.
+
+`respostas-rapidas-conteudos.spec.ts`, na parte3, prepara uma organização e uma
+sessão manager novas, cadastra as sete combinações pela tela e usa os botões do
+Inbox com prévia e confirmação. App, autenticação, PostgREST, Storage, pipeline
+de envio e bytes são reais; somente o transporte do fornecedor usa um receptor
+HTTP local explicitamente sintético. Não mede pareamento, conversão de áudio
+nem entrega no WhatsApp público.
+
+O mesmo caso prepara substituição de áudio no teto5, remoção junto de imagem,
+recusa que conserva o arquivo anterior, remoção pendente/desfazer/cancelar,
+conflito de edição e controles de isolamento de arquivos. Os testes dirigidos
+de rota, formulário e SDK também cobrem confirmação perdida: conservar o
+objeto é preferível a deixar uma referência sem bytes. Uma criação cujo upload
+falhou pode permanecer vazia e recuperável na lista; o diálogo fecha e orienta
+a conferi-la antes de repetir. O uso de conteúdo vazio continua recusado.
+
+Todos os novos fluxos da tela enviam o snapshot esperado e consomem a lista
+fresca. Compatibilidade de clientes antigos sem snapshot cobre somente a
+janela entre leitura e escrita da rota; escrita direta permitida por RLS não
+ganha garantia global de concorrência. Sem nova revisão monotônica, schema,
+RLS, bucket ou configuração. O laço de retorno usa o erro visível, a lista
+recarregada e a edição existente; mutações confirmadas seguem na auditoria de
+templates. A regra herdada de legenda após falha parcial de envio está fora
+deste recorte.
+
+PNG e recibo sanitizado são gravados em `evidence/respostas-rapidas-3538/`
+antes da limpeza, inclusive na falha. Trace e vídeo ficam desligados apenas
+nesta spec para não arquivar URLs assinadas. A limpeza é limitada aos UUIDs
+sintéticos desta execução. A coleta `--list` não é prova de UX; a aceitação
+depende do CI do candidato e da inspeção das capturas produzidas.
