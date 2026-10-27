@@ -43,8 +43,28 @@ import { sql } from "./psql-transporte";
  * DEPOIS do baseline a entrada em `pg_default_acl` existe de qualquer jeito,
  * porque o próprio dump a grava, e qualquer asserção ali seria verde por
  * construção. O que faltava é o que só uma asserção de suíte dá: arquivo e
- * tabela nomeados no vermelho, o conjunto INTEIRO de privilégios (a sonda mede
- * DELETE, e só DELETE) e a negativa no mesmo lugar que a positiva.
+ * tabela nomeados no vermelho, o conjunto de privilégios comparado como
+ * conjunto, e a negativa no mesmo lugar que a positiva.
+ *
+ * ─── Quais letras discriminam, e como isso foi medido ───────────────────────
+ *
+ * NÃO são as sete. Sabotagem medida em 2026-10-27: trocar as três linhas
+ * `grant all on tables` do prelude por `grant select, insert, update, delete`
+ * deixa o run VERDE — porque o `GRANT` enumerado do dump já entrega
+ * `REFERENCES`, `TRIGGER` e `TRUNCATE` nessas tabelas, e a sonda de shell mede
+ * DELETE, que continua lá. Ou seja, a "concessão parcial" que o PR #1063 listou
+ * como risco não é alcançável nestas tabelas: o buraco é exatamente
+ * INSERT, UPDATE e DELETE, as três que nenhum `GRANT` do dump enumera.
+ *
+ * `service_role` também não está exposto nesta classe, e pelo mesmo motivo: o
+ * dump lhe concede `GRANT ALL` explícito nas três. O verde falso era de `anon` e
+ * `authenticated` — por isso a comparação é por papel, e não uma vez por tabela.
+ *
+ * A comparação do conjunto INTEIRO fica, então, como registro da régua do
+ * produto (e como guarda do dia em que uma tabela do corpo tiver `GRANT`
+ * enumerado mais pobre), não como o que reprova hoje. A sabotagem que reprova
+ * hoje é a que remove as três linhas `on tables`: 6 casos de 9 e o caso do
+ * núcleo — medido.
  *
  * ─── A armadilha que este arquivo NÃO repete ────────────────────────────────
  *
