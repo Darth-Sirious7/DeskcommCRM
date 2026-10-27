@@ -23,17 +23,17 @@ import path from "node:path";
 import { type User, createClient } from "@supabase/supabase-js";
 import pg from "pg";
 
-import { exigirBancoLocal, validarOrganizacoesExtras } from "./seguranca";
+import { exigirBancoLocal, exigirHttpLocal, validarOrganizacoesExtras } from "./seguranca";
 
-const URL_SUPABASE = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-const CHAVE = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 const SENHA = process.env.CURSO_SENHA ?? "Curso!Demo2026";
-if (!/^http:\/\/(127\.0\.0\.1|localhost)[:/]/.test(URL_SUPABASE)) {
-  throw new Error(`recusado: ${URL_SUPABASE || "(vazio)"} não é um Supabase local`);
+let db: ReturnType<typeof criarBanco>;
+/** Importar ajudantes não abre conexão nem exige credenciais. */
+function criarBanco() {
+  const url = exigirHttpLocal(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "");
+  const chave = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!chave) throw new Error("defina SUPABASE_SERVICE_ROLE_KEY");
+  return createClient(url, chave, { auth: { autoRefreshToken: false, persistSession: false } });
 }
-if (!CHAVE) throw new Error("defina SUPABASE_SERVICE_ROLE_KEY (o .env.e2e tem)");
-
-const db = createClient(URL_SUPABASE, CHAVE, { auth: { autoRefreshToken: false, persistSession: false } });
 const MIN = 60_000;
 const agora = Date.now();
 export const ha = (minutos: number) => new Date(agora - minutos * MIN).toISOString();
@@ -277,7 +277,8 @@ async function voltarAoEstadoDeFabrica(org: string, saida: string) {
   }
 }
 
-async function main(): Promise<Contexto> {
+export async function semearBase(): Promise<Contexto> {
+  db = criarBanco();
   // ---------- organização ----------
   // A da instalação é a do dono (a Helena), NUNCA "a mais antiga": sementes do Admin criam empresas
   // e admins de exemplo com datas no passado, e por created_at a base chegou a escolher uma delas e
@@ -489,7 +490,7 @@ async function main(): Promise<Contexto> {
 }
 
 async function rodar() {
-  const ctx = await main();
+  const ctx = await semearBase();
   const modulo = process.argv[2];
   if (!modulo || modulo === "inbox") return;
   if (!/^[a-z0-9-]+$/.test(modulo)) throw new Error(`módulo inválido: ${modulo}`);
