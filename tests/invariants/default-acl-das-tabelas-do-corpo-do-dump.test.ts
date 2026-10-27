@@ -168,11 +168,11 @@ function acls(tabela: string, papel: string): { diretos: string[]; efetivos: str
                        from pg_class c, aclexplode(c.relacl) a
                       where c.oid = t.oid and a.grantee = '${papel}'::regrole
                         and not a.is_grantable
-                        -- Só o universo das sete: o pg17 acrescenta MAINTAIN (`m`)
-                        -- ao `grant all`, e ele não existe no pg15. Comparar sem
+                        -- Só o universo das sete: o pg17 acrescenta MAINTAIN (m)
+                        -- ao grant all, e ele não existe no pg15. Comparar sem
                         -- filtrar faria o caso reprovar por MAJOR, não por ACL —
-                        -- dois bancos fiéis, um veredito. O `m` está reproduzido
-                        -- pelo mesmo `grant all` do prelude nas duas majors.
+                        -- dois bancos fiéis, um veredito. O m está reproduzido
+                        -- pelo mesmo grant all do prelude nas duas majors.
                         and a.privilege_type = any (array[${lista}]::text[])), '-')
         || '|'
         || coalesce((select string_agg(p.privilegio, ',' order by p.privilegio)
