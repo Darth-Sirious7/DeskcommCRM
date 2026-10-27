@@ -4002,3 +4002,18 @@ medido. Não provam este lote. As ofertas de campanha são capacidade nova do
 neste recorte. Não houve execução de build, typecheck, DB, Docker ou browser local.
 A aprovação continua dependendo dos checks obrigatórios e da inspeção dos
 artefatos produzidos no head do lote.
+
+
+## O pacote do titular no caminho manual — resgate #3543
+
+**PREPARADO, não executado contra app/Storage/navegador nesta rodada.** O caso
+independente de `suspensao-administrativa.spec.ts` prepara dois pedidos próprios
+com o worker real, sem e-mail, e mede dois downloads, bytes/hash, JWT72h,
+isolamento HTTP, legado sem JSON e arquivo ausente. Aprovação é fixture; não
+mede SMTP, PAdES com chave real nem esperar o prazo expirar. Captura e recibo
+só serão escritos em `evidence/lgpd-pacote-manual/` após asserções e limpeza.
+
+A rota continua admin+, mas seu viewer403 não é prova de ACL admin-only no
+Storage. A policy observada noSQL é mais ampla; a auditoria desse acesso direto
+é separada. Contrato, instrumentos e limites:
+[pacote-lgpd-manual.md](pacote-lgpd-manual.md).
