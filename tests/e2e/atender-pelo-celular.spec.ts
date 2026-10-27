@@ -800,7 +800,17 @@ test.describe("documentos recebidos: rótulo e arquivo salvo (#2613)", () => {
       await entrar(page);
       await page.goto(`/app/inbox?filter=all&id=${conversa}`);
       await esperarConversa(page);
-      await expect(page.getByText("Documento XLSX", { exact: true })).toBeVisible();
+      const rotuloMime = page.getByText("Documento XLSX", { exact: true });
+      await expect(rotuloMime).toBeVisible();
+      const medirRotuloMime = () => rotuloMime.evaluate((rotulo) => ({
+        larguraVisivel: rotulo.clientWidth,
+        larguraDoTexto: rotulo.scrollWidth,
+        semTruncamento: rotulo.scrollWidth <= rotulo.clientWidth,
+      }));
+      await expect.poll(async () => (await medirRotuloMime()).semTruncamento, {
+        message: "o rótulo Documento XLSX precisa mostrar o formato inteiro no celular",
+      }).toBe(true);
+      const rotuloMimeMedido = await medirRotuloMime();
       for (const [i, arquivo] of arquivos.entries()) {
         await expect(page.getByText(arquivo.nome, { exact: true })).toBeVisible();
         await expect(page.getByText(arquivo.nome, { exact: true })).toHaveAttribute("title", arquivo.nome);
@@ -861,6 +871,7 @@ test.describe("documentos recebidos: rótulo e arquivo salvo (#2613)", () => {
         });
         type MedidaDoAlvo = Awaited<ReturnType<typeof medirAlvo>>;
         const observado = {
+          rotuloMime: rotuloMimeMedido,
           ponto: null as MedidaDoAlvo | null,
           pontoDepois: null as MedidaDoAlvo | null,
           paginasNovasNoContexto: 0,
