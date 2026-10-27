@@ -166,7 +166,9 @@ function acls(tabela: string, papel: string): { diretos: string[]; efetivos: str
       from t;
   `);
   if (linhas.length !== 1) throw new Error(`sonda de ${tabela}/${papel}: esperava 1 linha, veio ${linhas.length}`);
-  const [diretos, efetivos] = linhas[0].split("|");
+  const linha = linhas[0];
+  if (linha === undefined) throw new Error(`sonda de ${tabela}/${papel}: linha vazia`);
+  const [diretos = "-", efetivos = "-"] = linha.split("|");
   return {
     diretos: diretos === "-" ? [] : diretos.split(","),
     efetivos: efetivos === "-" ? [] : efetivos.split(","),
