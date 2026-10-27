@@ -1,15 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { Pool } from "pg";
+import { StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
 
 import {
   CatalogPresentationLeaseLostError,
   CatalogPresentationSnapshotConflictError,
   CatalogPresentationSnapshotInvalidError,
-  CHAVE_DO_SNAPSHOT_DA_APRESENTACAO,
   resolveAndSnapshotCatalogPresentation,
 } from "@/lib/catalogo/snapshot-de-apresentacao";
 
 const ORG = "aaaaaaaa-0000-4000-8000-000000000001";
+const CONTACT = "eeeeeeee-0000-4000-8000-000000000001";
+const OPERATION = { organizationId: ORG, agentId: "eeeeeeee-0000-4000-8000-000000000002", versionId: "eeeeeeee-0000-4000-8000-000000000003", revision: "3" };
 const JOB = "bbbbbbbb-0000-4000-8000-000000000001";
 const PRODUCT = "cccccccc-0000-4000-8000-000000000001";
 const CLAIM = { worker_id: "worker-a", acquired_at: "2026-10-15 12:34:56.123456+00" };
@@ -35,7 +37,7 @@ function productRow(code = "APTO-A") {
 }
 
 function fixture(
-  options: { payload?: Record<string, unknown>; lockFound?: boolean; updateFound?: boolean } = {},
+  options: { snapshot?: unknown; lockFound?: boolean; updateFound?: boolean } = {},
 ) {
   const calls: Array<{ sql: string; values?: unknown[] }> = [];
   let releasedWith: Error | undefined;
@@ -44,12 +46,14 @@ function fixture(
       calls.push({ sql, values });
       if (sql === "begin" || sql === "commit" || sql === "rollback")
         return { rows: [], rowCount: null };
+      if (sql.includes("fn_service_lock")) return { rows: [], rowCount: 1 };
+      if (sql.includes("from ai_agents")) return { rows: [{published_version_id:OPERATION.versionId,operation_revision:OPERATION.revision,operation_mode:"automatic",paused_at:null,archived_at:null}], rowCount:1 };
       if (sql.includes("from public.job_queue") && sql.includes("for update")) {
         return {
           rows:
             options.lockFound === false
               ? []
-              : [{ payload: options.payload ?? { service_boundary: { revision: 1 } } }],
+              : [{ catalog_presentation_snapshot: options.snapshot ?? null }],
           rowCount: options.lockFound === false ? 0 : 1,
         };
       }
@@ -79,6 +83,8 @@ function fixture(
 
 const input = {
   organizationId: ORG,
+  contactId: CONTACT,
+  agentOperation: OPERATION,
   jobId: JOB,
   claim: CLAIM,
   sendsAlreadyCounted: 2,
@@ -108,7 +114,7 @@ describe("snapshot durável da apresentação do catálogo", () => {
 
     expect(result).toMatchObject({ ok: true, reused: false });
     const lock = f.calls.find((call) => call.sql.includes("for update"));
-    expect(lock?.values).toEqual([JOB, ORG, CLAIM.worker_id, CLAIM.acquired_at]);
+    expect(lock?.values).toEqual([JOB, ORG, CLAIM.worker_id, CLAIM.acquired_at, CONTACT]);
 
     const resolution = f.calls.find((call) => call.sql.includes("from public.catalog_products"));
     expect(resolution?.sql).toContain("p.organization_id = $1");
@@ -116,20 +122,23 @@ describe("snapshot durável da apresentação do catálogo", () => {
     expect(resolution?.values).toEqual([ORG, ["APTO-A"]]);
 
     const update = f.calls.find((call) => call.sql.includes("update public.job_queue"));
-    expect(update?.sql).toContain("jsonb_set(payload");
-    expect(update?.sql).toContain("not (payload ? $5)");
+    expect(update?.sql).toContain("set catalog_presentation_snapshot = $6::jsonb");
+    expect(update?.sql).toContain("catalog_presentation_snapshot is null");
+    expect(update?.sql).not.toContain("set payload");
+    expect(f.calls.findIndex(call=>call.sql.includes("fn_service_lock"))).toBeLessThan(f.calls.findIndex(call=>call.sql.includes("for update")));
     expect(update?.values?.slice(0, 5)).toEqual([
       JOB,
       ORG,
       CLAIM.worker_id,
       CLAIM.acquired_at,
-      CHAVE_DO_SNAPSHOT_DA_APRESENTACAO,
+      CONTACT,
     ]);
     expect(JSON.parse(String(update?.values?.[5]))).toEqual(
       expect.objectContaining({
         schema_version: 1,
         sends_already_counted: 2,
         ordered_product_codes: ["APTO-A"],
+        agent_operation: OPERATION,
       }),
     );
     expect(f.calls.at(-1)?.sql).toBe("commit");
@@ -140,7 +149,7 @@ describe("snapshot durável da apresentação do catálogo", () => {
     const first = fixture();
     const created = await resolveAndSnapshotCatalogPresentation(first.pool, input);
     if (!created.ok) throw new Error(created.error.code);
-    const f = fixture({ payload: { [CHAVE_DO_SNAPSHOT_DA_APRESENTACAO]: created.snapshot } });
+    const f = fixture({ snapshot: created.snapshot });
 
     const result = await resolveAndSnapshotCatalogPresentation(f.pool, input);
 
@@ -150,7 +159,7 @@ describe("snapshot durável da apresentação do catálogo", () => {
     expect(f.calls.at(-1)?.sql).toBe("commit");
 
     const changedOffset = fixture({
-      payload: { [CHAVE_DO_SNAPSHOT_DA_APRESENTACAO]: created.snapshot },
+      snapshot: created.snapshot,
     });
     await expect(
       resolveAndSnapshotCatalogPresentation(changedOffset.pool, {
@@ -164,7 +173,7 @@ describe("snapshot durável da apresentação do catálogo", () => {
     const seed = fixture();
     const created = await resolveAndSnapshotCatalogPresentation(seed.pool, input);
     if (!created.ok) throw new Error(created.error.code);
-    const f = fixture({ payload: { [CHAVE_DO_SNAPSHOT_DA_APRESENTACAO]: created.snapshot } });
+    const f = fixture({ snapshot: created.snapshot });
 
     await expect(
       resolveAndSnapshotCatalogPresentation(f.pool, { ...input, orderedProductCodes: ["APTO-B"] }),
@@ -179,7 +188,7 @@ describe("snapshot durável da apresentação do catálogo", () => {
     if (!created.ok) throw new Error(created.error.code);
     const corrupt = structuredClone(created.snapshot);
     corrupt.plan.items[0]!.product_code = "OUTRO";
-    const f = fixture({ payload: { [CHAVE_DO_SNAPSHOT_DA_APRESENTACAO]: corrupt } });
+    const f = fixture({ snapshot: corrupt });
 
     await expect(resolveAndSnapshotCatalogPresentation(f.pool, input)).rejects.toBeInstanceOf(
       CatalogPresentationSnapshotInvalidError,
@@ -243,5 +252,23 @@ describe("snapshot durável da apresentação do catálogo", () => {
       error: { code: "unsafe_media_reference", product_code: "APTO-A", media_kind: "image" },
     });
     expect(f.calls.some((call) => call.sql.includes("update public.job_queue"))).toBe(false);
+  });
+});
+
+
+describe("origem mínima da operação de apresentação",()=>{
+  it("persiste somente a allowlist da operação canônica, sem copiar o contexto",async()=>{
+    const f=fixture(), enriched={...OPERATION,prompt:"sintético",api_key:"não copiar",contact_name:"não copiar"};
+    const result=await resolveAndSnapshotCatalogPresentation(f.pool,{...input,agentOperation:enriched});
+    expect(result).toMatchObject({ok:true,snapshot:{agent_operation:OPERATION}});
+    const update=f.calls.find(call=>call.sql.includes("update public.job_queue"));
+    expect(JSON.parse(String(update?.values?.[5])).agent_operation).toEqual(OPERATION);
+  });
+  it("contexto ausente ou de outra organização falha antes da resolução e gravação",async()=>{
+    for(const operation of [undefined,{...OPERATION,organizationId:CONTACT}]){
+      const f=fixture();
+      await expect(resolveAndSnapshotCatalogPresentation(f.pool,{...input,agentOperation:operation as never})).rejects.toBeInstanceOf(StaleServiceBoundaryError);
+      expect(f.calls).toEqual([]);
+    }
   });
 });

@@ -2,6 +2,8 @@ import type { Pool, PoolClient, QueryResultRow } from "pg";
 import { z } from "zod";
 
 import type { JobClaim } from "@/lib/agent-engine/queue/claim";
+import { assertAgentOperationPg, mesmaOperacao, type AgentOperationContext } from "@/lib/ai/agents/operation";
+import { StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
 import { audioPertenceAoProduto, presentationKindSchema } from "@/lib/catalogo/apresentacao";
 import { fotoPertenceAoProduto } from "@/lib/catalogo/fotos";
 import { prepareCatalogPresentationPayloads } from "@/lib/catalogo/preparo-de-apresentacao";
@@ -53,12 +55,21 @@ const catalogPresentationPlanSchema = z.object({
   physical_message_count: z.number().int().nonnegative(),
 });
 
+// Só a identidade canônica do turno original. Nunca contexto, prompts ou chaves.
+const snapshotOperationSchema = z.object({
+  organizationId: z.string().uuid(),
+  agentId: z.string().uuid(),
+  versionId: z.string().uuid(),
+  revision: z.string().min(1),
+}).strict();
+
 export const catalogPresentationSnapshotSchema = z
   .object({
     schema_version: z.literal(1),
     sends_already_counted: z.number().int().nonnegative(),
     ordered_product_codes: z.array(z.string().min(1)).min(1),
     plan: catalogPresentationPlanSchema,
+    agent_operation: snapshotOperationSchema,
   })
   .strict();
 
@@ -83,7 +94,7 @@ interface ResolvedRow extends QueryResultRow {
 }
 
 interface LockedJobRow extends QueryResultRow {
-  payload: Record<string, unknown>;
+  catalog_presentation_snapshot: unknown;
 }
 
 export type CatalogPresentationResolutionFailure =
@@ -117,13 +128,18 @@ export class CatalogPresentationSnapshotInvalidError extends Error {
   }
 }
 
-const LOCK_JOB_SQL = `select payload
+const LOCK_JOB_SQL = `select catalog_presentation_snapshot
   from public.job_queue
  where id = $1
    and organization_id = $2
    and status = 'running'
    and locked_by = $3
    and locked_at = $4::timestamptz
+   and contact_id = $5
+   and kind = 'inbound_turn'
+   and exists(select 1 from public.contacts c
+     where c.organization_id=job_queue.organization_id and c.id=job_queue.contact_id
+       and not c.is_anonymized)
  for update`;
 
 const RESOLVE_PRODUCTS_SQL = `select
@@ -159,6 +175,7 @@ function snapshotIsCoherent(
   snapshot: CatalogPresentationSnapshot,
   organizationId: string,
 ): boolean {
+  if (snapshot.agent_operation.organizationId !== organizationId) return false;
   if (
     !arraysEqual(
       snapshot.ordered_product_codes,
@@ -180,6 +197,12 @@ function snapshotIsCoherent(
       return true;
     }),
   );
+}
+
+/** A coluna interna também é validada na leitura; o payload legado não participa. */
+export function readCatalogPresentationSnapshot(raw: unknown, organizationId: string): CatalogPresentationSnapshot | null {
+  const parsed = catalogPresentationSnapshotSchema.safeParse(raw);
+  return parsed.success && snapshotIsCoherent(parsed.data, organizationId) ? parsed.data : null;
 }
 
 function normalizeSelection(
@@ -277,14 +300,16 @@ async function rollback(client: PoolClient, cause: unknown): Promise<void> {
 
 /**
  * Resolve a seleção dentro do tenant e congela o plano no job que detém o
- * lease. A trava da linha é o mutex: duas resoluções do mesmo job nunca podem
- * sobrescrever uma à outra, e reaper/complete só avançam depois do commit.
+ * lease. O mutex de atendimento vem ANTES da linha do job, na mesma ordem da
+ * LGPD. A coluna dedicada não é preenchida a partir do payload legado.
  */
 export async function resolveAndSnapshotCatalogPresentation(
   pool: Pool,
   input: {
     organizationId: string;
+    contactId: string;
     jobId: string;
+    agentOperation: AgentOperationContext;
     claim: JobClaim;
     sendsAlreadyCounted: number;
     maxSendsPerTurn: number;
@@ -293,34 +318,49 @@ export async function resolveAndSnapshotCatalogPresentation(
 ): Promise<CatalogPresentationSnapshotResult> {
   const selection = normalizeSelection(input.orderedProductCodes);
   if (!selection.ok) return selection;
+  // Allowlist por atribuição, mesmo se o chamador interno carregar mais campos.
+  const serializedOperation = snapshotOperationSchema.safeParse({
+    organizationId: input.agentOperation?.organizationId,
+    agentId: input.agentOperation?.agentId,
+    versionId: input.agentOperation?.versionId,
+    revision: input.agentOperation?.revision,
+  });
+  if (!serializedOperation.success || serializedOperation.data.organizationId !== input.organizationId) {
+    throw new StaleServiceBoundaryError();
+  }
+  const operation = serializedOperation.data;
 
   const client = await pool.connect();
   let transactionError: Error | undefined;
   try {
     await client.query("begin");
+    await client.query("select public.fn_service_lock($1,$2)", [input.organizationId, input.contactId]);
+    await assertAgentOperationPg(client, operation);
     const locked = await client.query<LockedJobRow>(LOCK_JOB_SQL, [
       input.jobId,
       input.organizationId,
       input.claim.worker_id,
       input.claim.acquired_at,
+      input.contactId,
     ]);
     const job = locked.rows[0];
     if (!job) throw new CatalogPresentationLeaseLostError();
 
-    const current = job.payload?.[CHAVE_DO_SNAPSHOT_DA_APRESENTACAO];
-    if (current !== undefined) {
-      const parsed = catalogPresentationSnapshotSchema.safeParse(current);
-      if (!parsed.success || !snapshotIsCoherent(parsed.data, input.organizationId)) {
+    const current = job.catalog_presentation_snapshot;
+    if (current !== null && current !== undefined) {
+      const parsed = readCatalogPresentationSnapshot(current, input.organizationId);
+      if (!parsed) {
         throw new CatalogPresentationSnapshotInvalidError();
       }
-      if (!arraysEqual(parsed.data.ordered_product_codes, selection.productCodes)) {
+      if (!mesmaOperacao(parsed.agent_operation, operation)) throw new StaleServiceBoundaryError();
+      if (!arraysEqual(parsed.ordered_product_codes, selection.productCodes)) {
         throw new CatalogPresentationSnapshotConflictError();
       }
-      if (parsed.data.sends_already_counted !== input.sendsAlreadyCounted) {
+      if (parsed.sends_already_counted !== input.sendsAlreadyCounted) {
         throw new CatalogPresentationSnapshotConflictError();
       }
       await client.query("commit");
-      return { ok: true, snapshot: parsed.data, reused: true };
+      return { ok: true, snapshot: parsed, reused: true };
     }
 
     const resolved = await client.query<ResolvedRow>(RESOLVE_PRODUCTS_SQL, [
@@ -364,23 +404,29 @@ export async function resolveAndSnapshotCatalogPresentation(
       sends_already_counted: input.sendsAlreadyCounted,
       ordered_product_codes: selection.productCodes,
       plan: planned.plan,
+      agent_operation: operation,
     };
     const written = await client.query(
       `update public.job_queue
-          set payload = jsonb_set(payload, array[$5::text], $6::jsonb, true)
+          set catalog_presentation_snapshot = $6::jsonb
         where id = $1
           and organization_id = $2
           and status = 'running'
           and locked_by = $3
           and locked_at = $4::timestamptz
-          and not (payload ? $5)
+          and contact_id = $5
+          and kind = 'inbound_turn'
+          and catalog_presentation_snapshot is null
+          and exists(select 1 from public.contacts c
+            where c.organization_id=job_queue.organization_id and c.id=job_queue.contact_id
+              and not c.is_anonymized)
       returning id`,
       [
         input.jobId,
         input.organizationId,
         input.claim.worker_id,
         input.claim.acquired_at,
-        CHAVE_DO_SNAPSHOT_DA_APRESENTACAO,
+        input.contactId,
         JSON.stringify(snapshot),
       ],
     );

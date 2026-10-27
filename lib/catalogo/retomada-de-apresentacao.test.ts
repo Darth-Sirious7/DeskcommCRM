@@ -12,12 +12,12 @@ import {
   CatalogPresentationResumeError,
   resumePersistedCatalogPresentation,
 } from "@/lib/catalogo/retomada-de-apresentacao";
-import { CHAVE_DO_SNAPSHOT_DA_APRESENTACAO } from "@/lib/catalogo/snapshot-de-apresentacao";
 
 const ORG = "aaaaaaaa-0000-4000-8000-000000000001";
 const CONTACT = "bbbbbbbb-0000-4000-8000-000000000001";
 const JOB = "cccccccc-0000-4000-8000-000000000001";
 const CONVERSATION = "dddddddd-0000-4000-8000-000000000001";
+const OPERATION = { organizationId: ORG, agentId:"99999999-0000-4000-8000-000000000001",versionId:"99999999-0000-4000-8000-000000000002",revision:"3" };
 const SESSION = "eeeeeeee-0000-4000-8000-000000000001";
 
 function snapshot(offset = 0) {
@@ -48,6 +48,7 @@ function snapshot(offset = 0) {
     sends_already_counted: offset,
     ordered_product_codes: ["A", "B"],
     plan: planned.plan,
+    agent_operation: OPERATION,
   };
 }
 
@@ -58,7 +59,8 @@ function job(offset = 0): JobRow {
     contact_id: CONTACT,
     kind: "inbound_turn",
     source_event_id: null,
-    payload: { [CHAVE_DO_SNAPSHOT_DA_APRESENTACAO]: snapshot(offset) },
+    payload: {},
+    catalog_presentation_snapshot: snapshot(offset),
     status: "running",
     priority: 100,
     run_after: new Date(),
@@ -79,6 +81,8 @@ function fixture(
   const pool = {
     async query(text: string) {
       sql.push(text);
+      if (text.includes("as current")) return {rows:[{current:true}],rowCount:1};
+      if (text.includes("from ai_agents")) return {rows:[{published_version_id:OPERATION.versionId,operation_revision:OPERATION.revision,operation_mode:"automatic",paused_at:null,archived_at:null}],rowCount:1};
       if (text.includes("select source, consent, is_anonymized")) {
         return {
           rows: [{ source: "whatsapp", consent: {}, is_anonymized: false }],
@@ -301,7 +305,7 @@ describe("retomada da apresentacao persistida pelo worker", () => {
     ).toEqual({ handled: true, disposition: "settled" });
     expect(f.sent.map((input) => input.seq)).toEqual([1]);
     expect(f.sql.some((text) => text.includes("attempts = greatest(attempts - 1, 0)"))).toBe(true);
-    expect(persisted.payload).toHaveProperty(CHAVE_DO_SNAPSHOT_DA_APRESENTACAO);
+    expect(persisted.catalog_presentation_snapshot).toEqual(snapshot());
 
     paused = false;
     reconciled.push(1);
@@ -377,9 +381,8 @@ describe("retomada da apresentacao persistida pelo worker", () => {
     const source = readFileSync("lib/agent-engine/agent/inbound-turn.ts", "utf8");
     const handler = source.slice(source.indexOf("export function createInboundTurnHandler"));
     expect(handler.indexOf("resumePersistedCatalogPresentation(")).toBeGreaterThan(-1);
-    expect(handler.indexOf("resumePersistedCatalogPresentation(")).toBeGreaterThan(
-      handler.indexOf("if (presentationAgent?.operationMode === 'assisted')"),
-    );
+    expect(handler).toContain("job.catalog_presentation_snapshot");
+    expect(handler).not.toContain("presentationAgent?.operationMode");
     expect(handler.indexOf("resumePersistedCatalogPresentation(")).toBeLessThan(
       handler.indexOf("const resolvedAgent = await resolveConversationTurn("),
     );

@@ -93,6 +93,7 @@ function persisted(
     reused: false,
     snapshot: {
       schema_version: 1,
+      agent_operation: {organizationId:ORG,agentId:"99999999-0000-4000-8000-000000000001",versionId:"99999999-0000-4000-8000-000000000002",revision:"3"},
       sends_already_counted: 0,
       ordered_product_codes: codes,
       plan: planned.plan,

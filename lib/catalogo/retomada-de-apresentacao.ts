@@ -1,4 +1,6 @@
 import type { Pool, QueryResultRow } from "pg";
+import { assertAgentOperationPg } from "@/lib/ai/agents/operation";
+import { requireCurrentAutonomousTurn, setExecutionAgentOperation } from "@/lib/atendimento/fronteira-server";
 
 import type { ChannelAdapter } from "@/lib/agent-engine/channel-adapter";
 import { applySendOutcome } from "@/lib/agent-engine/edge/crm/send-message";
@@ -20,8 +22,7 @@ import {
   type MaterializedCatalogPresentation,
 } from "@/lib/catalogo/materializacao-de-apresentacao";
 import {
-  catalogPresentationSnapshotSchema,
-  CHAVE_DO_SNAPSHOT_DA_APRESENTACAO,
+  readCatalogPresentationSnapshot,
 } from "@/lib/catalogo/snapshot-de-apresentacao";
 
 interface ContactLgpdRow extends QueryResultRow {
@@ -95,17 +96,20 @@ export async function resumePersistedCatalogPresentation(
   input: { conversationId: string; channelSessionId: string },
   deps: CatalogPresentationResumeDeps,
 ): Promise<CatalogPresentationResumeResult> {
-  const raw = job.payload[CHAVE_DO_SNAPSHOT_DA_APRESENTACAO];
-  if (raw === undefined) return { handled: false };
+  const raw = job.catalog_presentation_snapshot;
+  if (raw === undefined || raw === null) return { handled: false };
   if (!job.contact_id)
     throw new CatalogPresentationResumeError("catalog_presentation_contact_missing");
 
-  const parsed = catalogPresentationSnapshotSchema.safeParse(raw);
-  if (!parsed.success)
+  const snapshot = readCatalogPresentationSnapshot(raw, job.organization_id);
+  if (!snapshot)
     throw new CatalogPresentationResumeError("catalog_presentation_snapshot_invalid");
-  const snapshot = parsed.data;
   const claim = claimOfJob(job);
   if (!claim) throw new CatalogPresentationResumeError("catalog_presentation_claim_missing");
+  await requireCurrentAutonomousTurn(pool, job);
+  // Recoloca no escopo interno somente a identidade original protegida.
+  // A operação vigente é CONFERIDA, nunca usada para substituir a original.
+  setExecutionAgentOperation(snapshot.agent_operation);
 
   let paused = false;
   const pauseBeforeNextItem = async (): Promise<boolean> => {
@@ -166,6 +170,7 @@ export async function resumePersistedCatalogPresentation(
   if (!contactRow) throw new CatalogPresentationResumeError("catalog_presentation_contact_missing");
 
   const materialize = deps.contracts?.materialize ?? materializeCatalogPresentationSnapshotMedia;
+  await assertAgentOperationPg(pool, snapshot.agent_operation);
   const materialized = await materialize(
     { ok: true, snapshot, reused: true },
     {
@@ -203,6 +208,7 @@ export async function resumePersistedCatalogPresentation(
     },
     pausedBeforeSend: pauseBeforeNextItem,
     beforeSend: {
+      agentOperation: snapshot.agent_operation,
       pool,
       log: deps.log,
       tenantId: job.organization_id,

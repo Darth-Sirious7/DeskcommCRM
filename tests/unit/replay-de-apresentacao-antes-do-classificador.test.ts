@@ -38,6 +38,7 @@ import {
   type InboundTurnDeps,
 } from "@/lib/agent-engine/agent/inbound-turn";
 import { CAMADA_RESTRICAO_COMERCIAL } from "@/lib/agent-engine/guardrails/camadas-da-org";
+import { StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
 import { CHAVE_DO_SNAPSHOT_DA_APRESENTACAO } from "@/lib/catalogo/snapshot-de-apresentacao";
 
 const IDS = {
@@ -55,13 +56,13 @@ const job = {
   organization_id: IDS.organization,
   contact_id: IDS.contact,
   kind: "inbound_turn",
+  catalog_presentation_snapshot: {schema_version:1},
   payload: {
     conversation_id: IDS.conversation,
     contact_id: IDS.contact,
     channel_session_id: IDS.channel,
     inbound_message_id: IDS.message,
     crm_event_id: IDS.event,
-    [CHAVE_DO_SNAPSHOT_DA_APRESENTACAO]: { schema_version: 1 },
   },
 };
 
@@ -83,8 +84,8 @@ function agent(
   };
 }
 
-async function run(): Promise<void> {
-  await createInboundTurnHandler(deps)(job as never, { query: mocks.query } as never, {
+async function run(candidate: unknown = job): Promise<void> {
+  await createInboundTurnHandler(deps)(candidate as never, { query: mocks.query } as never, {
     workerId: "worker-a",
   });
 }
@@ -117,12 +118,7 @@ describe("replay de apresentacao persistida antes da classificacao", () => {
   it("retoma pelo agente aderido a conversa sem chamar classificador nem LLM", async () => {
     await run();
 
-    expect(mocks.loadConversationAgent).toHaveBeenCalledWith(
-      expect.anything(),
-      IDS.organization,
-      IDS.conversation,
-      IDS.channel,
-    );
+    expect(mocks.loadConversationAgent).not.toHaveBeenCalled();
     expect(mocks.resume).toHaveBeenCalledOnce();
     expect(mocks.resolveConversation).not.toHaveBeenCalled();
     expect(mocks.runModel).not.toHaveBeenCalled();
@@ -142,9 +138,11 @@ describe("replay de apresentacao persistida antes da classificacao", () => {
   it("modo assistido bloqueia o replay antes de qualquer classificacao", async () => {
     mocks.loadConversationAgent.mockResolvedValue(agent({ operationMode: "assisted" }));
 
-    await run();
+    mocks.resume.mockRejectedValue(new StaleServiceBoundaryError());
+    await expect(run()).rejects.toBeInstanceOf(StaleServiceBoundaryError);
 
-    expect(mocks.resume).not.toHaveBeenCalled();
+    expect(mocks.resume).toHaveBeenCalledOnce();
+    expect(mocks.loadConversationAgent).not.toHaveBeenCalled();
     expect(mocks.resolveConversation).not.toHaveBeenCalled();
     expect(mocks.runModel).not.toHaveBeenCalled();
   });
@@ -159,4 +157,12 @@ describe("replay de apresentacao persistida antes da classificacao", () => {
     expect(mocks.resolveConversation).not.toHaveBeenCalled();
     expect(mocks.runModel).not.toHaveBeenCalled();
   });
+});
+
+
+it("colunaNULL e payloadlegado não impedem o caminho normal de uma mensagem válida",async()=>{
+  const legacy={...job,catalog_presentation_snapshot:null,payload:{...job.payload,[CHAVE_DO_SNAPSHOT_DA_APRESENTACAO]:{forged:true}}};
+  await expect(run(legacy)).rejects.toThrow("classifier_must_not_run");
+  expect(mocks.resolveConversation).toHaveBeenCalledOnce();
+  expect(mocks.resume).not.toHaveBeenCalled();
 });

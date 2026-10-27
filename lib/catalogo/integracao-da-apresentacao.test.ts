@@ -23,6 +23,7 @@ const JOB = "bbbbbbbb-0000-4000-8000-000000000001";
 const CONTACT = "cccccccc-0000-4000-8000-000000000001";
 const CONVERSATION = "dddddddd-0000-4000-8000-000000000001";
 const SESSION = "eeeeeeee-0000-4000-8000-000000000001";
+const OPERATION = {organizationId:ORG,agentId:"99999999-0000-4000-8000-000000000001",versionId:"99999999-0000-4000-8000-000000000002",revision:"3"};
 const CLAIM = { worker_id: "worker-a", acquired_at: "2026-10-15T12:00:00.000Z" };
 
 function fixture(
@@ -32,7 +33,8 @@ function fixture(
   const events: string[] = [];
   const sends: ChannelSendInput[] = [];
   const reconciled: number[] = [];
-  let payload: Record<string, unknown> = { existing: "kept" };
+  const payload: Record<string, unknown> = { existing: "kept" };
+  let presentationSnapshot: unknown = null;
   let status = "running";
   let sendIndex = 0;
   const rows = ["B", "A"].map((code, index) => ({
@@ -60,9 +62,12 @@ function fixture(
       events.push(sql);
       return { rows: [], rowCount: null };
     }
+    if (sql.includes("fn_service_lock")) return {rows:[],rowCount:1};
+    if (sql.includes("from ai_agents")) return {rows:[{published_version_id:OPERATION.versionId,operation_revision:OPERATION.revision,operation_mode:"automatic",paused_at:null,archived_at:null}],rowCount:1};
+    if (sql.includes("as current")) return {rows:[{current:true}],rowCount:1};
     if (sql.includes("from public.job_queue") && sql.includes("for update")) {
       expect(values?.slice(0, 4)).toEqual([JOB, ORG, CLAIM.worker_id, CLAIM.acquired_at]);
-      return { rows: [{ payload }], rowCount: 1 };
+      return { rows: [{ catalog_presentation_snapshot: presentationSnapshot }], rowCount: 1 };
     }
     if (sql.includes("from public.catalog_products")) {
       expect(values?.[0]).toBe(ORG);
@@ -70,7 +75,7 @@ function fixture(
       return { rows: selected, rowCount: selected.length };
     }
     if (sql.includes("update public.job_queue")) {
-      payload = { ...payload, [String(values?.[4])]: JSON.parse(String(values?.[5])) };
+      presentationSnapshot = JSON.parse(String(values?.[5]));
       events.push("snapshot-written");
       return { rows: [{ id: JOB }], rowCount: 1 };
     }
@@ -126,6 +131,7 @@ function fixture(
     kind: "inbound_turn",
     source_event_id: null,
     payload,
+    catalog_presentation_snapshot: presentationSnapshot,
     status: "running",
     priority: 100,
     run_after: new Date(),
@@ -176,6 +182,8 @@ function fixture(
 async function snapshot(f: ReturnType<typeof fixture>, sendsAlreadyCounted = 0) {
   const result = await resolveAndSnapshotCatalogPresentation(f.pool, {
     organizationId: ORG,
+    contactId: CONTACT,
+    agentOperation: OPERATION,
     jobId: JOB,
     claim: CLAIM,
     sendsAlreadyCounted,
@@ -220,6 +228,8 @@ describe("integração da seleção persistida com a disposição do worker", ()
           execute: async ({ product_codes }) => {
             const selection = await resolveAndSnapshotCatalogPresentation(f.pool, {
               organizationId: ORG,
+              contactId: CONTACT,
+              agentOperation: OPERATION,
               jobId: JOB,
               claim: CLAIM,
               sendsAlreadyCounted: 0,
@@ -272,6 +282,8 @@ describe("integração da seleção persistida com a disposição do worker", ()
           execute: async ({ product_codes }) => {
             const selection = await resolveAndSnapshotCatalogPresentation(f.pool, {
               organizationId: ORG,
+              contactId: CONTACT,
+              agentOperation: OPERATION,
               jobId: JOB,
               claim: CLAIM,
               sendsAlreadyCounted: 0,
@@ -354,7 +366,7 @@ describe("integração da seleção persistida com a disposição do worker", ()
     await snapshot(f, 2);
     expect(await f.resume()).toEqual({ handled: true, disposition: "completed" });
     expect(f.events.slice(0, 4)).toEqual(["begin", "snapshot-written", "commit", "channel-send"]);
-    expect(f.job().payload).toHaveProperty(CHAVE_DO_SNAPSHOT_DA_APRESENTACAO);
+    expect(f.job().catalog_presentation_snapshot).toMatchObject({schema_version:1,agent_operation:OPERATION});
     expect(f.job().payload.existing).toBe("kept");
     expect(f.sends.map((send) => [send.seq, send.body, send.tenantId, send.jobId])).toEqual([
       [3, "Produto A\n\nTexto A", ORG, JOB],
@@ -367,10 +379,10 @@ describe("integração da seleção persistida com a disposição do worker", ()
   it("queued preserva o snapshot e o mesmo job; replay reconcilia a seq sem duplicar", async () => {
     const f = fixture(["queued", "sent"]);
     await snapshot(f);
-    const persisted = structuredClone(f.job().payload);
+    const persisted = structuredClone({payload:f.job().payload,snapshot:f.job().catalog_presentation_snapshot});
     expect(await f.resume()).toEqual({ handled: true, disposition: "settled" });
     expect(f.status()).toBe("pending");
-    expect(f.job().payload).toEqual(persisted);
+    expect({payload:f.job().payload,snapshot:f.job().catalog_presentation_snapshot}).toEqual(persisted);
     expect(f.sends.map((send) => send.seq)).toEqual([1]);
     f.reconciled.push(1);
     expect(await f.resume()).toEqual({ handled: true, disposition: "completed" });

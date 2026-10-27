@@ -93,7 +93,7 @@ import {
 import { enqueueJob, rescheduleJob, type JobRow, type Queryable } from '../queue/queue';
 import { resumePersistedCatalogPresentation } from '@/lib/catalogo/retomada-de-apresentacao';
 import { resolveAndSnapshotCatalogPresentation } from '@/lib/catalogo/snapshot-de-apresentacao';
-import { CHAVE_DO_SNAPSHOT_DA_APRESENTACAO } from '@/lib/catalogo/snapshot-de-apresentacao';
+import { StaleServiceBoundaryError } from '@/lib/atendimento/fronteira';
 import { catalogPresentationSelectionSchema } from '@/lib/catalogo/plano-de-apresentacao';
 import { apresentacaoEncerraTurno, terminalizarApresentacaoNoTurno } from '@/lib/catalogo/terminalidade-de-apresentacao';
 import {
@@ -5051,6 +5051,7 @@ async function executarTurnoDoAgente(
           const current = liveJob();
           const claim = claimOfJob(current);
           if (!claim) throw new Error('catalog_presentation_claim_missing');
+          if (!current.contact_id || !agentOperation) throw new StaleServiceBoundaryError();
           const currentAgent = await loadConversationAgentConfig(
             pool, tenantId, input.conversationId, input.channelSessionId,
           );
@@ -5060,7 +5061,9 @@ async function executarTurnoDoAgente(
           }
           const snapshot = await resolveAndSnapshotCatalogPresentation(pool, {
             organizationId: tenantId,
+            contactId: current.contact_id,
             jobId: current.id,
+            agentOperation,
             claim,
             sendsAlreadyCounted: seq,
             maxSendsPerTurn,
@@ -5075,7 +5078,7 @@ async function executarTurnoDoAgente(
           }
           const resumed = await resumePersistedCatalogPresentation(
             pool,
-            { ...current, payload: { ...current.payload, [CHAVE_DO_SNAPSHOT_DA_APRESENTACAO]: snapshot.snapshot } },
+            { ...current, catalog_presentation_snapshot: snapshot.snapshot },
             ctx,
             { conversationId: input.conversationId, channelSessionId: input.channelSessionId },
             {
@@ -6393,17 +6396,9 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
       channelSessionId: payload.channel_session_id,
     })) return;
 
-    // Snapshot persistido ja contem a decisao e a ordem da apresentacao. Retoma-lo
-    // nao e um novo turno de decisao: usa apenas o agente ja aderido a conversa
-    // para preservar pausa/assistido, sem passar novamente pelo roteador, Jev ou LLM.
-    if (job.payload[CHAVE_DO_SNAPSHOT_DA_APRESENTACAO] !== undefined) {
-      const presentationAgent = await loadConversationAgentConfig(
-        pool,
-        job.organization_id,
-        payload.conversation_id,
-        payload.channel_session_id,
-      );
-      if (presentationAgent?.operationMode === 'assisted') return;
+    // A coluna interna conserva plano e operação originais; não é uma nova
+    // escolha de agente. O payload legado nunca autoriza nem controla replay.
+    if (job.catalog_presentation_snapshot !== undefined && job.catalog_presentation_snapshot !== null) {
       const resumedPresentation = await resumePersistedCatalogPresentation(
         pool,
         job,
