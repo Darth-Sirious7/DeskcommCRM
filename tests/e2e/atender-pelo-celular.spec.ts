@@ -7,6 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 import { test, expect, type Page } from "./helpers/test";
 
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
+import { provarTranscricaoOpenRouter } from "./helpers/openrouter-stt-real";
 
 /**
  * ATENDER PELO CELULAR — F2 da ADR-0006, pela tela, como o atendente faz.
@@ -72,6 +73,10 @@ const LARGURA = 390;
 const credenciais = credenciaisSupabaseDeTeste();
 const db = createClient(credenciais.url, credenciais.serviceRole, {
   auth: { persistSession: false },
+});
+
+test("OpenRouter STT — OGG/Opus pelo processor, Storage e workers reais, fornecedor HTTP sintético", async ({ page }, info) => {
+  await provarTranscricaoOpenRouter(page, info);
 });
 
 const SUFIXO = randomUUID().slice(0, 8);
