@@ -810,8 +810,39 @@ test.describe("documentos recebidos: rótulo e arquivo salvo (#2613)", () => {
         expect(preview.status()).toBe(302);
         expect(new URL(preview.headers()["location"]!).searchParams.has("download")).toBe(false);
         const contexto = page.context();
+        const medirAlvo = () => baixar.evaluate((link) => {
+          const r = link.getBoundingClientRect();
+          const x = r.left + r.width / 2;
+          const y = r.top + r.height / 2;
+          const alvo = document.elementFromPoint(x, y);
+          const esquerda = Math.max(0, r.left);
+          const direita = Math.min(window.innerWidth, r.right);
+          const topo = Math.max(0, r.top);
+          const fundo = Math.min(window.innerHeight, r.bottom);
+          const temRecorte = direita > esquerda && fundo > topo;
+          const recorteX = temRecorte ? (esquerda + direita) / 2 : null;
+          const recorteY = temRecorte ? (topo + fundo) / 2 : null;
+          const alvoDoRecorte = recorteX !== null && recorteY !== null
+            ? document.elementFromPoint(recorteX, recorteY) : null;
+          return {
+            x, y, largura: r.width, altura: r.height,
+            viewportLargura: window.innerWidth, viewportAltura: window.innerHeight,
+            visualLargura: window.visualViewport?.width ?? window.innerWidth,
+            visualAltura: window.visualViewport?.height ?? window.innerHeight,
+            centroNaViewport: x >= 0 && x < window.innerWidth && y >= 0 && y < window.innerHeight,
+            linkNoCentro: !!alvo && link.contains(alvo),
+            opcoesNoCentro: !!alvo?.closest('button[aria-label="Opções da mensagem"]'),
+            tagNoCentro: alvo?.tagName ?? null,
+            recorteX, recorteY,
+            linkNoCentroDoRecorte: !!alvoDoRecorte && link.contains(alvoDoRecorte),
+            opcoesNoCentroDoRecorte: !!alvoDoRecorte?.closest('button[aria-label="Opções da mensagem"]'),
+            tagNoCentroDoRecorte: alvoDoRecorte?.tagName ?? null,
+          };
+        });
+        type MedidaDoAlvo = Awaited<ReturnType<typeof medirAlvo>>;
         const observado = {
-          ponto: null as null | { x: number; y: number; largura: number; altura: number; linkNoCentro: boolean; opcoesNoCentro: boolean; tagNoCentro: string | null },
+          ponto: null as MedidaDoAlvo | null,
+          pontoDepois: null as MedidaDoAlvo | null,
           paginasNovasNoContexto: 0,
           toqueConcluiu: null as boolean | null,
           eventoRecebido: null as boolean | null,
@@ -851,21 +882,9 @@ test.describe("documentos recebidos: rótulo e arquivo salvo (#2613)", () => {
         contexto.on("page", novaPagina);
         try {
           await baixar.scrollIntoViewIfNeeded();
-          await expect.poll(async () => {
-            observado.ponto = await baixar.evaluate((link) => {
-              const r = link.getBoundingClientRect();
-              const x = r.left + r.width / 2;
-              const y = r.top + r.height / 2;
-              const alvo = document.elementFromPoint(x, y);
-              return {
-                x, y, largura: r.width, altura: r.height,
-                linkNoCentro: !!alvo && link.contains(alvo),
-                opcoesNoCentro: !!alvo?.closest('button[aria-label="Opções da mensagem"]'),
-                tagNoCentro: alvo?.tagName ?? null,
-              };
-            });
-            return observado.ponto.linkNoCentro;
-          }, { message: "o centro do download precisa receber o toque real", timeout: 5_000 }).toBe(true);
+          // Observação, sem impedir o tap de rolar e escolher um ponto visível.
+          // O download real abaixo continua sendo a condição de sucesso.
+          observado.ponto = await medirAlvo();
           // Espera ambas as operações e prioriza o erro do gesto, para o
           // timeout do evento não esconder um toque interceptado.
           const [evento, toque] = await Promise.allSettled([
@@ -885,12 +904,21 @@ test.describe("documentos recebidos: rótulo e arquivo salvo (#2613)", () => {
           // Booleano evita despejar bytes ou URL assinada em caso de falha.
           expect(fs.readFileSync(salvo!).equals(arquivo.bytes)).toBe(true);
         } finally {
+          try { observado.pontoDepois = await medirAlvo(); } catch { /* Página pode ter fechado; sem registrar erro cru. */ }
           contexto.off("response", respostaDoGesto);
           contexto.off("requestfailed", falhaDoGesto);
           contexto.off("page", novaPagina);
-          await test.info().attach(`documento-download-${i + 1}-observado`, {
-            body: JSON.stringify(observado, null, 2), contentType: "application/json",
-          });
+          const nomeDoRecibo = `documento-download-${i + 1}-observado.json`;
+          const recibo = JSON.stringify(observado, null, 2);
+          const saida = test.info().outputPath(nomeDoRecibo);
+          fs.mkdirSync(path.dirname(saida), { recursive: true });
+          fs.writeFileSync(saida, recibo);
+          // O reporter=list não persiste attachment.body. Arquivo físico na
+          // falha e no coletor de sucesso, sempre só flags/medidas sanitizadas.
+          const evidencia = path.join("evidence", "documento-3511-01a178b3");
+          fs.mkdirSync(evidencia, { recursive: true });
+          fs.writeFileSync(path.join(evidencia, nomeDoRecibo), recibo);
+          await test.info().attach(`documento-download-${i + 1}-observado`, { path: saida, contentType: "application/json" });
         }
       }
       fs.mkdirSync("evidence/documento-3511-01a178b3", { recursive: true });
