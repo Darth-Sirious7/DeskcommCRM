@@ -204,6 +204,35 @@ describe("NewContactDialog · salvar e iniciar conversa (#3483)", () => {
     ]);
   });
 
+  it("o CTA da lista real respeita o CPF inválido e segue depois da correção", async () => {
+    const fetchMock = rotear({ canais: 1 });
+    const user = userEvent.setup();
+    envolver(<ContactsListClient />);
+    await user.click(screen.getByRole("button", { name: "Novo contato" }));
+    const cadastro = screen.getByRole("dialog", { name: "Novo contato" });
+    await user.type(within(cadastro).getByLabelText(/Telefone/i), "+5511987654321");
+    const cpf = within(cadastro).getByLabelText(/CPF/i);
+    await user.type(cpf, "123.456.789-00");
+    await user.click(within(cadastro).getByRole("button", { name: "Salvar e iniciar conversa" }));
+    expect(await within(cadastro).findByRole("alert")).toHaveTextContent("CPF inválido");
+    expect(cpf).toHaveAttribute("aria-invalid", "true");
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
+    expect(pushMock).not.toHaveBeenCalled();
+
+    await user.clear(cpf);
+    await user.type(cpf, "529.982.247-25");
+    await user.tab();
+    await waitFor(() => expect(within(cadastro).queryByRole("alert")).not.toBeInTheDocument());
+    await user.click(within(cadastro).getByRole("button", { name: "Salvar e iniciar conversa" }));
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/app/inbox?id=conv-1"));
+    expect(caminhos(fetchMock)).toEqual([
+      "/api/v1/contacts",
+      "/api/v1/conversations/open-with-contact",
+      "/api/v1/conversations/conv-1/claim",
+    ]);
+    expect(corpoDo(fetchMock, "/api/v1/contacts")).toMatchObject({ cpf: "529.982.247-25" });
+  });
+
   it.each([1, 2])(
     "o cadastro avulso conserva o atalho com callback e %i canal/is",
     async (canais) => {
