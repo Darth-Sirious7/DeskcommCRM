@@ -3976,3 +3976,26 @@ Realtime perdia o toast; ausência de botão durante reload ainda vazio não pro
 estado. O runner foi corrigido e as tentativas/capturas antigas foram conservadas
 com esses limites. O manager original não foi promovido, os guards do produto
 não foram alterados e os recursos exclusivos foram removidos ao fim.
+
+## Lote de correções de acesso, documento e atendimento (2026-10-26)
+
+**Preparado; NÃO EXECUTADO neste lote no navegador nem em Postgres local.**
+Os specs existentes no CI usam usuários sintéticos, app e banco reais. O CI
+publica a evidência nova em `evidence/lote-bugfixes-01a178b3/` somente se a parte
+passar. Este documento não afirma que capturas já existam.
+
+| Jornada | Instrumento preparado |
+|---|---|
+| Rascunho preservado, apagar religa, `/` substitui e recurso com imagem abre prévia sem enviar | `inbox-responder-citando.spec.ts`, upload real no Storage e contagem de mensagens |
+| CPF inválido após blur, corrigir e criar; vazio opcional; organização PT confere NIF em vez de CPF | `contato-salva-email.spec.ts`, cliques reais e POST do formulário |
+| Dois CNPJs informados inválidos não criam empresas, pessoas ou contatos de mesmo nome | `importar-leads-planilha.spec.ts`, API multipart real, lote/linhas e tabelas relidas |
+| Em Só os seus, abrir conversa livre assume; repetir abertura e dois claims 409 não repetem auditoria, evento nem atividade | `inbox-responder-citando.spec.ts`, sessão agent real e quatro contagens no banco |
+| Exceção SQL só para claim próprio com CAS, transferência recusada, dois tenants e dois claims concorrentes com um vencedor | `assumir-conversa-livre-claim-cas.test.ts`, invariante Postgres, sem alterar a cerca de transferência anterior |
+| Conta nova por convite, alternar cadastro/login sem perder token, confirmar no Mailpit e entrar só na equipe convidada | `invite-lifecycle.spec.ts`, conta ausente antes, token_hash de confirmação, assinatura adulterada não preenche e-mail, vínculo agent único e convite aceito; até quatro capturas |
+
+Os registros anteriores de #3475 permanecem acima com seu head efetivamente
+medido. Não provam este lote. As ofertas de campanha são capacidade nova do
+#3503 e permanecem fora desta integração; não há receiver LLM ou prova de MCP
+neste recorte. Não houve execução de build, typecheck, DB, Docker ou browser local.
+A aprovação continua dependendo dos checks obrigatórios e da inspeção dos
+artefatos produzidos no head do lote.

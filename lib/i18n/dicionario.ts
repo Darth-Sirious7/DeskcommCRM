@@ -9678,6 +9678,12 @@ export const DICIONARIO: Traducoes = {
   "faça login com o email": { es: "inicia sesión con el correo" },
   "Fazer login": { es: "Iniciar sesión" },
   "Ainda não tenho conta": { es: "Todavía no tengo cuenta" },
+  "Criar minha conta": { es: "Crear mi cuenta" },
+  "Já tenho conta? Entrar": { es: "¿Ya tienes cuenta? Iniciar sesión" },
+  "Use o e-mail": { es: "Usa el correo" },
+  "para entrar na equipe que convidou você. Se ainda não tem conta, crie a sua. Se já tem, entre com ela.": {
+    es: "para unirte al equipo que te invitó. Si todavía no tienes cuenta, crea una. Si ya tienes, inicia sesión con ella.",
+  },
   "Email não corresponde": { es: "El correo no coincide" },
   "Você está logado como": { es: "Estás conectado como" },
   "mas o convite foi enviado para": { es: "pero la invitación se envió a" },
@@ -11041,6 +11047,9 @@ export const DICIONARIO: Traducoes = {
     },
   "Prepara no compositor — você revisa e envia": {
     es: "Prepara en el compositor — tú revisas y envías",
+  },
+  "A resposta rápida substitui o texto do campo. Envie ou apague o rascunho antes.": {
+    es: "La respuesta rápida reemplaza el texto del campo. Envía o borra el borrador antes.",
   },
   // ── "Mostrar na barra do Inbox" #3282 ──────────────────────────────────────
   "Mostrar na barra do Inbox": { es: "Mostrar en la barra del Inbox" },
