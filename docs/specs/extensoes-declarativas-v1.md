@@ -31,7 +31,7 @@ type ExtensionManifest = {
   name: string; // slug ASCII minúsculo, 2–64 caracteres
   version: string; // SemVer estável x.y.z, inteiros sem zeros à esquerda
   license: "MIT";
-  host_api: { min: number; max: number }; // inteiros positivos; versão atual: HOST_API_VERSION em lib/extensions/manifest.ts
+  host_api: { min: number; max: number }; // inteiros positivos; contratos suportados: SUPPORTED_HOST_API_VERSIONS em lib/extensions/manifest.ts
   permissions: ExtensionPermission[]; // lista fechada, não vazia, sem repetição — ADR-0003
   dependencies: [];
   data: { mode: "none" };
@@ -70,11 +70,15 @@ type ExtensionCatalog = {
 
 Parâmetros técnicos iniciais, publicados antes dos ensaios e sujeitos à medição: pacote 64 KiB; catálogo 512 KiB; profundidade JSON 12; nós JSON 20.000; 32 propriedades por objeto; 128 entradas por catálogo; 4 cards por pacote; 8 blocos por card; títulos 100 caracteres, resumos/descrições 400, corpo 2.000; 8 extensões ativas por organização; 8 catálogos admitidos e 128 identidades instaladas/em preparação por instância; versão do pacote com até 64 caracteres; revisão de catálogo entre 1 e 999.999.999; download com prazo total de 15 segundos. Não são capacidade de VPS nem SLA demonstrados. O limite de bytes conta o corpo realmente lido; o cabeçalho só antecipa recusa. Transporte comprimido é recusado neste perfil.
 
+O host preserva os contratos fechados API2 e API3: a faixa do pacote precisa conter pelo menos um dos contratos suportados. Os três artefatos API2 já publicados continuam com os mesmos bytes e faixa2–2; não é um aumento global que os torne incompatíveis. O contrato API1 continua fora do conjunto suportado.
+
+O vocabulário de turno (`turn.send`, `turn.handoff`, `turn.context` e `turn_flow`) pertence ao contrato API3. Um manifesto ou entrada que anuncie turno com mínimo inferior a3 é recusado, inclusive uma faixa2–3. O parser antigo conserva sua lista fechada e recusa o catálogo que contenha esse vocabulário, antes de substituir a admissão existente. O feed público API2/rev1 com três pacotes permanece separado e imutável. Candidato com quatro e retorno com três são snapshots distintos da mesma origem; o retorno precisa de revisão maior que a já admitida, pela tela normal, sem reduzir revisão no banco. Retirar laudos do catálogo não remove sua instalação: remover pela gestão preserva histórico/configuração e vem antes do retorno ao host antigo.
+
 Uma função compartilhada verifica compatibilidade na instalação, ativação, leitura de card/guia e resolução de ação. Recusa API fora da faixa, formato, perfil, capacidade ou dependência não suportados. Revalidar o manifesto persistido impede que um upgrade do CRM interprete cegamente um contrato anterior. Fallback de texto é pt-BR e fica indicado quando não há tradução para o idioma escolhido.
 
 ## Versões: atualizar, desfazer a última troca e remover
 
-### Gancho antes da IA (host API 2, #3076)
+### Gancho antes da IA (host API 3, #3076)
 
 `contributions.turn_flow` declara gatilhos por idioma (com coocorrência literal opcional de intenção), perguntas por campo e desfecho
 (`assumir`, que conclui a coleta, ou `passar_para_humano`). O contrato executável é
@@ -128,7 +132,8 @@ mensagens sem progresso; foto/áudio posterior ao encerramento não deixa a IA m
 A identidade nova é obrigatória pela 6-bis, pois pede outra permissão. Os bytes do
 exemplo linear da fonte #3474 ficaram preservados na fixture
 `tests/fixtures/extensoes/laudo-linear-fonte3474.json`; ele nunca integrou a main e não
-é anunciado como equivalente ao #3063. A adaptação é medida em unidade; banco real e
+é anunciado como equivalente ao #3063. Seus bytes de proveniência permanecem arquivados;
+o host recusa esse exemplo porque ele anuncia efeitos de turno como API2. A adaptação é medida em unidade; banco real e
 jornada fresca em tela ainda são pendentes e o #3063 não é encerrado por este estado.
 
 ### Troca de artefato

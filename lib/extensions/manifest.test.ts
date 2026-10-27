@@ -282,7 +282,7 @@ describe("manifesto declarativo", () => {
     expect(checkCompatibility({ ...manifest, profile: "code" } as never).reason).toBe(
       "profile_unsupported",
     );
-    expect(checkCompatibility({ ...manifest, host_api: { min: 3, max: 4 } }).reason).toBe(
+    expect(checkCompatibility({ ...manifest, host_api: { min: 4, max: 5 } }).reason).toBe(
       "host_api_unsupported",
     );
     // ADR-0003, D4: o host passou a 2, e a janela do manifesto é FECHADA — quem declarou
@@ -510,6 +510,7 @@ const fluxoDeLaudo: FluxoDoTurno = {
 function manifestoComTurno(permalink: { permissions: string[]; fluxo?: unknown }) {
   return {
     ...manifest,
+    host_api: { min: 3, max: 3 },
     permissions: permalink.permissions,
     contributions: {
       ...(permalink.fluxo === undefined ? {} : { turn_flow: permalink.fluxo }),
@@ -533,6 +534,7 @@ describe("o fluxo do turno no manifesto", () => {
       parseManifest(
         manifestBytes({
           ...manifest,
+          host_api: { min: 3, max: 3 },
           contributions: { ...manifest.contributions, turn_flow: fluxoDeLaudo },
         }),
       ),
@@ -543,7 +545,7 @@ describe("o fluxo do turno no manifesto", () => {
       checkCompatibility({
         format_version: 1,
         profile: "declarative",
-        host_api: { min: 1, max: 2 },
+        host_api: { min: 3, max: 3 },
         permissions: ["navigation.tasks"],
         dependencies: [],
         contributions: { turn_flow: fluxoDeLaudo },
@@ -556,7 +558,7 @@ describe("o fluxo do turno no manifesto", () => {
       checkCompatibility({
         format_version: 1,
         profile: "declarative",
-        host_api: { min: 1, max: 2 },
+        host_api: { min: 3, max: 3 },
         permissions: ["turn.send"],
         dependencies: [],
         contributions: { turn_flow: fluxoDeLaudo },
@@ -567,7 +569,7 @@ describe("o fluxo do turno no manifesto", () => {
       checkCompatibility({
         format_version: 1,
         profile: "declarative",
-        host_api: { min: 1, max: 2 },
+        host_api: { min: 3, max: 3 },
         permissions: ["turn.send", "turn.handoff"],
         dependencies: [],
         contributions: { turn_flow: fluxoDeLaudo },
@@ -584,7 +586,7 @@ describe("o fluxo do turno no manifesto", () => {
       checkCompatibility({
         format_version: 1,
         profile: "declarative",
-        host_api: { min: 1, max: 2 },
+        host_api: { min: 3, max: 3 },
         permissions: ["turn.send"],
         dependencies: [],
         contributions: { turn_flow: soEncerra },
@@ -597,7 +599,7 @@ describe("o fluxo do turno no manifesto", () => {
       checkCompatibility({
         format_version: 1,
         profile: "declarative",
-        host_api: { min: 1, max: 2 },
+        host_api: { min: 3, max: 3 },
         permissions: ["turn.send"],
         dependencies: [],
         contributions: { crm_cards: [] },
@@ -610,7 +612,7 @@ describe("o fluxo do turno no manifesto", () => {
     // de fluxo é ausência de informação. Se este teste cair, nenhuma extensão de turno instala.
     expect(
       checkCompatibility({
-        host_api: { min: 1, max: 2 },
+        host_api: { min: 3, max: 3 },
         permissions: ["turn.send", "turn.handoff"],
       }),
     ).toEqual({ compatible: true, reason: null });
@@ -621,6 +623,7 @@ describe("o fluxo do turno no manifesto", () => {
       parseManifest(
         manifestBytes({
           ...manifest,
+          host_api: { min: 3, max: 3 },
           permissions: ["turn.send"],
           data: { mode: "declarado", objetos: [{ slug: "ficha", rotulo: { "pt-BR": "Ficha" }, campos: [{ slug: "nome", tipo: "texto" }] }] },
           configuration: {},

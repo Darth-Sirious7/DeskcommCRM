@@ -551,6 +551,7 @@ describe("configureExtension — o aceite das permissões de turno", () => {
     const base = artifact("laudo");
     const manifest = {
       ...(base.manifest as Row),
+      host_api: { min: 3, max: 3 },
       permissions: permissoes,
       contributions: {
         ...(base.manifest as { contributions: Row }).contributions,

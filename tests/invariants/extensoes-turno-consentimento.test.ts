@@ -48,8 +48,9 @@ async function rpc(name: string, args: unknown[]) {
 }
 
 function artifact(version = "1.0.0", declared = permissions) {
-  // Mesmo pacote publicado que a instalação baixa, com identidade de teste isolada.
+  // Cópia isolada da fonte linear arquivada, declarando o contrato atual do turno.
   const manifest = JSON.parse(readFileSync(join(process.cwd(), "tests/fixtures/extensoes", "laudo-linear-fonte3474.json"), "utf8"));
+  manifest.host_api = { min: 3, max: 3 };
   manifest.publisher = "invariante-turno";
   manifest.name = "coleta-do-turno";
   manifest.version = version;

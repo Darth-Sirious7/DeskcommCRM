@@ -44,8 +44,8 @@
       "version": "1.0.0",
       "license": "MIT",
       "host_api": {
-        "min": 2,
-        "max": 2
+        "min": 3,
+        "max": 3
       },
       "display": {
         "title": {
@@ -64,7 +64,7 @@
         "turn.handoff",
         "turn.context"
       ],
-      "sha256": "3e940e5f0fafe888a412ba8166b83ae773af0b0c34ad7fb45ec15a55ee49b954",
+      "sha256": "c46508ec24a0fcbc98cab861ce776dd7a65568180de0ce6e58ba16ccde6cfd3b",
       "byte_length": 10613,
       "publisher_label": "Deskcomm",
       "repository": "https://github.com/melgarafael/DeskcommCRM",
@@ -147,5 +147,5 @@
       "published_at": "2026-09-18"
     }
   ],
-  "revision": 3
+  "revision": 4
 }

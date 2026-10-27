@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 
 import pg from "pg";
@@ -7,6 +7,7 @@ import { createInboundTurnHandler, type InboundTurnDeps } from "../../../lib/age
 import { seedPlatformPlaybook } from "../../../lib/agent-engine/agent/playbook-seed";
 import { completeJob, enqueueJob, type JobRow } from "../../../lib/agent-engine/queue/queue";
 import { ehVistoAzul } from "../../support/waha-visto-azul";
+import { slugDeFunil } from "../../../lib/pipelines/pipeline-editing";
 import type { AtoresDasExtensoes } from "./catalogo-extensoes";
 import type { ProvedorDoTurnoLaudos } from "./provedores-turno-laudos";
 
@@ -84,7 +85,7 @@ export async function criarTurnosDoLaudo(atores: AtoresDasExtensoes, registry: I
       if (knobs.error) throw new Error(knobs.error.message);
       const contato = contatoExistente ?? await inserir("contacts", {
         organization_id: org, name: "Pessoa Sintética", display_name: "Pessoa Sintética",
-        phone_number: `+1555${String(Math.floor(Math.random() * 10_000_000)).padStart(7, "0")}`,
+        phone_number: `+1555${String(randomInt(10_000_000)).padStart(7, "0")}`,
         force_human: false,
       });
       const conversa = await inserir("conversations", {
@@ -107,7 +108,7 @@ export async function criarTurnosDoLaudo(atores: AtoresDasExtensoes, registry: I
       await pool.query("update conversations set active_ai_agent_id=$1 where organization_id=$2 and id=$3", [agente, org, conversa]);
       let funil = funis.get(org);
       if (!funil) {
-        const pipeline = await inserir("crm_pipelines", { organization_id: org, name: "Laudos sintéticos", slug: `laudos-${randomUUID()}` });
+        const pipeline = await inserir("crm_pipelines", { organization_id: org, name: "Laudos sintéticos", slug: slugDeFunil(`laudos-${randomUUID().replaceAll("-", "")}`) });
         const stage = await inserir("crm_stages", { organization_id: org, pipeline_id: pipeline, name: "Entrada", slug: "entrada", position: 1 });
         funil = { pipeline, stage }; funis.set(org, funil);
       }

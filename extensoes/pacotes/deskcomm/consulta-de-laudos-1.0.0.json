@@ -6,8 +6,8 @@
   "version": "1.0.0",
   "license": "MIT",
   "host_api": {
-    "min": 2,
-    "max": 2
+    "min": 3,
+    "max": 3
   },
   "permissions": [
     "turn.send",

@@ -146,7 +146,9 @@ export interface CompatibilityResult {
 type CompatibilitySubject = Pick<ExtensionManifest, "host_api" | "permissions"> &
   Partial<Pick<ExtensionManifest, "format_version" | "profile" | "dependencies" | "contributions">>;
 
-const HOST_API_VERSION = 2;
+// A API do host é um contrato do pacote, separado da versão do CRM. Preservar
+// API2 permite continuar usando os artefatos publicados com faixa fechada2–2.
+const SUPPORTED_HOST_API_VERSIONS = [2, 3] as const;
 const FORBIDDEN_SNAPSHOT_KEYS = new Set(["__proto__", "prototype", "constructor"]);
 const slugSchema = z
   .string()
@@ -353,6 +355,9 @@ const manifestSchema: z.ZodType<ExtensionManifest> = z
   // instalando um módulo de dados que não guarda nada. É o mesmo par de regras que o banco confere
   // em `fn_extensions_finish_install`, e os dois lados precisam dizer a mesma coisa.
   .superRefine((manifest, context) => {
+    if (turnoPrometeApiAntiga(manifest)) {
+      context.addIssue({ code: "custom", path: ["host_api"], message: "turno exige API3 sem anunciar API2" });
+    }
     if (manifest.profile === "declarative") {
       if (manifest.data.mode !== "none") {
         context.addIssue({ code: "custom", message: "perfil declarativo não declara dados" });
@@ -423,7 +428,12 @@ const catalogEntrySchema: z.ZodType<CatalogEntry> = z
       .regex(/^\d{4}-\d{2}-\d{2}$/)
       .optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((entry, context) => {
+    if (turnoPrometeApiAntiga(entry)) {
+      context.addIssue({ code: "custom", path: ["host_api"], message: "turno exige API3 sem anunciar API2" });
+    }
+  });
 
 const catalogSchema: z.ZodType<ExtensionCatalog> = z
   .object({
@@ -619,7 +629,10 @@ export function checkCompatibility(subject: CompatibilitySubject): Compatibility
   if (subject.profile !== undefined && !["declarative", "data"].includes(subject.profile)) {
     return incompatible("profile_unsupported");
   }
-  if (subject.host_api.min > HOST_API_VERSION || subject.host_api.max < HOST_API_VERSION) {
+  if (
+    turnoPrometeApiAntiga(subject) ||
+    !SUPPORTED_HOST_API_VERSIONS.some(api => subject.host_api.min <= api && subject.host_api.max >= api)
+  ) {
     return incompatible("host_api_unsupported");
   }
   if (
@@ -678,6 +691,13 @@ export function checkCompatibility(subject: CompatibilitySubject): Compatibility
     return incompatible("permission_unsupported");
   }
   return { compatible: true, reason: null };
+}
+
+/** Enum novo não pode prometer um leitor API2 que nem sabe interpretá-lo. */
+function turnoPrometeApiAntiga(subject: CompatibilitySubject): boolean {
+  const usaTurno = subject.permissions.some(permissao => PERMISSOES_DE_TURNO.some(turno => turno === permissao))
+    || subject.contributions?.turn_flow !== undefined;
+  return usaTurno && subject.host_api.min < 3;
 }
 
 function incompatible(reason: CompatibilityReason): CompatibilityResult {

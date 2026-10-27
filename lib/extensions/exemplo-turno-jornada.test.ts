@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { checkCompatibility, parseCatalog, parseManifest } from "./manifest";
+import { ExtensionError } from "./errors";
 import { aceitePendente, motivoDeRecusaDoTurno } from "./consentimento";
 import { decidirDoFluxo, type EstadoDoFluxo, type FluxoDoTurno } from "./fluxo-do-turno";
 
@@ -52,8 +53,13 @@ describe("o artefato publicado é o consumidor, sem trocar permissões da identi
     })))).toThrow();
   });
 
-  it("o contrato linear da fonte continua legível, arquivado sem mudar seus bytes", () => {
-    const antigo = parseManifest(new Uint8Array(readFileSync(join(process.cwd(), "tests/fixtures/extensoes/laudo-linear-fonte3474.json"))));
+  it("preserva a fonte linear arquivada, sem aceitar turno anunciado como API2", () => {
+    const fonte = readFileSync(join(process.cwd(), "tests/fixtures/extensoes/laudo-linear-fonte3474.json"));
+    // Nunca publicado: é a proveniência da contribuição, não um contrato API2 válido.
+    const antigo = JSON.parse(fonte.toString("utf8")) as {
+      permissions: string[]; name: string; contributions: { turn_flow: { perguntas: unknown[] } };
+    };
+    expect(() => parseManifest(fonte)).toThrow(ExtensionError);
     expect(antigo.permissions).toEqual(["turn.send", "turn.handoff"]);
     expect(antigo.name).not.toBe(manifest.name);
     expect(antigo.contributions.turn_flow!.perguntas).toHaveLength(4);
