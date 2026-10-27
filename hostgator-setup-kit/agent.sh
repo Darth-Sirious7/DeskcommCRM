@@ -186,6 +186,21 @@ else
   CURRENT="$CURRENT_SHA";  OFF_RELEASE=true
 fi
 
+# The checkout still supplies release notes and update scripts; it does not
+# identify containers. An old kit remains compatible, with explicit legacy
+# status on the API, until this collector is installed alongside the agent.
+RUNTIME_CONFIRMATION=null
+RUNTIME_CONFIRMED=false
+if [ -f "$(dirname "$0")/_runtime.sh" ]; then
+  source "$(dirname "$0")/_runtime.sh"
+  collect_runtime_confirmation
+  if [ "$RUNTIME_CONFIRMED" = true ]; then
+    CURRENT="v$RUNTIME_VERSION"; CURRENT_SHA="$RUNTIME_REVISION"
+    CURRENT_TAG="$CURRENT"
+    if [ "$RUNTIME_REVISION" = "$RUNTIME_BASE" ]; then OFF_RELEASE=false; else OFF_RELEASE=true; fi
+  fi
+fi
+
 # Tag que já está CONTIDA no que roda aqui não é atualização — é retrocesso, e
 # o update.sh recusa instalar (sem --force). Anunciá-la mesmo assim acenderia
 # na tela um botão que o agente é obrigado a recusar depois: o mesmo teste de
@@ -202,7 +217,14 @@ fi
 # atrasada. Por isso o "não sei" viaja explícito no heartbeat.
 COMPARE_FAILED=false
 if [ -n "$LATEST_TAG" ]; then
-  is_already_in_head "$LATEST_TAG" && CONTIDA=0 || CONTIDA=$?
+  if [ "$RUNTIME_CONFIRMED" = true ]; then
+    git merge-base --is-ancestor "$LATEST_TAG" "$RUNTIME_REVISION" 2>/dev/null && CONTIDA=0 || CONTIDA=$?
+  elif [ "$RUNTIME_CONFIRMATION" != null ]; then
+    CONTIDA=2
+  else
+    is_already_in_head "$LATEST_TAG" && CONTIDA=0 || CONTIDA=$?
+  fi
+  case "$CONTIDA" in 0|1) ;; *) CONTIDA=2 ;; esac
   [ "$CONTIDA" = 2 ] && COMPARE_FAILED=true
   [ "$CONTIDA" = 1 ] || LATEST_TAG=""   # 0 = retrocesso, 2 = não sei: nos dois, não anuncia
 fi
@@ -374,7 +396,7 @@ if [ -n "$DE_VOLTA" ]; then
   fi
 fi
 
-BODY="{\"kind\":\"heartbeat\",\"current_version\":\"${CURRENT}\",\"current_sha\":\"${CURRENT_SHA}\",\"off_release\":${OFF_RELEASE},\"latest_version\":\"${LATEST_TAG}\",\"compare_failed\":${COMPARE_FAILED},\"has_known_release\":${HAS_KNOWN_RELEASE},\"changelog\":\"$(esc "$CHANGELOG")\"}" || true
+BODY="{\"kind\":\"heartbeat\",\"current_version\":\"${CURRENT}\",\"current_sha\":\"${CURRENT_SHA}\",\"off_release\":${OFF_RELEASE},\"latest_version\":\"${LATEST_TAG}\",\"compare_failed\":${COMPARE_FAILED},\"has_known_release\":${HAS_KNOWN_RELEASE},\"changelog\":\"$(esc "$CHANGELOG")\",\"runtime_confirmation\":$RUNTIME_CONFIRMATION}" || true
 
 # Só no log do host, de propósito. Mandar isto no heartbeat seria inútil: o
 # schema da rota é `z.object` sem `.strict()`, então o Zod DESCARTA chave
@@ -389,6 +411,13 @@ RESP="$(post "$BODY")"
 [ "$(json_field "$RESP" update_requested)" = "true" ] || exit 0
 RUN_ID="$(json_field "$RESP" run_id)" || true
 [ -n "$RUN_ID" ] || exit 0
+
+# Revalidate old queued requests too: the API may have accepted one before
+# this heartbeat established a customized or incomplete runtime.
+if [ "$RUNTIME_CONFIRMATION" != null ] && ! runtime_can_install_release; then
+  post "{\"kind\":\"run_result\",\"run_id\":\"${RUN_ID}\",\"status\":\"failed\",\"log_tail\":\"A execução está incompleta ou personalizada. Concilie e confirme os serviços antes de instalar imagens de uma release pública.\"}" >/dev/null || true
+  exit 0
+fi
 
 # ── 4. Alguém pediu. Uma atualização por vez. ───────────────────────────────
 # (o cadeado já está na mão desde a seção 2 — a vigência também dispara

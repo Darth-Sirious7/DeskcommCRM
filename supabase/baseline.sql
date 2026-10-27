@@ -62040,6 +62040,14 @@ create trigger trg_limpar_snapshot_catalogo_ao_anonimizar
   for each row when (new.is_anonymized and not old.is_anonymized)
   execute function public.fn_limpar_snapshot_catalogo_ao_anonimizar();
 
+-- ---- runtime identity (migration 9024) ----
+-- manifest: system_version records bounded host observations of running services, separate from checkout and update intent.
+-- Nullable for compatibility. Old heartbeats explicitly clear the observation.
+alter table public.system_version
+  add column if not exists runtime_confirmation jsonb;
+comment on column public.system_version.runtime_confirmation is
+  'Authenticated host observation of compose services and immutable images; the API derives coverage, freshness and release identity.';
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria

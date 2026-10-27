@@ -11,10 +11,14 @@ import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { falhaDaEscritaDePlatformAdmin, requirePlatformAdminEscrita } from "@/lib/auth/requirePlatformAdmin";
+import {
+  falhaDaEscritaDePlatformAdmin,
+  requirePlatformAdminEscrita,
+} from "@/lib/auth/requirePlatformAdmin";
 import { loadAuthUser } from "@/lib/auth/server";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { runtimeIdentity, newerOfficialRelease } from "@/lib/system/runtime-identity";
 import { ehVersaoPublicada, isRunStale } from "@/lib/system/update-run";
 
 export const dynamic = "force-dynamic";
@@ -43,13 +47,19 @@ export async function POST(req: NextRequest): Promise<Response> {
   try {
     await requirePlatformAdminEscrita();
   } catch (err) {
-    return falhaDaEscritaDePlatformAdmin(err, undefined, "Só o dono do servidor pode atualizar o sistema.");
+    return falhaDaEscritaDePlatformAdmin(
+      err,
+      undefined,
+      "Só o dono do servidor pode atualizar o sistema.",
+    );
   }
 
   const db = createAdminClient();
   const { data: version, error: versionError } = await db
     .from("system_version")
-    .select("current_version, latest_version")
+    .select(
+      "current_version, latest_version, runtime_confirmation, agent_last_seen_at, compare_failed",
+    )
     .eq("id", 1)
     .maybeSingle();
 
@@ -57,15 +67,48 @@ export async function POST(req: NextRequest): Promise<Response> {
   // `latest` vazios — e cai direto no 409 "você já está em dia" abaixo. É a
   // pior mensagem possível bem na hora de uma falha de infraestrutura.
   if (versionError) {
-    logger.error("[system/update] leitura de system_version falhou", { error: versionError.message });
+    logger.error("[system/update] leitura de system_version falhou", {
+      error: versionError.message,
+    });
     return fail("internal_error", "Não consegui ler o estado da atualização.", 500);
   }
 
-  const current = version?.current_version ?? "";
+  const identity = runtimeIdentity(version?.runtime_confirmation, version?.agent_last_seen_at);
+  const current =
+    identity.status === "legacy" ? (version?.current_version ?? "") : (identity.base_version ?? "");
   const latest = version?.latest_version ?? "";
 
   const corpo = corpoDoPedido.safeParse(await req.json().catch(() => ({})));
   const querVoltar = corpo.success && corpo.data.rollback === true;
+
+  // A customized image must be reconciled, including on rollback: replacing
+  // it with a public tag would silently remove patches. Old kits remain
+  // compatible; modern incomplete observations cannot authorize deployment.
+  if (identity.customized === true) {
+    return fail(
+      "state_conflict",
+      "Esta instalação é personalizada. Concilie as alterações antes de trocar as imagens.",
+      409,
+    );
+  }
+  if (identity.status !== "legacy" && identity.status !== "confirmed") {
+    return fail(
+      "state_conflict",
+      "A execução dos serviços ainda não foi confirmada. Aguarde a próxima verificação do servidor.",
+      409,
+    );
+  }
+  if (
+    !querVoltar &&
+    (version?.compare_failed ||
+      (identity.status === "confirmed" && newerOfficialRelease(current, latest) !== true))
+  ) {
+    return fail(
+      "state_conflict",
+      "Não há atualização posterior confirmada para esta instalação.",
+      409,
+    );
+  }
 
   // ── A volta para a versão anterior (#2757) ──────────────────────────────
   //
@@ -88,7 +131,9 @@ export async function POST(req: NextRequest): Promise<Response> {
       .maybeSingle();
 
     if (leituraFalha) {
-      logger.error("[system/update] leitura do run da volta falhou", { error: leituraFalha.message });
+      logger.error("[system/update] leitura do run da volta falhou", {
+        error: leituraFalha.message,
+      });
       return fail("internal_error", "Não consegui ler a última atualização.", 500);
     }
 
@@ -145,7 +190,8 @@ export async function POST(req: NextRequest): Promise<Response> {
       .update({
         status: "failed",
         finished_at: new Date().toISOString(),
-        log_tail: "Run abandonado: o agente do host não reportou o desfecho a tempo (agente parado ou travado).",
+        log_tail:
+          "Run abandonado: o agente do host não reportou o desfecho a tempo (agente parado ou travado).",
       })
       .eq("id", running.id)
       .eq("status", "dispatched");
@@ -166,7 +212,12 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const { data: run, error } = await db
     .from("system_update_runs")
-    .insert({ from_version: current, to_version: alvo, status: "dispatched", requested_by: user.id })
+    .insert({
+      from_version: current,
+      to_version: alvo,
+      status: "dispatched",
+      requested_by: user.id,
+    })
     .select()
     .single();
 
