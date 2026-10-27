@@ -58,8 +58,16 @@ async function entrar(page: Page, creds: Creds) {
 }
 
 async function trocar(page: Page, orgId: string, name: string) {
-  await page.getByTestId("tenant-switcher").click();
-  await page.getByTestId(`tenant-switcher-item-${orgId}`).click();
+  // O reload da Marca longa conserva o scroll. Conclui a volta real ao topo
+  // antes de abrir o portal, sem forçar clique em item fora da janela.
+  await page.evaluate(() => window.scrollTo({ top: 0, left: 0, behavior: "instant" }));
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  const seletor = page.getByTestId("tenant-switcher");
+  await expect(seletor).toBeInViewport();
+  await seletor.click();
+  const destino = page.getByTestId(`tenant-switcher-item-${orgId}`);
+  await expect(destino).toBeInViewport();
+  await destino.click({ timeout: 5_000 });
   await page.waitForURL(/\/app\/inbox(?:\?|$)/);
   await expect(page.getByTestId("tenant-switcher")).toHaveAttribute(
     "aria-label",
