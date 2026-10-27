@@ -15098,6 +15098,10 @@ export type Database = {
         Args: { p_limite?: number; p_retencao_dias?: number };
         Returns: number;
       };
+      fn_expurgar_traco_do_turno_vencido: {
+        Args: { p_limite?: number; p_retencao_dias?: number };
+        Returns: number;
+      };
       fn_extensions_admit_catalog: {
         Args: { p_actor: string; p_digest: string; p_operation: string; p_snapshot: Json };
         Returns: Json;
