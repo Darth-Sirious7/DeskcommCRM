@@ -19,6 +19,7 @@ import path from "node:path";
 
 import { chromium, type Locator, type Page } from "@playwright/test";
 
+import { caixaNaFoto } from "./geometria";
 import { type Acao, type Alvo, Modulo, chaveDoPasso } from "./licao";
 
 const RAIZ = path.dirname(new URL(import.meta.url).pathname);
@@ -31,6 +32,9 @@ const ALTURA = 900;
 type Caixa = { x: number; y: number; w: number; h: number };
 export type Captura = {
   foto: string;
+  /** Versão do app fotografado, independente do checkout onde se monta o curso. */
+  versao?: string;
+  capturado_em?: string;
   destaques: Array<Caixa & { rotulo: string; tipo: string }>;
   clicar: Caixa | null;
 };
@@ -60,8 +64,7 @@ async function medir(page: Page, a: Alvo): Promise<Caixa> {
   await l.waitFor({ state: "visible", timeout: 8_000 });
   const b = await l.boundingBox();
   if (!b) throw new Error("sem caixa (fora da tela?)");
-  const x = Math.max(0, b.x), y = Math.max(0, b.y);
-  return { x, y, w: Math.min(b.width, LARGURA - x), h: Math.min(b.height, ALTURA - y) };
+  return caixaNaFoto(b, LARGURA, ALTURA);
 }
 
 async function executar(page: Page, a: Acao) {
@@ -164,6 +167,7 @@ async function main() {
         timezoneId: "America/Sao_Paulo",
       });
       const page = await ctx.newPage();
+      try {
       for (const passo of licao.passos) {
         const chave = chaveDoPasso(modulo.id, licao.id, passo.id);
         try {
@@ -187,7 +191,11 @@ async function main() {
           const clicar = passo.clicar ? await medir(page, passo.clicar) : null;
           const foto = `capturas/${chave}.jpg`;
           await page.screenshot({ path: path.join(SAIDA, foto), type: "jpeg", quality: 72 });
-          capturas[chave] = { foto, destaques, clicar };
+          capturas[chave] = {
+            foto, destaques, clicar,
+            ...(process.env.CURSO_VERSAO_FOTOS ? { versao: process.env.CURSO_VERSAO_FOTOS.replace(/^v/, "") } : {}),
+            capturado_em: new Date().toISOString(),
+          };
           console.info(`ok   ${modulo.id}/${chave}`);
         } catch (e) {
           const msg = e instanceof Error ? e.message.split("\n")[0] : String(e);
@@ -196,7 +204,25 @@ async function main() {
           await page.screenshot({ path: path.join(SAIDA, `falha-${chave}.jpg`), type: "jpeg", quality: 60 }).catch(() => {});
         }
       }
+      } finally {
+      if (modulo.id === "api-tokens" && licao.id === "criar-um-token") {
+        // A foto mostra o plaintext real de uma chave. Depois de fotografar a lista ativa,
+        // revoga pela própria UI; nunca publicar uma credencial que ainda abre a bancada.
+        try {
+          await page.goto(URL_BASE + "/app/settings/api-tokens");
+          await esperarCarregar(page);
+          await page.getByRole("cell", { name: "Agenda online do site", exact: true }).waitFor({ state: "visible", timeout: 8_000 });
+          const revogar = page.getByRole("row", { name: /Prontuário eletrônico da clínica/ }).getByRole("button", { name: "Revogar", exact: true });
+          if (await revogar.count()) {
+            await revogar.click();
+            await revogar.waitFor({ state: "detached", timeout: 8_000 });
+          }
+        } catch {
+          falhas.push("api-tokens: não foi possível revogar a chave fotografada — não publique as fotos desta rodada");
+        }
+      }
       await ctx.close();
+      }
     }
   }
   await browser.close();

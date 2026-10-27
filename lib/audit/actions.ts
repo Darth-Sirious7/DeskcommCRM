@@ -146,6 +146,20 @@ export const AUDIT_ACTIONS = [
   "contact.field_proposed",
   "contact.field_confirmed",
   "contact.field_rejected",
+  // O MESMO par de fila, no CARD do negócio (issue #3316): a IA lê um documento
+  // (voucher, bilhete, apólice) e propõe os campos de `pipeline.settings.fields`;
+  // ninguém grava `crm_leads.custom_fields` sem confirmação humana. As três
+  // entram pelo mesmo motivo das de contato: proposta é intenção auditável mesmo
+  // quando nunca vira escrita, e "ninguém confirmou" é informação, não ausência
+  // dela.
+  //
+  // ⚠️ SÓ METADADO nesta família: `proposal_id`, `campo`, `origem`, decisão.
+  // O valor lido do documento NUNCA entra aqui — o audit é append-only, não tem
+  // `lead_id` nem caminho de limpeza, e copiá-lo criava a segunda fonte
+  // permanente de conteúdo pessoal que fechou o #3415.
+  "lead.field_proposed",
+  "lead.field_confirmed",
+  "lead.field_rejected",
   "lead.tags_changed",
   "message.sent",
   "message.received",
@@ -1190,6 +1204,12 @@ export const AUDIT_ACTIONS = [
   // titular), não decisão operacional de esconder da operação.
   "contact.marked_personal",
   "contact.unmarked_personal",
+
+  // A trava de número novo (go-live) solta na atualização do número que o
+  // controle de ritmo já considera formado (migration 0793, PR #2327, doc 109).
+  // Uma linha por número, com o motivo; e uma por instalação marcando a rodada.
+  "channel.go_live_liberado_na_atualizacao",
+  "channel.go_live_transicao_da_atualizacao",
 
   // O interruptor POR EMPRESA do passo `ai_decide` das automações (#2367):
   // gravado em `organizations.settings.automacoes.ai_decide` pela tela
