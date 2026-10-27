@@ -22,6 +22,7 @@ import { marcaDaInstalacao } from "@/lib/branding/instalacao";
 import { resolverMarcaDaOrganizacao } from "@/lib/branding/organizacao";
 import { env } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { modulosLigados } from "@/lib/instalacao/modulos";
 import { capacidadesLigadas } from "@/lib/organizacao/capacidades";
 import { ehOperante } from "@/lib/organizacao/operante";
@@ -94,6 +95,38 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     const temaDaExtensao = lerCssDoTemaDaExtensao(admin, activeOrg.orgId);
 
     /**
+     * O cliente DA SESSÃO, e não o de serviço, para a única leitura desta casca
+     * que responde "o que ESTE usuário pode ver".
+     *
+     * ─── O defeito que isto fecha (#3088) ─────────────────────────────────────
+     *
+     * A faixa anunciava conexão caída lendo por `createAdminClient`, que é
+     * `service_role` e atravessa a RLS. Numa instalação com restrição de canal
+     * por atendente, `GET /api/v1/channel-sessions` devolvia só o canal do
+     * atendente (ela lê pelo cliente da sessão) enquanto a faixa mostrava
+     * apelido, número e queda do canal do OUTRO setor — na tela e no payload do
+     * layout. A regra existia e era aplicada; a faixa simplesmente não passava
+     * por ela.
+     *
+     * ─── Por que a cura é o cliente, e não um `if` aqui ───────────────────────
+     *
+     * Porque a régua de canal deste repo mora na policy de `channel_sessions`,
+     * não em código de aplicação: copiá-la para cá seria a segunda grafia dela,
+     * e as duas divergiriam no primeiro ajuste da policy. Trocando o cliente, a
+     * faixa passa a ser filtrada pelo MESMO lugar que filtra a rota, sem uma
+     * linha de regra nova — e a visão de quem administra continua completa, pelo
+     * mesmo motivo: é a policy que a concede.
+     *
+     * Falha para o lado do silêncio: se a policy não devolver linha nenhuma, a
+     * faixa não aparece. Some um aviso — nunca aparece um canal que a pessoa não
+     * pode ver.
+     *
+     * `createClient` só lê cookie (não faz ida à rede), então isto não devolve
+     * ao layout a espera em fila que o lote abaixo existe para evitar.
+     */
+    const daSessao = await createClient();
+
+    /**
      * As cinco consultas que TODA página de `/app` paga, disparadas juntas.
      *
      * Elas eram sequenciais e independentes: cada uma esperava a anterior sem
@@ -116,6 +149,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
      *    `tests/unit/faixa-de-conexao-caida-vem-do-seam.test.tsx`, que EXECUTA
      *    este layout — a cerca anterior lia o texto-fonte e reprovava esta
      *    refatoração sem que nada tivesse quebrado.
+     *  - QUEM enxerga o quê é decidido pelo cliente que o seam recebe
+     *    (`daSessao`, acima): a mesma RLS que a rota do seletor de canais
+     *    aplica. Vigiado por
+     *    `tests/unit/faixa-respeita-os-canais-do-atendente.test.tsx`.
      */
     const [orgRes, conexoes, isEnrolled, mfaRequired, modulos] = await Promise.all([
       admin
@@ -123,7 +160,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         .select("onboarded_at, status, settings, timezone")
         .eq("id", activeOrg.orgId)
         .maybeSingle(),
-      listarConexoesCaidas(admin, activeOrg.orgId),
+      listarConexoesCaidas(daSessao, activeOrg.orgId),
       isMfaEnrolled(),
       requiresMfa(
         activeOrg.role,
