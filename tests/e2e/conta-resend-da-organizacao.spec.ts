@@ -61,11 +61,18 @@ async function entrar(page: Page, creds: Creds) {
 async function trocar(page: Page, orgId: string, name: string) {
   await page.getByTestId("tenant-switcher").click();
   await page.getByTestId(`tenant-switcher-item-${orgId}`).click();
+  await page.waitForURL(/\/app\/inbox(?:\?|$)/);
   await expect(page.getByTestId("tenant-switcher")).toHaveAttribute(
     "aria-label",
     `Organização: ${name}`,
   );
   await expect(page.getByTestId("organization-transition")).toHaveCount(0);
+}
+
+async function abrirMarcaPeloMenu(page: Page) {
+  await page.getByRole("link", { name: "Configurações", exact: true }).click();
+  await page.locator('a[href="/app/settings/marca"]').click();
+  await expect(page.locator("#org_resend_api_key")).toBeVisible();
 }
 
 async function conectar(page: Page, key: string, from: string) {
@@ -205,9 +212,7 @@ test("admin conecta e recarrega sem segredo, confere DNS, envia por duas contas 
     await entrar(page, creds);
     await trocar(page, ids[0]!, names[0]!);
     // Descoberta da porta real, pelo menu: não digitar a URL da funcionalidade.
-    await page.getByRole("link", { name: "Configurações", exact: true }).click();
-    await page.locator('a[href="/app/settings/marca"]').click();
-    await expect(page.locator("#org_resend_api_key")).toBeVisible();
+    await abrirMarcaPeloMenu(page);
     await expect(page.getByText("Nenhuma conta Resend conectada.", { exact: true })).toBeVisible();
     expect(await count(ids[0]!)).toBe(0);
 
@@ -328,7 +333,7 @@ test("admin conecta e recarrega sem segredo, confere DNS, envia por duas contas 
     if (restore.error) throw new Error("Não foi possível restaurar a conta própria.");
 
     await trocar(page, ids[1]!, names[1]!);
-    await page.reload();
+    await abrirMarcaPeloMenu(page);
     await expect(page.getByText("Nenhuma conta Resend conectada.", { exact: true })).toBeVisible();
     await expect(page.locator("#org_resend_from_email")).toHaveValue("");
     await conectar(page, fixture.b.key, fixture.b.from);
@@ -365,7 +370,7 @@ test("admin conecta e recarrega sem segredo, confere DNS, envia por duas contas 
     expect(postA[0]!.authorization_sha256 === postB[0]!.authorization_sha256).toBe(false);
     await capture("05-outra-empresa-outro-remetente.png");
     await trocar(page, ids[0]!, names[0]!);
-    await page.reload();
+    await abrirMarcaPeloMenu(page);
     await expect(page.locator("#org_resend_from_email")).toHaveValue(fixture.a.from);
     await page.getByRole("button", { name: "Desconectar", exact: true }).click();
     await expect(page.getByText("Nenhuma conta Resend conectada.", { exact: true })).toBeVisible();
