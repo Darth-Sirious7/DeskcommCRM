@@ -731,6 +731,7 @@ test.describe("LeadSubmitted causal pelo webhook WAHA", () => {
     await page.goto("/app/settings/conversoes");
     const chave = page.getByRole("switch", { name: "Enviar LeadSubmitted por clique CTWA à Meta" });
     await expect(chave).toBeChecked();
+    await page.getByRole("link", { name: "Histórico de envios", exact: true }).click();
     const historico = page.getByTestId("historico-de-cliques-ctwa");
     await expect(historico).toBeVisible();
     const linha = historico.locator("li").filter({ hasText: eventId });
@@ -740,12 +741,17 @@ test.describe("LeadSubmitted causal pelo webhook WAHA", () => {
     await expect(linha.getByText(eventId, { exact: true })).toBeVisible();
     mkdirSync("evidence/ctwa-3128", { recursive: true });
     await page.screenshot({ path: "evidence/ctwa-3128/clique-entregue-conversoes.png", fullPage: true });
+    await page.getByRole("link", { name: "Configuração", exact: true }).click();
     await chave.click();
     await expect(chave).not.toBeChecked();
     await expect(chave).toBeEnabled();
     await page.reload();
     await expect(chave).not.toBeChecked();
+    await page.getByRole("link", { name: "Histórico de envios", exact: true }).click();
+    await expect(historico).toBeVisible();
+    await expect(historico.locator("li").filter({ hasText: eventId })).toHaveCount(1);
     await page.screenshot({ path: "evidence/ctwa-3128/envio-desligado-conserva-historico.png", fullPage: true });
+    await page.getByRole("link", { name: "Configuração", exact: true }).click();
     await chave.click();
     await expect(chave).toBeChecked();
     await expect(chave).toBeEnabled();
