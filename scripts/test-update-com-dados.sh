@@ -131,7 +131,9 @@ tem_title() {
 echo "==> prelude (os stubs que um Postgres cru não tem)"
 # Extraído do scripts/test-db.sh em vez de duplicado: prelude que diverge do
 # harness mediria um mundo que o gate obrigatório não conhece.
-prelude=$(sed -n "/^psql_install <<'SQL'$/,/^SQL$/p" "$ROOT/scripts/test-db.sh" | sed '1d;$d')
+# O primeiro bloco literal é o prelude. Blocos posteriores gravam o recibo do
+# harness; concatená-los faria o update executar SQL/linhas de shell fora dele.
+prelude=$(awk -v marco="psql_install <<'SQL'" '$0 == marco { captura=1; next } captura && $0 == "SQL" { exit } captura { print }' "$ROOT/scripts/test-db.sh")
 # Guarda de instrumento: se a extração falhar (o test-db.sh muda de forma), o
 # prelude sai VAZIO e o install falha longe daqui, com um erro que não menciona
 # prelude nenhum. Aconteceu ao escrever este script: o regex sem o apóstrofo

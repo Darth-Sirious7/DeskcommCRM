@@ -273,33 +273,21 @@ alter default privileges for role postgres in schema public grant all on tables 
 alter default privileges for role postgres in schema public grant all on tables to authenticated;
 alter default privileges for role postgres in schema public grant all on tables to service_role;
 
--- O MESMO DEFAULT ACL, PARA SEQUENCES (issue #887).
+-- PERFIL LEGADO DO BOOTSTRAP, TAMBÉM PARA SEQUENCES (Refs #887).
 --
--- Terceira e última família do `pg_default_acl` que um projeto Supabase carrega
--- em `public`. Sem ela a reprodução continuava parcial: uma tabela nova com
--- `bigserial` nasceria com a coluna concedida aos três papéis e a SEQUÊNCIA dela
--- não — e `nextval` é privilégio de sequence, não de coluna. Invariante do tipo
--- "authenticated não escreve nesta tabela" ficaria verde por construção enquanto
--- o `insert` real do produto falharia com `42501 permission denied for sequence`.
+-- O harness reproduz o perfil ALL observado nas imagens Supabase legadas, para
+-- que um REVOKE do produto seja testado contra uma origem realmente concedida.
+-- Isso NÃO obriga tabelas finais a manter ALL nem desfaz o fechamento escolhido
+-- pelo provedor (decisão219A). É uma régua do instrumento, não uma migration.
+-- Em sequence, ALL concede SELECT, UPDATE e USAGE. nextval aceita USAGE OU
+-- UPDATE; currval/lastval aceitam USAGE OU SELECT. Sem a concessão de sequence,
+-- o modelo fica mais restritivo que o perfil legado e uma negação pode passar
+-- no gate enquanto o papel conseguiria usar a sequence no produto modelado.
 --
--- Hoje o schema não tem sequência nenhuma (`grep -ci 'create sequence'` no
--- baseline = 0; nenhum `bigserial`), então isto não muda veredito de invariante
--- algum. Está aqui para que a afirmação "o prelude reproduz o default ACL do
--- Supabase em public" seja verdadeira INTEIRA, e não verdadeira "para o que o
--- baseline usa hoje" — a diferença entre as duas é exatamente o que a #887 cobra.
---
--- Medido em 2026-10-26 no `pg_default_acl` do Supabase local desta máquina
--- (supabase/postgres:15.19.0.004), as três famílias de uma vez:
---
---     postgres | public | TABLES    | {postgres=arwdDxt,anon=arwdDxt,
---                                      authenticated=arwdDxt,service_role=arwdDxt}
---     postgres | public | SEQUENCES | {postgres=rwU,anon=rwU,
---                                      authenticated=rwU,service_role=rwU}
---     postgres | public | FUNCTIONS | {postgres=X,anon=X,
---                                      authenticated=X,service_role=X}
---
--- `grant all` em sequence é `r` (SELECT), `w` (UPDATE) e `U` (USAGE): `nextval`
--- exige `U`, e `currval`/`lastval` vêm de graça.
+-- Perfil medido em supabase/postgres:15.19.0.004 (26/10/2026):
+-- postgres/public: TABLES arwdDxt, SEQUENCES rwU, FUNCTIONS X nos três papéis.
+-- No PG17, ALL de tabela inclui também MAINTAIN. A sonda abaixo registra o
+-- conjunto inteiro da major, antes de qualquer SQL do baseline.
 alter default privileges for role postgres in schema public grant all on sequences to anon;
 alter default privileges for role postgres in schema public grant all on sequences to authenticated;
 alter default privileges for role postgres in schema public grant all on sequences to service_role;
@@ -414,6 +402,25 @@ echo "==> conferindo que o banco efêmero é o do PRODUTO (antes do baseline)"
 # `-q` é obrigatório: sem ele o stdout leva "CREATE FUNCTION"/"DROP FUNCTION"
 # junto do resultado e a comparação com "t" falha sempre — sonda que reprova o
 # banco certo é tão inútil quanto sonda que aprova o errado.
+# Recibo próprio do harness, anterior ao baseline. O schema test_db já é usado
+# pelos marcadores; sua ACL compartilhada permanece intacta. Só esta tabela nova
+# é fechada aos papéis da API. Os moldes copiam o recibo, não os objetos de sonda.
+psql_install <<'SQL'
+create schema if not exists test_db;
+create table test_db.acl_do_bootstrap (
+  familia text not null,
+  papel text not null,
+  major integer not null,
+  perfil text not null,
+  antes_do_baseline boolean not null,
+  sondas_removidas_antes_do_baseline boolean not null default false,
+  diretos text[] not null,
+  efetivos text[] not null,
+  primary key (familia, papel)
+);
+revoke all on table test_db.acl_do_bootstrap from public, anon, authenticated, service_role;
+SQL
+
 fidelidade="$(docker exec -i "$CONTAINER" psql -U postgres -d "$TEMPLATE" -v ON_ERROR_STOP=1 -q -tA -f - <<'SQL'
 create function public.fn_sonda_fidelidade_do_harness() returns int
   language sql security definer as $fn$ select 1 $fn$;
@@ -422,6 +429,21 @@ select exists (
    where p.proname = 'fn_sonda_fidelidade_do_harness'
      and split_part(a::text, '=', 1) = 'anon'
 );
+
+-- A ACL direta registra a origem; a efetiva também pode vir de herança/PUBLIC.
+insert into test_db.acl_do_bootstrap
+  (familia, papel, major, perfil, antes_do_baseline, diretos, efetivos)
+select 'functions', papel, current_setting('server_version_num')::integer / 10000,
+       'supabase-public-legado-all',
+       to_regclass('public.organizations') is null
+         and to_regclass('test_db.aplicacoes_do_baseline') is null,
+       coalesce((select array_agg(distinct a.privilege_type order by a.privilege_type)
+                   from pg_proc objeto, aclexplode(objeto.proacl) a
+                  where objeto.oid = 'public.fn_sonda_fidelidade_do_harness()'::regprocedure and a.grantee = papel::regrole), '{}'::text[]),
+       coalesce((select array_agg(privilegio order by privilegio)
+                   from unnest(array['EXECUTE']::text[]) privilegios(privilegio)
+                  where has_function_privilege(papel, 'public.fn_sonda_fidelidade_do_harness()', privilegio)), '{}'::text[])
+  from (values ('anon'), ('authenticated'), ('service_role')) papeis(papel);
 drop function public.fn_sonda_fidelidade_do_harness();
 SQL
 )"
@@ -456,6 +478,21 @@ select count(distinct a.grantee)
  where c.oid = 'public.sonda_fidelidade_do_harness'::regclass
    and a.privilege_type = 'DELETE'
    and a.grantee in ('anon'::regrole, 'authenticated'::regrole, 'service_role'::regrole);
+
+-- A ACL direta registra a origem; a efetiva também pode vir de herança/PUBLIC.
+insert into test_db.acl_do_bootstrap
+  (familia, papel, major, perfil, antes_do_baseline, diretos, efetivos)
+select 'tables', papel, current_setting('server_version_num')::integer / 10000,
+       'supabase-public-legado-all',
+       to_regclass('public.organizations') is null
+         and to_regclass('test_db.aplicacoes_do_baseline') is null,
+       coalesce((select array_agg(distinct a.privilege_type order by a.privilege_type)
+                   from pg_class objeto, aclexplode(objeto.relacl) a
+                  where objeto.oid = 'public.sonda_fidelidade_do_harness'::regclass and a.grantee = papel::regrole), '{}'::text[]),
+       coalesce((select array_agg(privilegio order by privilegio)
+                   from unnest(array['DELETE','INSERT','REFERENCES','SELECT','TRIGGER','TRUNCATE','UPDATE']::text[] || case when current_setting('server_version_num')::integer >= 170000 then array['MAINTAIN']::text[] else '{}'::text[] end) privilegios(privilegio)
+                  where has_table_privilege(papel, 'public.sonda_fidelidade_do_harness', privilegio)), '{}'::text[])
+  from (values ('anon'), ('authenticated'), ('service_role')) papeis(papel);
 drop table public.sonda_fidelidade_do_harness;
 SQL
 )"
@@ -471,17 +508,10 @@ if [ "$fidelidade_tabelas" != "3" ]; then
 fi
 echo "    ✓ tabela nova nasce com DELETE direto para anon, authenticated e service_role"
 
-# A TERCEIRA FAMÍLIA: SEQUENCE (issue #887), no mesmo instante e pelo mesmo motivo.
-# O `pg_dump` também grava o `ALTER DEFAULT PRIVILEGES … ON SEQUENCES` dele, na
-# mesma região do fim do arquivo (~:4762) — depois do corpo —, então depois do
-# baseline a linha existe com ou sem o prelude e uma asserção ali seria verde por
-# construção. Antes dele, só o prelude pode ter gravado.
-#
-# Mede USAGE nos três papéis: `nextval` exige USAGE, e USAGE é o privilégio de
-# sequence que faz um `insert` em tabela com `bigserial` funcionar pelo
-# PostgREST. `aclexplode` e não `has_sequence_privilege` pelo mesmo motivo da
-# sonda de funções: o grant DIRETO é o que distingue o banco fiel do fictício.
-# Hoje nenhuma sequência existe no schema; a sonda cria a dela.
+# A terceira família é medida também antes do baseline, em objeto próprio.
+# USAGE direto nos três papéis identifica a concessão do perfil legado. Não é a
+# única forma de autorizar nextval: UPDATE também basta. O recibo guarda SELECT,
+# UPDATE e USAGE, por papel, para não confundir essa sonda com prova de uso.
 fidelidade_sequences="$(docker exec -i "$CONTAINER" psql -U postgres -d "$TEMPLATE" -v ON_ERROR_STOP=1 -q -tA -f - <<'SQL'
 create sequence public.sonda_fidelidade_do_harness_seq;
 select count(distinct a.grantee)
@@ -489,20 +519,43 @@ select count(distinct a.grantee)
  where c.oid = 'public.sonda_fidelidade_do_harness_seq'::regclass
    and a.privilege_type = 'USAGE'
    and a.grantee in ('anon'::regrole, 'authenticated'::regrole, 'service_role'::regrole);
+
+-- A ACL direta registra a origem; a efetiva também pode vir de herança/PUBLIC.
+insert into test_db.acl_do_bootstrap
+  (familia, papel, major, perfil, antes_do_baseline, diretos, efetivos)
+select 'sequences', papel, current_setting('server_version_num')::integer / 10000,
+       'supabase-public-legado-all',
+       to_regclass('public.organizations') is null
+         and to_regclass('test_db.aplicacoes_do_baseline') is null,
+       coalesce((select array_agg(distinct a.privilege_type order by a.privilege_type)
+                   from pg_class objeto, aclexplode(objeto.relacl) a
+                  where objeto.oid = 'public.sonda_fidelidade_do_harness_seq'::regclass and a.grantee = papel::regrole), '{}'::text[]),
+       coalesce((select array_agg(privilegio order by privilegio)
+                   from unnest(array['SELECT','UPDATE','USAGE']::text[]) privilegios(privilegio)
+                  where has_sequence_privilege(papel, 'public.sonda_fidelidade_do_harness_seq', privilegio)), '{}'::text[])
+  from (values ('anon'), ('authenticated'), ('service_role')) papeis(papel);
 drop sequence public.sonda_fidelidade_do_harness_seq;
 SQL
 )"
 if [ "$fidelidade_sequences" != "3" ]; then
-  echo "FATAL: neste banco uma SEQUENCE nova em public NÃO nasce com USAGE direto para anon," >&2
-  echo "       authenticated e service_role (achei ${fidelidade_sequences:-nada} de 3). Num projeto" >&2
-  echo "       Supabase de verdade ela nasce: o bootstrap grava ALTER DEFAULT PRIVILEGES … ON" >&2
-  echo "       SEQUENCES em pg_default_acl antes de qualquer SQL nosso. Sem isto, tabela com" >&2
-  echo "       'bigserial' funcionaria no gate e responderia 'permission denied for sequence' no" >&2
-  echo "       produto (issue #887). Restaure as 3 linhas de" >&2
-  echo "       'alter default privileges … on sequences' no prelude acima." >&2
+  echo "FATAL: o bootstrap de teste não reproduziu USAGE direto em sequence nos três papéis." >&2
+  echo "       Perfil legado ALL: sem essa origem, o modelo é mais restritivo e pode aprovar" >&2
+  echo "       uma negação que não valeria no produto modelado. Confira as três concessões" >&2
+  echo "       on sequences do prelude; nextval admite USAGE OU UPDATE." >&2
   exit 1
 fi
 echo "    ✓ sequence nova nasce com USAGE direto para anon, authenticated e service_role"
+
+# A prova de remoção também é anterior ao produto, não apenas ao Vitest.
+psql_install <<'SQL'
+update test_db.acl_do_bootstrap
+   set sondas_removidas_antes_do_baseline =
+       to_regclass('public.sonda_fidelidade_do_harness') is null
+       and to_regclass('public.sonda_fidelidade_do_harness_seq') is null
+       and to_regprocedure('public.fn_sonda_fidelidade_do_harness()') is null
+       and to_regclass('public.organizations') is null
+       and to_regclass('test_db.aplicacoes_do_baseline') is null;
+SQL
 
 echo "==> modo INSTALL: aplicando baseline.sql com ON_ERROR_STOP=1"
 aplicar_baseline
