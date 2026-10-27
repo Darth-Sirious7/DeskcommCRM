@@ -64,7 +64,7 @@ async function main(): Promise<void> {
   delete process.env.OPENROUTER_API_KEY;
   const origens = new Set([new URL(url).origin, new URL(servidor).origin]);
   const fetchReal = globalThis.fetch;
-  const chamadas: Array<{ metodo: string; caminho: string }> = [];
+  const chamadas: Array<{ metodo: string; caminho: string; filtros?: { id: string | null; organization_id: string | null } }> = [];
   let observando = false;
   let redeExterna = 0;
   globalThis.fetch = async (input, init) => {
@@ -73,9 +73,11 @@ async function main(): Promise<void> {
       redeExterna++;
       throw new Error("rede externa proibida nesta prova");
     }
-    if (observando) chamadas.push({
-      metodo: init?.method ?? (input instanceof Request ? input.method : "GET"),
-      caminho: destino.pathname,
+    const metodo = init?.method ?? (input instanceof Request ? input.method : "GET");
+    if (observando) chamadas.push({ metodo, caminho: destino.pathname,
+      ...(metodo === "PATCH" && destino.pathname === "/rest/v1/messages" ? {
+        filtros: { id: destino.searchParams.get("id"), organization_id: destino.searchParams.get("organization_id") },
+      } : {}),
     });
     // Instrumentação observacional: a resposta continua sendo do serviço real.
     return fetchReal(input, init);
@@ -157,7 +159,7 @@ async function main(): Promise<void> {
     assert.equal(evento.error, null);
     const { deriveMessageMedia } = await import("@/workers/media-derive-worker");
     const trocarCaminho = async (caminho: string) => {
-      const alteracao = await sessao.from("messages").update({ media_storage_path: caminho })
+      const alteracao = await sessao.from("messages").update({ media_storage_path: caminho, media_derived_status: null })
         .eq("id", msgA).eq("organization_id", orgA).select("id").single();
       assert.equal(alteracao.error, null, "JWT próprio precisa alterar só a linha própria");
       assert.equal(alteracao.data?.id, msgA);
@@ -171,8 +173,15 @@ async function main(): Promise<void> {
       const resultado = await deriveMessageMedia(evento.data as EventRow);
       observando = false;
       assert.deepEqual(resultado, { consumer_key: "media_derive_v1", status: "skipped", detail: "invalid_media_path" });
-      assert.deepEqual(chamadas, [{ metodo: "GET", caminho: "/rest/v1/messages" }], "o negativo só pode ler a mensagem, sem Storage, conversão ou escrita");
-      assert.deepEqual(await lerMensagem(msgA, orgA), antes, "negativo alterou a linha própria");
+      assert.deepEqual(chamadas, [
+        { metodo: "GET", caminho: "/rest/v1/messages" },
+        { metodo: "PATCH", caminho: "/rest/v1/messages", filtros: { id: `eq.${msgA}`, organization_id: `eq.${orgA}` } },
+      ], "o negativo só pode ler e marcar a mensagem própria, sem Storage ou conversão");
+      const depois = await lerMensagem(msgA, orgA);
+      assert.equal(depois.media_derived_status, "skipped", "a recusa precisa liberar a espera por derivação");
+      // updated_at muda pelo trigger canônico; todos os demais campos ficam iguais.
+      assert(Date.parse(String(depois.updated_at)) >= Date.parse(String(antes.updated_at)));
+      assert.deepEqual({ ...depois, media_derived_status: antes.media_derived_status, updated_at: antes.updated_at }, antes, "negativo alterou outro campo da linha própria");
       assert.deepEqual(await lerMensagem(msgB, orgB), controleB, "negativo alterou a outra organização");
     }
     fase = "positivo-real";
@@ -196,7 +205,7 @@ async function main(): Promise<void> {
       run_id: process.env.GITHUB_RUN_ID ?? null,
       banco_e_storage: "reais locais", handler: "deriveMessageMedia real sobre EventRow persistido",
       jwt_proprio: { objeto_a: "bytes A", objeto_b: "negado", alteracao_linha_a: "permitida" },
-      negativos: 3, downloads_negativos: 0, escritas_negativas: 0,
+      negativos: 3, downloads_negativos: 0, marcas_skipped_negativas: 3, outras_escritas_negativas: 0,
       positivo: { downloads: 1, status: "ready", texto: textoA, extrator: "PDF real" },
       controle_b_inalterado: true, chamadas_provedor_externo: redeExterna,
       limite: "não mede navegador, cron ou fila; mede o handler e serviços reais sem dublê de SQL",
