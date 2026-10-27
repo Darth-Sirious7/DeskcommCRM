@@ -4006,29 +4006,34 @@ artefatos produzidos no head do lote.
 
 ## Nome e rótulo do documento recebido — adaptação #3511 (2026-10-26)
 
-**Execução real iniciada; sem aceite visual.** No head `ecee03644`, a
-[parte 6 do CI](https://github.com/melgarafael/DeskcommCRM/actions/runs/40422932674/job/121922883020)
-coletou e executou o caso, mas ele atingiu o timeout esperando o evento de
-download. Isso não confirma o arquivo salvo. A próxima execução observa alvo
-do toque, status HTTP e evento no contexto, com indicadores sanitizados e sem
-arquivar URLs, mantendo as exigências de nome e bytes.
+**Prova real confirmada no head `20e366d6f`.** A
+[parte 6 do CI de 2026-10-27](https://github.com/melgarafael/DeskcommCRM/actions/runs/40449568814/job/122009511765)
+passou os 87 casos, incluindo o documento em 11,4s, sobre o checkout de merge
+`28912fdea8ad75e5114f48ba073c2c56428dfa7f`. O agregador E2E e as sete partes
+passaram. A composição posterior com `main@f44736e7b` mantém o código e o caso
+do documento byte a byte; seus checks próprios ainda precisam confirmar o conjunto.
 
-O caso de
-`atender-pelo-celular.spec.ts` reutiliza a conta agent e a conversa sintética do
-spec. Upload real no bucket e mensagens próprias preparam XLSX/PDF com nomes
-acentuados; o clique real no download deve preservar `suggestedFilename` e os
-bytes completos. A rota de preview é relida sem pedir download. Uma terceira
-mensagem sem nome, com objeto real e extensão genérica `.bin`, deve mostrar
-`Documento XLSX` a partir do MIME canônico. Os unitários mantêm os controles
-discriminantes sem path; o E2E precisa do objeto para montar a bolha real.
-O CI já executa esse spec na parte 6; a distribuição não mudou.
+O caso de `atender-pelo-celular.spec.ts` usa banco e Storage reais, a conta agent
+e a conversa sintética do spec. XLSX/PDF com nomes acentuados são salvos por
+toque nativo, com `suggestedFilename` e bytes completos conferidos. A rota de
+preview é relida sem pedir download. Uma terceira mensagem sem nome usa objeto
+real de extensão genérica `.bin` e mostra `Documento XLSX` pelo MIME; a medição
+física confirmou 124px visíveis para 124px de texto. Os unitários mantêm os
+controles discriminantes sem path; o E2E precisa do objeto para montar a bolha.
+Nenhuma rota, resposta ou Storage foi dublado nesse caso.
 
-A captura só ocorre após todas as assertivas, em
-`evidence/documento-3511-01a178b3/`, recolhida pelo artefato de sucesso existente.
-Ainda não há captura ou PASS visual declarado. Trace/vídeo são opções de worker
-e ficam desligados neste arquivo para não arquivar URLs assinadas; as capturas e
-assertivas dos casos anteriores permanecem, mas suas falhas não terão trace/vídeo.
-O caso usa apenas nomes e bytes sintéticos e limpa seus
-objetos ao terminar. Não mede download pela janela anterior à persistência do
-worker, nem um viewer de PDF/aplicativo externo; essa janela permanece coberta
-pela unidade da rota e exige observação em bancada antes do aceite final.
+Os três PNGs e os dois JSONs em `evidence/documento-3511-01a178b3/` foram
+recolhidos do artefato e inspecionados. Cada download mede área de 44×44px,
+quatro pontos livres no download e quatro no menu, centro na viewport de
+390×844, cartão contido e página sem overflow horizontal. O toque concluiu e
+a cadeia observada foi rota302 → Storage200. Nomes arbitrários longos mantêm
+truncamento e título integral. As capturas e recibos físicos são preservados
+antes da limpeza dos recursos sintéticos.
+
+O CI já executa o spec na parte 6; a distribuição não mudou. Trace/vídeo são
+opções de worker e ficam desligados neste arquivo para não arquivar URLs
+assinadas; as capturas e assertivas antigas permanecem, mas suas falhas não
+terão trace/vídeo. Não foi medido download na janela anterior à persistência
+do worker, viewer PDF ou aplicativo externo. O PASS de UX deste head não
+substitui os cinco checks obrigatórios: o verify antigo falhou no teste de
+relógio, cujo reparo central entra pela composição da main, sem repetir a rodada antiga.
