@@ -1356,6 +1356,14 @@ export const AUDIT_ACTIONS = [
   "ai.knowledge_source_updated",
   "ai.knowledge_source_archived",
   "ai.knowledge_source_reindexed",
+  // A CONTA Resend da organização (#3287): conectar e desconectar. Códigos
+  // próprios (não um `org.branding_updated`) porque a pergunta depois é outra —
+  // "quem ligou/desligou a conta de e-mail própria, e quando" muda por qual
+  // domínio os e-mails saem e onde caem os registros de entrega. A chave em si
+  // NUNCA entra no metadata; só o domínio, já que a coluna é append-only e a
+  // cascata de LGPD não a alcança (mesma razão do `ai.case_alert_settings_removed`).
+  "org.resend_account_connected",
+  "org.resend_account_disconnected",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */
