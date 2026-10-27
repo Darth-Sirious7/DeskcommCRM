@@ -46,5 +46,18 @@
     "port_remaining": false
   },
   "http_runtime": "pending official CI; local Playwright collection only",
-  "ui": "not delivered; issue3201 stays open"
+  "ui": "not delivered; issue3201 stays open",
+  "local_db_scope": "Only baseline_sha256 above was applied locally; integrated baseline below awaits exact-head CI install/update and invariants.",
+  "integrated_contract": {
+    "main_before": "3b3bec7d66acea1299fb09baaea8797c7b691913",
+    "main_integrated": "790b592fbaa79ebf682625637d752aff368ad94d",
+    "types_blobs_identical": true,
+    "types_blob": "b9d8e587b3dca09f3245d26627a6f707fa532620",
+    "fn_conversation_assign_header_unchanged": true,
+    "header": "create or replace function public.fn_conversation_assign(p_organization_id uuid, p_conversation_id uuid, p_to_user_id uuid, p_reason text, p_expected_assignee uuid default null::uuid, p_enforce_expected boolean default false) returns setof conversations language plpgsql security definer set search_path to 'public'",
+    "integrated_head_after_merge": "2661fbac72c505b1435caca0d60bdd929dd96917",
+    "integrated_baseline_sha256": "550bec0574c5f88b97e2b5157fee6d1db8dcb6a63d999cf264f537906954067e",
+    "new_schema_diff": ["9017 body of fn_conversation_assign, unchanged signature/return"],
+    "integrated_baseline_db_proof": "pending exact-head CI, old local proof remains scoped to its prior baseline hash"
+  }
 }
