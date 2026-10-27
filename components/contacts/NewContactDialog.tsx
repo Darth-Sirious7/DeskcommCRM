@@ -53,9 +53,20 @@ interface Props {
    * selecionado, em vez de mandar a pessoa procurar de novo o que acabou de criar.
    */
   onCriado?: (contato: Contact) => void;
+  /**
+   * Só o cadastro que conclui a jornada pode navegar para a conversa. Quem
+   * fornece um contato a outro formulário desliga para preservar o rascunho.
+   */
+  permitirIniciarConversa?: boolean;
 }
 
-export function NewContactDialog({ open, onOpenChange, nomeInicial, onCriado }: Props) {
+export function NewContactDialog({
+  open,
+  onOpenChange,
+  nomeInicial,
+  onCriado,
+  permitirIniciarConversa = true,
+}: Props) {
   const t = useT();
   const org = useActiveOrg();
   const perfil = perfilDoPais(org?.country);
@@ -188,7 +199,7 @@ export function NewContactDialog({ open, onOpenChange, nomeInicial, onCriado }: 
     onOpenChange(false);
     if (!contato) return;
     onCriado?.(contato);
-    if (!abrir) return;
+    if (!abrir || !permitirIniciarConversa) return;
     if (!contato.phone_number) {
       toast.info(t("Contato salvo. Cadastre um telefone para abrir a conversa."));
       return;
@@ -205,7 +216,15 @@ export function NewContactDialog({ open, onOpenChange, nomeInicial, onCriado }: 
             {t("Preencha pelo menos um identificador (email ou telefone).")}
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+        <form
+          onSubmit={(event) => {
+            // O portal mantém a árvore React: o submit deste subcadastro não
+            // pode submeter também o negócio ou a marcação ainda em edição.
+            event.stopPropagation();
+            void form.handleSubmit(onSubmit)(event);
+          }}
+          className="space-y-4"
+        >
           <div className="space-y-2">
             <Label htmlFor="name">{t("Nome")}</Label>
             <Input id="name" {...form.register("name")} />
@@ -269,14 +288,16 @@ export function NewContactDialog({ open, onOpenChange, nomeInicial, onCriado }: 
                 flag) porque o mesmo formulário tem dois desfechos diferentes —
                 a intenção viaja no argumento, não em estado que pode sobrar
                 para o próximo cadastro. */}
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={create.isPending}
-              onClick={form.handleSubmit((values) => void salvar(values, true))}
-            >
-              {t("Salvar e iniciar conversa")}
-            </Button>
+            {permitirIniciarConversa && (
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={create.isPending}
+                onClick={form.handleSubmit((values) => void salvar(values, true))}
+              >
+                {t("Salvar e iniciar conversa")}
+              </Button>
+            )}
             <Button type="submit" disabled={create.isPending}>
               {create.isPending ? t("Criando…") : t("Criar contato")}
             </Button>

@@ -23,7 +23,7 @@
  * Dublê de `fetch`, componente de verdade: é a única forma de medir a ORDEM dos
  * pedidos (criar → abrir → assumir → navegar), que é onde o defeito moraria.
  */
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -33,6 +33,8 @@ import type { CreateContactResult } from "@/app/api/v1/contacts/_handler";
 import type { ApiSuccess } from "@/lib/api/wrappers";
 import type { Contact } from "@/lib/types/contacts";
 import { NewContactDialog } from "@/components/contacts/NewContactDialog";
+import { VinculoDaMarcacao } from "@/components/agenda/VinculoDaMarcacao";
+import { ContactsListClient } from "@/app/app/contacts/_client";
 
 const pushMock = vi.hoisted(() => vi.fn());
 const toastMock = vi.hoisted(() => ({
@@ -49,6 +51,7 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   useActiveOrg: () => ({ currency: "BRL", country: null }),
   useAuth: () => ({ user: { id: "usuario-eu" } }),
+  usePermission: () => true,
 }));
 vi.mock("sonner", () => ({ toast: toastMock }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));
@@ -105,16 +108,37 @@ function resposta(corpo: unknown, status = 200) {
  * O roteador do dublê. `abrir` e `claim` são ganchos por caso, porque é o
  * desfecho DELES que muda entre os testes; o resto é sempre o mesmo corpo.
  */
-function rotear(opts: {
-  abertura?: () => Response;
-  claim?: () => Response;
-  contato?: Contact;
-} = {}) {
-  const fetchMock = vi.fn(async (url: unknown) => {
+function rotear(
+  opts: {
+    abertura?: () => Response;
+    claim?: () => Response;
+    contato?: Contact;
+    canais?: number;
+    erroContato?: boolean;
+  } = {},
+) {
+  const fetchMock = vi.fn(async (url: unknown, init?: RequestInit) => {
     const caminho = String(url);
     if (caminho.includes("/api/v1/contact-tags")) return resposta({ data: [] });
-    if (caminho.includes("/api/v1/channel-sessions")) return resposta({ data: [] });
+    if (caminho.includes("/api/v1/agenda/vinculos"))
+      return resposta({ data: { contacts: [], conversations: [] } });
+    if (caminho.includes("/api/v1/channel-sessions"))
+      return resposta({
+        data: Array.from({ length: opts.canais ?? 0 }, (_, i) => ({
+          id: `canal-${i + 1}`,
+          display_name: `Canal ${i + 1}`,
+          waha_session_name: `cadastro-numero-${i + 1}`,
+          provider: "waha",
+          status: "WORKING",
+          phone_number: `+551198765430${i}`,
+          metadata: {},
+        })),
+      });
     if (caminho.includes("/api/v1/contacts")) {
+      if (init?.method !== "POST") return resposta({ data: [], meta: { has_more: false } });
+      if (opts.erroContato) {
+        return resposta({ error: { code: "validation_error", message: "Contato recusado." } }, 422);
+      }
       return resposta(
         opts.contato
           ? ({ data: { contact: opts.contato, action: "created" } } as unknown)
@@ -135,16 +159,19 @@ function rotear(opts: {
 /** Só os pedidos que interessam, na ORDEM em que saíram. */
 function caminhos(fetchMock: ReturnType<typeof rotear>): string[] {
   return fetchMock.mock.calls
+    .filter(([, init]) => init?.method === "POST")
     .map(([url]) => String(url))
-    .filter((c) => c.includes("/api/v1/contacts") || c.includes("/open-with-contact") || c.endsWith("/claim"))
+    .filter(
+      (c) =>
+        c.includes("/api/v1/contacts") || c.includes("/open-with-contact") || c.endsWith("/claim"),
+    )
     .map((c) => c.replace("http://localhost", ""));
 }
 
 /** O corpo JSON do pedido que termina em `sufixo`. */
 function corpoDo(fetchMock: ReturnType<typeof rotear>, sufixo: string): Record<string, unknown> {
   const chamada = fetchMock.mock.calls.find(([url]) => String(url).endsWith(sufixo)) as
-    | [unknown, RequestInit?]
-    | undefined;
+    [unknown, RequestInit?] | undefined;
   return JSON.parse(String(chamada?.[1]?.body ?? "{}")) as Record<string, unknown>;
 }
 
@@ -160,6 +187,98 @@ afterEach(() => {
 });
 
 describe("NewContactDialog · salvar e iniciar conversa (#3483)", () => {
+  it("a lista real fecha o cadastro e mantém a continuação até abrir a conversa", async () => {
+    const fetchMock = rotear({ canais: 1 });
+    const user = userEvent.setup();
+    envolver(<ContactsListClient />);
+    await user.click(screen.getByRole("button", { name: "Novo contato" }));
+    const cadastro = screen.getByRole("dialog", { name: "Novo contato" });
+    await user.type(within(cadastro).getByLabelText(/Telefone/i), "+5511987654321");
+    await user.click(within(cadastro).getByRole("button", { name: "Salvar e iniciar conversa" }));
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/app/inbox?id=conv-1"));
+    expect(screen.queryByRole("dialog", { name: "Novo contato" })).not.toBeInTheDocument();
+    expect(caminhos(fetchMock)).toEqual([
+      "/api/v1/contacts",
+      "/api/v1/conversations/open-with-contact",
+      "/api/v1/conversations/conv-1/claim",
+    ]);
+  });
+
+  it.each([1, 2])(
+    "o cadastro avulso conserva o atalho com callback e %i canal/is",
+    async (canais) => {
+      const fetchMock = rotear({ canais });
+      const criado = vi.fn();
+      const user = userEvent.setup();
+      envolver(
+        <NewContactDialog
+          open
+          onOpenChange={vi.fn()}
+          onCriado={criado}
+          nomeInicial="Joana Prado"
+        />,
+      );
+      await user.type(screen.getByLabelText(/Telefone/i), "+5511987654321");
+      await user.click(screen.getByRole("button", { name: "Salvar e iniciar conversa" }));
+      if (canais === 2) {
+        const seletor = await screen.findByRole("dialog", {
+          name: "Escolha o canal para iniciar a conversa",
+        });
+        expect(
+          fetchMock.mock.calls.some(([url]) => String(url).includes("/open-with-contact")),
+        ).toBe(false);
+        await user.click(within(seletor).getByRole("radio", { name: /Canal 2/ }));
+        await user.click(
+          within(seletor).getByRole("button", { name: "Iniciar conversa" }),
+        );
+      }
+      await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/app/inbox?id=conv-1"));
+      expect(criado).toHaveBeenCalledWith(CONTATO);
+      expect(corpoDo(fetchMock, "/open-with-contact")).toMatchObject({
+        contact_id: "ct-77",
+        channel_session_id: `canal-${canais}`,
+      });
+    },
+  );
+
+  it("o cadastro da agenda devolve o contato sem sair da marcação", async () => {
+    const fetchMock = rotear();
+    const mudou = vi.fn();
+    const user = userEvent.setup();
+    envolver(<VinculoDaMarcacao contactId="" conversationId="" onChange={mudou} />);
+    await user.type(screen.getByRole("combobox", { name: /Quem será atendido/ }), "Joana");
+    await user.click(await screen.findByRole("button", { name: /Criar/ }));
+    const cadastro = screen.getByRole("dialog", { name: "Novo contato" });
+    expect(
+      within(cadastro).queryByRole("button", { name: "Salvar e iniciar conversa" }),
+    ).not.toBeInTheDocument();
+    await user.type(within(cadastro).getByLabelText(/Telefone/i), "+5511987654321");
+    await user.click(within(cadastro).getByRole("button", { name: "Criar contato" }));
+    await waitFor(() => expect(mudou).toHaveBeenCalledWith("ct-77", ""));
+    expect(caminhos(fetchMock)).toEqual(["/api/v1/contacts"]);
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it("a recusa do contato preserva a busca da agenda e não confirma o vínculo", async () => {
+    const fetchMock = rotear({ erroContato: true });
+    const mudou = vi.fn();
+    const user = userEvent.setup();
+    envolver(<VinculoDaMarcacao contactId="" conversationId="" onChange={mudou} />);
+    const busca = screen.getByRole("combobox", { name: /Quem será atendido/ });
+    await user.type(busca, "Joana");
+    await user.click(await screen.findByRole("button", { name: /Criar/ }));
+    const cadastro = screen.getByRole("dialog", { name: "Novo contato" });
+    await user.type(within(cadastro).getByLabelText(/Telefone/i), "+5511987654321");
+    await user.click(within(cadastro).getByRole("button", { name: "Criar contato" }));
+    await waitFor(() => expect(showApiErrorMock).toHaveBeenCalled());
+    expect(cadastro).toBeVisible();
+    expect(within(cadastro).getByLabelText(/Telefone/i)).toHaveValue("+5511987654321");
+    expect(busca).toHaveValue("Joana");
+    expect(mudou).not.toHaveBeenCalled();
+    expect(caminhos(fetchMock)).toEqual(["/api/v1/contacts"]);
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+
   it("⭐ cria o contato, abre a conversa dele, assume e vai para o Inbox", async () => {
     const fetchMock = rotear();
     const user = userEvent.setup();
@@ -205,8 +324,7 @@ describe("NewContactDialog · salvar e iniciar conversa (#3483)", () => {
     // 403 é o que `open-with-contact` devolve a quem não é `agent` (spec 13
     // §4). O caminho novo herda a recusa do antigo — nada aqui a contorna.
     const fetchMock = rotear({
-      abertura: () =>
-        resposta({ error: { code: "forbidden", message: "Sem permissão." } }, 403),
+      abertura: () => resposta({ error: { code: "forbidden", message: "Sem permissão." } }, 403),
     });
     const user = userEvent.setup();
     envolver(<NewContactDialog open onOpenChange={vi.fn()} nomeInicial="Joana Prado" />);

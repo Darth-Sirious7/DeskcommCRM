@@ -18,10 +18,10 @@
  *     diz por quê — a thread 1:1 é com uma pessoa, e o funil aceita lead sem
  *     nenhuma (automação e importação criam assim de propósito).
  */
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Stage } from "@/lib/kanban/types";
@@ -91,10 +91,37 @@ function resposta(corpo: unknown, status = 200) {
   });
 }
 
-function rotear(opts: { abertura?: () => Response } = {}) {
-  const fetchMock = vi.fn(async (url: unknown) => {
+function rotear(opts: { abertura?: () => Response; erroContato?: boolean; canais?: number } = {}) {
+  const fetchMock = vi.fn(async (url: unknown, init?: RequestInit) => {
     const caminho = String(url);
-    if (caminho.includes("/api/v1/channel-sessions")) return resposta({ data: [] });
+    if (caminho.includes("/api/v1/contacts") && init?.method === "POST") {
+      if (opts.erroContato)
+        return resposta(
+          { error: { code: "validation_failed", message: "Não foi possível criar o contato." } },
+          422,
+        );
+      return resposta(
+        {
+          data: {
+            contact: { id: CONTATO, name: "Joana Prado", phone_number: "+5511987654321" },
+            action: "created",
+          },
+        },
+        201,
+      );
+    }
+    if (caminho.includes("/api/v1/channel-sessions"))
+      return resposta({
+        data: Array.from({ length: opts.canais ?? 0 }, (_, i) => ({
+          id: `canal-${i + 1}`,
+          display_name: `Canal ${i + 1}`,
+          waha_session_name: `cadastro-numero-${i + 1}`,
+          provider: "waha",
+          status: "WORKING",
+          phone_number: `+551198765430${i}`,
+          metadata: {},
+        })),
+      });
     if (caminho.includes("/api/v1/leads")) return resposta({ data: LEAD }, 201);
     if (caminho.includes("/open-with-contact")) {
       return opts.abertura ? opts.abertura() : resposta({ data: { conversation_id: "conv-7" } });
@@ -109,14 +136,16 @@ function rotear(opts: { abertura?: () => Response } = {}) {
 function caminhos(fetchMock: ReturnType<typeof rotear>): string[] {
   return fetchMock.mock.calls
     .map(([url]) => String(url))
-    .filter((c) => c.includes("/api/v1/leads") || c.includes("/open-with-contact") || c.endsWith("/claim"));
+    .filter(
+      (c) =>
+        c.includes("/api/v1/leads") || c.includes("/open-with-contact") || c.endsWith("/claim"),
+    );
 }
 
 /** O corpo JSON do pedido cujo caminho casa com `trecho`. */
 function corpoDo(fetchMock: ReturnType<typeof rotear>, trecho: string): Record<string, unknown> {
   const chamada = fetchMock.mock.calls.find(([url]) => String(url).includes(trecho)) as
-    | [unknown, RequestInit?]
-    | undefined;
+    [unknown, RequestInit?] | undefined;
   return JSON.parse(String(chamada?.[1]?.body ?? "{}")) as Record<string, unknown>;
 }
 
@@ -124,16 +153,20 @@ function montar(props: { contactId?: string | null } = {}) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  const ui: ReactNode = (
-    <NewLeadDialog
-      open
-      onOpenChange={vi.fn()}
-      pipelineId={FUNIL}
-      stages={[STAGE]}
-      leads={[]}
-      {...props}
-    />
-  );
+  function Pai() {
+    const [aberto, setAberto] = useState(true);
+    return (
+      <NewLeadDialog
+        open={aberto}
+        onOpenChange={setAberto}
+        pipelineId={FUNIL}
+        stages={[STAGE]}
+        leads={[]}
+        {...props}
+      />
+    );
+  }
+  const ui: ReactNode = <Pai />;
   return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
 }
 
@@ -149,6 +182,104 @@ afterEach(() => {
 });
 
 describe("NewLeadDialog · salvar e iniciar conversa (#3483)", () => {
+  it.each([1, 2])(
+    "o subcadastro devolve o contato sem perder o negócio; só o pai salvo abre a conversa (%i canal/is)",
+    async (canais) => {
+      const fetchMock = rotear({ canais });
+      const user = userEvent.setup();
+      montar();
+      await user.type(screen.getByLabelText("Título"), "Negócio ainda em edição");
+      await user.type(screen.getByLabelText("Descrição"), "Condição combinada com o cliente");
+      await user.type(screen.getByLabelText(/^Valor \(/), "123,45");
+      await user.click(screen.getByRole("button", { name: "Criar contato" }));
+      const cadastro = screen.getByRole("dialog", { name: "Novo contato" });
+      expect(
+        within(cadastro).queryByRole("button", { name: "Salvar e iniciar conversa" }),
+      ).not.toBeInTheDocument();
+      await user.type(within(cadastro).getByLabelText(/Telefone/i), "+5511987654321");
+      await user.click(
+        within(cadastro).getByRole("button", { name: "Criar contato" }),
+      );
+      await waitFor(() =>
+        expect(
+          fetchMock.mock.calls.filter(
+            ([url, init]) => String(url).includes("/api/v1/contacts") && init?.method === "POST",
+          ),
+        ).toHaveLength(1),
+      );
+      expect(
+        fetchMock.mock.calls
+          .filter(([, init]) => init?.method === "POST")
+          .map(([url]) => String(url)),
+      ).toEqual(["/api/v1/contacts"]);
+      await screen.findByText("Joana Prado");
+      expect(screen.queryByRole("dialog", { name: "Novo contato" })).not.toBeInTheDocument();
+      expect(screen.getByLabelText("Título")).toHaveValue("Negócio ainda em edição");
+      expect(screen.getByLabelText("Descrição")).toHaveValue("Condição combinada com o cliente");
+      expect(screen.getByLabelText(/^Valor \(/)).toHaveValue("123,45");
+      expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/leads"))).toBe(
+        false,
+      );
+      expect(pushMock).not.toHaveBeenCalled();
+      expect(caminhos(fetchMock)).toEqual([]);
+      await user.click(screen.getByRole("button", { name: "Salvar e iniciar conversa" }));
+      if (canais === 2) {
+        const seletor = await screen.findByRole("dialog", {
+          name: "Escolha o canal para iniciar a conversa",
+        });
+        expect(
+          fetchMock.mock.calls.some(([url]) => String(url).includes("/open-with-contact")),
+        ).toBe(false);
+        await user.click(within(seletor).getByRole("radio", { name: /Canal 2/ }));
+        await user.click(
+          within(seletor).getByRole("button", { name: "Iniciar conversa" }),
+        );
+      }
+      await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/app/inbox?id=conv-7"));
+      expect(
+        fetchMock.mock.calls
+          .filter(([, init]) => init?.method === "POST")
+          .map(([url]) => String(url)),
+      ).toEqual([
+        "/api/v1/contacts",
+        "/api/v1/leads",
+        "/api/v1/conversations/open-with-contact",
+        "/api/v1/conversations/conv-7/claim",
+      ]);
+      expect(corpoDo(fetchMock, "/api/v1/leads")).toMatchObject({
+        title: "Negócio ainda em edição",
+        description: "Condição combinada com o cliente",
+        value_cents: 12345,
+        contact_id: CONTATO,
+      });
+      expect(corpoDo(fetchMock, "/open-with-contact")).toMatchObject({
+        contact_id: CONTATO,
+        channel_session_id: `canal-${canais}`,
+      });
+    },
+  );
+
+  it("a recusa do contato mantém os dois formulários e não grava nem abre o negócio", async () => {
+    const fetchMock = rotear({ erroContato: true });
+    const user = userEvent.setup();
+    montar();
+    await user.type(screen.getByLabelText("Título"), "Negócio ainda em edição");
+    await user.click(screen.getByRole("button", { name: "Criar contato" }));
+    const cadastro = screen.getByRole("dialog", { name: "Novo contato" });
+    await user.type(within(cadastro).getByLabelText(/Telefone/i), "+5511987654321");
+    await user.click(within(cadastro).getByRole("button", { name: "Criar contato" }));
+    await waitFor(() => expect(showApiErrorMock).toHaveBeenCalled());
+    expect(
+      fetchMock.mock.calls
+        .filter(([, init]) => init?.method === "POST")
+        .map(([url]) => String(url)),
+    ).toEqual(["/api/v1/contacts"]);
+    expect(screen.getByRole("dialog", { name: "Novo contato" })).toBeVisible();
+    expect(within(cadastro).getByLabelText(/Telefone/i)).toHaveValue("+5511987654321");
+    expect(caminhos(fetchMock)).toEqual([]);
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+
   it("⭐ cria o negócio, abre a conversa do contato, assume e vai para o Inbox", async () => {
     const fetchMock = rotear();
     const user = userEvent.setup();
