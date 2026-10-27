@@ -254,7 +254,8 @@ async function main() {
         timezoneId: "America/Sao_Paulo",
       });
       const page = await ctx.newPage();
-      if (modulo.id === "app-no-celular") {
+      const bloquearNotificacoes = modulo.id === "app-no-celular" || modulo.id === "notificacoes";
+      if (bloquearNotificacoes) {
         // A aula mostra a permissão bloqueada do Chrome. Configura o navegador
         // de verdade, sem substituir Notification.permission dentro da página.
         const cdp = await ctx.newCDPSession(page);
@@ -276,7 +277,7 @@ async function main() {
               if (passo.rota) {
                 await page.goto(URL_BASE + passo.rota);
                 await page.waitForLoadState("networkidle");
-                if (modulo.id === "app-no-celular" && await page.evaluate(() => Notification.permission) !== "denied") {
+                if (bloquearNotificacoes && await page.evaluate(() => Notification.permission) !== "denied") {
                   throw new Error("a permissão real do navegador não reproduz o bloqueio ensinado nesta aula");
                 }
               }

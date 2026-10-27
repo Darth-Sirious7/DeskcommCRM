@@ -136,7 +136,6 @@ describe("alvos em espanhol das fotografias do curso", () => {
     ["2 tabelas liberadas", `2 ${t("tabelas liberadas")}`],
     ["39 acontecimentos", `39 ${t("acontecimentos")}`],
     ["Imagens 1", `${t("Imagens")} 1`],
-    ["Nova mensagem via push", `${t("Nova mensagem")} via push`],
     ["Posição 1 na fila", `${t("Posição")} 1 ${t("na fila")}`],
     ["parado há 30h", `${t("parado há")} 30h`],
     ["status: Aguardando resposta", `${t("status")}: ${t("Aguardando resposta")}`],

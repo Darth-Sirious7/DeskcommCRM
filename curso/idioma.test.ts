@@ -52,6 +52,8 @@ describe("idioma das fotografias reais", () => {
     );
     expect(seletorNoIdioma('[aria-label^="Responsável:"]')).toBe('[aria-label^="Responsable:"]');
     expect(seletorNoIdioma('[aria-label="Posição 1 na fila"]')).toBe('[aria-label="Posición 1 en la cola"]');
+    expect(seletorNoIdioma('div:text-matches("^Meta do mês", "i")')).toBe('div:text-matches("^Meta del mes", "i")');
+    expect(seletorNoIdioma("div:text-matches('^Trilha de auditoria')")).toBe("div:text-matches('^Pista de auditoría')");
     expect(seletorNoIdioma('[data-testid="assumir-conversa"]')).toBe(
       '[data-testid="assumir-conversa"]',
     );

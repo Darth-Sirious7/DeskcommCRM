@@ -61,9 +61,11 @@ const {
 // O capturador conserva fotos anteriores; elas não podem esconder uma falha
 // desta rodada, inclusive de revogação. Manifestos antigos não tinham `falhas`.
 const modulosComFalha = modulos
-  .filter((m) =>
-    falhas.some((falha: string) => falha.startsWith(`${m.id}/`) || falha.startsWith(`${m.id}:`)),
-  )
+  .filter((m) => {
+    const chaves = new Set(m.licoes.flatMap((l) => l.passos.map((p) => chaveDoPasso(m.id, l.id, p.id))));
+    return falhas.some((falha: string) => chaves.has(falha)
+      || falha.startsWith(`${m.id}/`) || falha.startsWith(`${m.id}:`));
+  })
   .map((m) => m.id);
 if (modulosComFalha.length) {
   throw new Error(

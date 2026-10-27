@@ -51,6 +51,11 @@ export function seletorNoIdioma(css: string): string {
   if (idiomaDaCaptura() === "pt-BR") return css;
   return css
     .replace(
+      /(:text-matches\(\s*)(["'])(.*?)\2/g,
+      (_, antes: string, aspas: string, texto: string) =>
+        antes + aspas + textoDoAlvo(texto, true) + aspas,
+    )
+    .replace(
       /(:(?:has-text|text-is|text)\(\s*)(["'])(.*?)\2(\s*\))/g,
       (_, antes: string, aspas: string, texto: string, depois: string) =>
         antes + aspas + trechoDaDemonstracao(texto) + aspas + depois,
