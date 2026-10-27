@@ -1,4 +1,7 @@
 import { readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { runInNewContext } from "node:vm";
 
 import ts from "typescript";
@@ -8,6 +11,8 @@ import { assertAgentOperationPg } from "@/lib/ai/agents/operation";
 import { assertCurrentServiceBoundary, parseServiceBoundary, StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
 import type { ChannelSendInput } from "@/lib/agent-engine/channel-adapter";
 import { claimOfJob } from "@/lib/agent-engine/queue/claim";
+import { WahaClient } from "@/lib/waha/client";
+import { ehVistoAzul } from "../support/waha-visto-azul";
 
 /**
  * Executa os nós REAIS do host com falhas dirigidas nas bordas. Não importa o
@@ -48,6 +53,10 @@ const sqlDaFronteira = noReal("lib/atendimento/fronteira-server.ts",
   no => ts.isVariableStatement(no) && no.declarationList.declarations.some(d => d.name.getText() === "SERVICE_BOUNDARY_SQL"));
 const claim = { worker_id: "worker-sintetico", acquired_at: "2026-10-27 13:00:00.123456+00" };
 const operacao = { organizationId: "org-sintetica", agentId: "agente-sintetico", versionId: "versao-sintetica", revision: "7" };
+const receptorReal = noReal("tests/e2e/fixtures/turno-laudos.ts",
+  no => ts.isVariableDeclaration(no) && no.name.getText() === "servidor");
+const presencaReal = noReal("lib/channels/adapters/waha.ts",
+  no => ts.isMethodDeclaration(no) && no.name.getText() === "signalTyping");
 
 async function gravar(opts: { falha?: RegExp; rollbackFalha?: boolean; repetido?: boolean; registroFalha?: boolean } = {}) {
   const erroConsulta = new Error("Query read timeout");
@@ -217,4 +226,55 @@ describe("o envio real da extensão conserva as cercas antes do ledger", () => {
       expect(r.ledger).not.toHaveBeenCalled();
     },
   );
+});
+
+async function comReceiverReal(acao: (client: WahaClient, origem: string) => Promise<void>) {
+  const entregas: unknown[] = [];
+  const falhasHttp: string[] = [];
+  const servidor = runInNewContext(compilar(`const ${receptorReal};`) + "; servidor", {
+    createServer, ehVistoAzul, randomUUID, entregas, falhasHttp,
+  }) as Server;
+  try {
+    await new Promise<void>(resolve => servidor.listen(0, "127.0.0.1", resolve));
+    const origem = `http://127.0.0.1:${(servidor.address() as AddressInfo).port}`;
+    await acao(new WahaClient(origem, "chave-sintetica-so-loopback"), origem);
+    return { entregas, falhasHttp };
+  } finally {
+    servidor.closeAllConnections();
+    await new Promise<void>((resolve, reject) => servidor.close(erro => erro ? reject(erro) : resolve()));
+  }
+}
+
+describe("o receiver real da jornada reconhece a presença do adapter real", () => {
+  it("digitando não é entrega e o texto seguinte continua sendo uma entrega", async () => {
+    const r = await comReceiverReal(async client => {
+      const adapter = runInNewContext(compilar(`const adapter = {${presencaReal}};`) + "; adapter", {
+        getWahaClient: () => client,
+      }) as { signalTyping(input: { sessionRef: string; recipient: string }): Promise<void> };
+      await adapter.signalTyping({ sessionRef: "laudo-sintetico", recipient: "15550000001@c.us" });
+      await client.sendMessage("laudo-sintetico", "15550000001@c.us", "Pergunta sintética.");
+    });
+    expect(r.falhasHttp).toEqual([]);
+    expect(r.entregas).toEqual([{ session: "laudo-sintetico", text: "Pergunta sintética." }]);
+  });
+
+  it.each([
+    { method: "GET", path: "/api/laudo-sintetico/presence", body: undefined },
+    { method: "POST", path: "/api/laudo-sintetico/presence", body: { chatId: "15550000001@c.us", presence: "online" } },
+    { method: "POST", path: "/api/laudo-sintetico/presence", body: { presence: "typing" } },
+    { method: "POST", path: "/api/laudo-sintetico/presence?x=1", body: { chatId: "15550000001@c.us", presence: "typing" } },
+    { method: "POST", path: "/api/nao-previsto", body: {} },
+    { method: "POST", path: "/api/laudo-sintetico/presence", body: "x".repeat(100_001) },
+  ])("continua recusando operação ou corpo fora do contrato ($method $path)", async pedido => {
+    const r = await comReceiverReal(async (_client, origem) => {
+      const response = await fetch(origem + pedido.path, {
+        method: pedido.method,
+        headers: { "content-type": "application/json" },
+        body: typeof pedido.body === "string" ? pedido.body : pedido.body === undefined ? undefined : JSON.stringify(pedido.body),
+      });
+      expect(response.status).toBe(500);
+    });
+    expect(r.falhasHttp).toEqual(["operação WAHA inesperada"]);
+    expect(r.entregas).toEqual([]);
+  });
 });

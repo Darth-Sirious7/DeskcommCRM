@@ -41,7 +41,8 @@ export async function criarTurnosDoLaudo(atores: AtoresDasExtensoes, registry: I
       res.setHeader("content-type", "application/json"); res.end("{}"); return;
     }
     try {
-      if (req.method !== "POST" || req.url !== "/api/sendText") {
+      const presenca = /^\/api\/[^/?]+\/presence$/.test(req.url ?? "");
+      if (req.method !== "POST" || (req.url !== "/api/sendText" && !presenca)) {
         throw new Error("Receiver WAHA recebeu operação inesperada.");
       }
       let raw = "";
@@ -49,7 +50,14 @@ export async function criarTurnosDoLaudo(atores: AtoresDasExtensoes, registry: I
         raw += String(chunk);
         if (raw.length > 100_000) throw new Error("Corpo WAHA excedeu o limite da fixture.");
       }
-      const body = JSON.parse(raw) as { session?: unknown; text?: unknown };
+      const body = JSON.parse(raw) as { session?: unknown; text?: unknown; chatId?: unknown; presence?: unknown };
+      if (presenca) {
+        // O adapter real usa sessão no path; presença não conta como entrega.
+        if (typeof body.chatId !== "string" || !body.chatId || body.presence !== "typing") {
+          throw new Error("Presença WAHA fora do contrato da jornada.");
+        }
+        res.setHeader("content-type", "application/json"); res.end("{}"); return;
+      }
       if (typeof body.session !== "string" || typeof body.text !== "string") {
         throw new Error("Corpo WAHA sem sessão/texto.");
       }
