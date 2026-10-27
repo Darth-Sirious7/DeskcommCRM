@@ -95,34 +95,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     const temaDaExtensao = lerCssDoTemaDaExtensao(admin, activeOrg.orgId);
 
     /**
-     * O cliente DA SESSÃO, e não o de serviço, para a única leitura desta casca
-     * que responde "o que ESTE usuário pode ver".
+     * A faixa lê com a identidade da sessão, como GET /api/v1/channel-sessions,
+     * para respeitar a RLS em vez de atravessá-la com o cliente de serviço.
      *
-     * ─── O defeito que isto fecha (#3088) ─────────────────────────────────────
+     * A SELECT nativa de channel_sessions é por organização, com o acesso de
+     * plataforma previsto na policy. Ela não divide canais por atendente.
+     * O relato #3088 veio de uma instalação adaptada: esta passagem de cliente
+     * respeita uma restrição adicional se ela estiver na RLS. Um filtro local
+     * apenas na rota não é herdado por esta consulta direta do layout.
      *
-     * A faixa anunciava conexão caída lendo por `createAdminClient`, que é
-     * `service_role` e atravessa a RLS. Numa instalação com restrição de canal
-     * por atendente, `GET /api/v1/channel-sessions` devolvia só o canal do
-     * atendente (ela lê pelo cliente da sessão) enquanto a faixa mostrava
-     * apelido, número e queda do canal do OUTRO setor — na tela e no payload do
-     * layout. A regra existia e era aplicada; a faixa simplesmente não passava
-     * por ela.
-     *
-     * ─── Por que a cura é o cliente, e não um `if` aqui ───────────────────────
-     *
-     * Porque a régua de canal deste repo mora na policy de `channel_sessions`,
-     * não em código de aplicação: copiá-la para cá seria a segunda grafia dela,
-     * e as duas divergiriam no primeiro ajuste da policy. Trocando o cliente, a
-     * faixa passa a ser filtrada pelo MESMO lugar que filtra a rota, sem uma
-     * linha de regra nova — e a visão de quem administra continua completa, pelo
-     * mesmo motivo: é a policy que a concede.
-     *
-     * Falha para o lado do silêncio: se a policy não devolver linha nenhuma, a
-     * faixa não aparece. Some um aviso — nunca aparece um canal que a pessoa não
-     * pode ver.
-     *
-     * `createClient` só lê cookie (não faz ida à rede), então isto não devolve
-     * ao layout a espera em fila que o lote abaixo existe para evitar.
+     * Sem linhas visíveis, a lista fica vazia. Não acrescentamos uma regra de
+     * papel ou vínculo; a consulta abaixo mantém o filtro da organização ativa.
+     * createClient monta o cliente com os cookies, sem uma consulta extra aqui.
      */
     const daSessao = await createClient();
 

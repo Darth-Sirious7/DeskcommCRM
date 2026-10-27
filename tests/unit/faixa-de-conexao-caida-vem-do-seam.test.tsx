@@ -135,9 +135,9 @@ describe("a faixa de conexão caída", () => {
     expect(listarConexoesCaidas).toHaveBeenCalledTimes(1);
     // A organização vem do seam de autenticação (cookie validado), nunca do
     // corpo da requisição — e o cliente é o da SESSÃO, não o de serviço: é a
-    // identidade dele que faz a policy de `channel_sessions` valer. Pedir por
-    // `service_role` atravessa a RLS e a faixa anuncia canal que o servidor nega
-    // ao atendente (#3088) — a asserção NEGATIVA é a que segura a regressão.
+    // identidade dele que faz a policy de `channel_sessions` valer. A policy
+    // nativa é por organização; este caso prende a escolha do cliente, sem
+    // afirmar uma restrição real por atendente na instalação do relato #3088.
     expect(listarConexoesCaidas).toHaveBeenCalledWith(clienteDaSessao, "org-1");
     expect(listarConexoesCaidas).not.toHaveBeenCalledWith(adminClient, "org-1");
   });

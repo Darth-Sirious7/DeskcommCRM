@@ -1,38 +1,20 @@
 /**
- * A FAIXA DO TOPO ANUNCIA SÓ OS CANAIS QUE O SERVIDOR DEIXA ESTE USUÁRIO VER.
+ * A FAIXA CONSULTA OS CANAIS COM O CLIENTE DA SESSÃO.
  *
- * ─── O defeito (#3088) ──────────────────────────────────────────────────────
+ * Executa layout e seam reais com dois clientes dublês. A assimetria das
+ * respostas prova que o layout entrega a identidade da sessão ao seam e não
+ * usa service_role para ler channel_sessions.
  *
- * Numa instalação com restrição de canal por atendente, o perfil comercial
- * recebia apenas o próprio canal em `GET /api/v1/channel-sessions`, e a faixa
- * global anunciava apelido, número e queda do canal do OUTRO setor. A rota
- * aplicava a régua; a faixa não passava por ela — porque o layout montava a
- * lista com `createAdminClient` (`service_role`), que atravessa a RLS.
+ * O recorte por atendente é SIMULADO pelo array policy.linhas. A SELECT nativa
+ * é por organização, com acesso de plataforma, e não contém esse vínculo.
+ * Este unitário não executa uma policy nem reproduz a instalação derivada do
+ * relato #3088. Se a restrição dela estiver só num patch da rota, a troca de
+ * cliente não leva esse filtro ao layout.
  *
- * ─── O que este arquivo mede ────────────────────────────────────────────────
- *
- * A régua de canal deste repo não mora em código de aplicação: quem a aplica é
- * a policy de `channel_sessions`. Por isso o que se mede aqui não é um `if`
- * sobre papel (que seria uma segunda grafia da regra), e sim QUEM é o cliente
- * que faz a pergunta: se for o da sessão, a policy decide o recorte; se for o de
- * serviço, ela é atravessada.
- *
- * Os dois clientes são dublês com respostas DIFERENTES, de propósito: o da
- * sessão devolve só o que a policy do atendente permite, o de serviço devolve a
- * organização inteira. É essa assimetria que dá significado ao caso negativo —
- * um dublê que respondesse igual nos dois caminhos passaria com o defeito de
- * volta, e o teste não provaria nada (a lição do "dublê que não respeita a
- * semântica real").
- *
- * O CONTROLE POSITIVO é obrigatório e está aqui: o atendente restrito continua
- * vendo o PRÓPRIO canal caído. Sem ele, esconder tudo passaria como conserto.
- * E o admin vê os dois — "preservar a visão administrativa completa" faz parte
- * do pedido, e acontece pela mesma policy, sem uma linha de regra nova.
- *
- * A renderização da faixa (texto, CTA por papel) tem cerca própria, em
- * `tests/unit/conexao-caida-banner-papel.test.tsx`. Aqui a propriedade é o
- * PAYLOAD que o layout entrega: o que não pode ser lido pelo atendente não pode
- * chegar ao componente.
+ * No cenário simulado, o controle positivo exige o próprio canal caído e o
+ * controle administrativo exige os dois. Assim, esconder toda a lista também
+ * reprova. As asserções protegem o payload entregue à faixa; renderização e
+ * CTA por papel têm cerca em conexao-caida-banner-papel.test.tsx.
  */
 import type { ReactElement, ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";

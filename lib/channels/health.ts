@@ -173,25 +173,14 @@ export interface ConexaoCaida {
  * segunda lista divergiria com o tempo, e a faixa deixaria de aparecer para um
  * estado que a Central considera grave.
  *
- * ─── O cliente DECIDE o recorte, e é por isso que ele é o parâmetro (#3088) ──
+ * O cliente recebido determina se a consulta respeita a RLS. O layout passa
+ * o cliente da sessão, como GET /api/v1/channel-sessions; o cliente de serviço
+ * atravessaria as policies. O filtro explícito de organização vale nos dois.
  *
- * O segundo argumento é a organização; o primeiro é o cliente, e quem escolhe
- * QUAL cliente está escolhendo quem enxerga o quê. A régua de acesso a canal não
- * mora em código neste repo: quem a aplica é a RLS de `channel_sessions`, e a
- * rota que o atendente usa (`GET /api/v1/channel-sessions`) a herda por ler com
- * o cliente DA SESSÃO (`lib/supabase/server`).
- *
- * Passar o cliente de serviço aqui (`createAdminClient`) atravessa a RLS: a
- * consulta então devolve os canais de TODO mundo da organização, e a faixa
- * anuncia apelido, número e queda de um canal que o servidor nega ao atendente
- * em toda outra superfície — payload do layout inclusive. Foi medido assim: com
- * restrição de canal por atendente, a rota devolvia só o canal dele e a faixa
- * mostrava o do outro setor. É o mesmo defeito de "regra aplicada em um lugar e
- * ignorada em outro"; a cura é não ter duas réguas, e sim um cliente só.
- *
- * Não replique a regra aqui: um `if` sobre papel ou vínculo seria uma segunda
- * cópia dela, e divergiria da RLS no primeiro ajuste da policy. Quem decide é o
- * banco, para a faixa e para a rota, do mesmo jeito.
+ * A policy nativa de SELECT permite leitura por organização e acesso de
+ * plataforma. Não há nela divisão de canais por atendente. O recorte adicional
+ * da instalação do relato #3088 só será herdado aqui se estiver na RLS; um patch
+ * exclusivo da rota não é aplicado por esta consulta direta.
  *
  * Arquivada fica de fora: foi desligada de propósito, e anunciar que uma conexão
  * aposentada está parada é o ruído que ensina a ignorar a faixa.
