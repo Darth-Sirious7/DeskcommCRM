@@ -121,11 +121,11 @@
       return '<div><div class="grupo-titulo">' + esc(g.grupo) + '</div><ul class="grupo-itens">' + g.itens.map(function (it) {
         var m = it.modulo && modulo(it.modulo);
         var ativo = m ? rota.mod === m.id : rota.tela === it.href;
-        var link = '<a class="item-menu" href="#' + (m ? "m." + m.id : tokenDaTela(it.href)) + '"' + (ativo ? ' aria-current="page"' : "") + ">" +
+        var link = '<a class="item-menu" href="' + esc("#" + (m ? "m." + m.id : tokenDaTela(it.href))) + '"' + (ativo ? ' aria-current="page"' : "") + ">" +
           "<span>" + esc(it.rotulo) + "</span>" +
           (m ? '<span class="qtd">' + plural(m.licoes.length, "lição", "lições") + "</span>" : '<span class="breve">em breve</span>') + "</a>";
         var sub = m && ativo ? '<ul class="sublicoes">' + m.licoes.map(function (l) {
-          return '<li><a href="#l.' + m.id + "." + l.id + '"' + (rota.licao === l.id ? ' aria-current="page"' : "") + ">" +
+          return '<li><a href="' + esc("#l." + m.id + "." + l.id) + '"' + (rota.licao === l.id ? ' aria-current="page"' : "") + ">" +
             (f.indexOf(m.id + "/" + l.id) >= 0 ? '<span class="feito" aria-label="concluída">✓</span>' : "") + esc(l.titulo) + "</a></li>";
         }).join("") + "</ul>" : "";
         return "<li>" + link + sub + "</li>";
