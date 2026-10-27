@@ -692,7 +692,11 @@ test.describe("LeadSubmitted causal pelo webhook WAHA", () => {
     // resposta de consulta é dublada para preencher o arquivo de acesso.
     // A instalação fresca não instala honorários. Guarda a resposta BRUTA
     // desse transporte antes da coleta: uma mensagem traduzida não prova o code.
-    const honorarios = await db.from("honorarios_contratos").select("id")
+    // Tabela opcional ausente não integra Database (core): só esta sonda usa
+    // o SDK real sem esse generic, preservando as consultas core tipadas.
+    const honorarios = await createClient(url, serviceRole, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    }).from("honorarios_contratos").select("id")
       .eq("organization_id", creds.org_id).limit(0);
     mkdirSync("evidence/ctwa-3128", { recursive: true });
     const ausenciaPath = "evidence/ctwa-3128/honorarios-ausente-postgrest.json";
