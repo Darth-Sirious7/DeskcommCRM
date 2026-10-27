@@ -35,7 +35,7 @@ export interface RespostasDns {
 export interface DiagnosticoDoDominioDeEnvio {
   readonly dominio: string;
   readonly registros: readonly RegistroDoDominio[];
-  readonly bloqueios: readonly string[];
+  readonly bloqueios: readonly { readonly nome: string; readonly mensagem: string }[];
   readonly avisos: readonly string[];
   readonly estadoNaResend: DominioOficialDaContaResend["status"];
   readonly envioHabilitado: boolean;
@@ -168,10 +168,10 @@ function conferirRegistro(consulta: ConsultaDns): RegistroDoDominio {
     return {
       ...base,
       estado: "indisponivel",
-      problema: `Não foi possível consultar ${r.nome}. Tente de novo antes de alterar o DNS.`,
+      problema: "Não foi possível consultar este registro. Tente de novo antes de alterar o DNS.",
     };
   if (consulta.valores.length === 0)
-    return { ...base, estado: "ausente", problema: `Nenhum ${r.tipoDns} encontrado em ${r.nome}.` };
+    return { ...base, estado: "ausente", problema: "Nenhum registro encontrado neste nome." };
   const valores = consulta.valores.map((v) => normalizar(v, r.tipoDns));
   // Um null MX não confirma o retorno; não perca o ponto ao formatar a prioridade.
   const nullMx = r.tipoDns === "MX" && consulta.valores.some((v) => /^\s*0\s+\.\s*$/.test(v));
@@ -185,7 +185,8 @@ function conferirRegistro(consulta: ConsultaDns): RegistroDoDominio {
     : {
         ...base,
         estado: "conflitante",
-        problema: `O valor em ${r.nome} difere do informado pela Resend. Confira no painel antes de alterar.`,
+        problema:
+          "O valor publicado difere do informado pela Resend. Confira no painel antes de alterar.",
       };
 }
 
@@ -206,16 +207,17 @@ function registroDmarc(dominio: string, respostas: RespostasDns): RegistroDoDomi
     return {
       ...base,
       estado: "indisponivel",
-      problema: `Não foi possível consultar ${nome}. Tente de novo antes de alterar o DNS.`,
+      problema: "Não foi possível consultar este registro. Tente de novo antes de alterar o DNS.",
     };
   if (registros.length === 0)
     return {
       ...base,
       estado: "ausente",
-      problema: `Nenhum DMARC encontrado neste nome: ${nome}. Confira também a política do domínio principal.`,
+      problema:
+        "Nenhum DMARC encontrado neste nome. Confira também a política do domínio principal.",
     };
   if (registros.length > 1)
-    return { ...base, estado: "conflitante", problema: `Há mais de um registro DMARC em ${nome}.` };
+    return { ...base, estado: "conflitante", problema: "Há mais de um registro DMARC neste nome." };
   const politica = lerPoliticaDmarc(registros[0] ?? "");
   if (!politica.politica)
     return {
@@ -227,7 +229,7 @@ function registroDmarc(dominio: string, respostas: RespostasDns): RegistroDoDomi
     return {
       ...base,
       estado: "atencao",
-      problema: `A política DMARC declara pct=${politica.pct}%.`,
+      problema: "O DMARC consultado declara pct abaixo de 100. Confira o valor publicado.",
     };
   return politica.politica === "none"
     ? {
@@ -267,7 +269,7 @@ export function diagnosticarDominioDeEnvio(
     registros,
     bloqueios: registros
       .filter((r) => ["ausente", "conflitante", "indisponivel"].includes(r.estado))
-      .map((r) => r.problema ?? ""),
+      .map((r) => ({ nome: r.nome, mensagem: r.problema ?? "" })),
     avisos,
     estadoNaResend: conta.status,
     envioHabilitado: conta.capabilities.sending === "enabled",

@@ -1,5 +1,6 @@
 /** Casos puros do diagnóstico; estado do provedor não equivale a entrega. */
 import { describe, expect, it } from "vitest";
+import { traduzir } from "@/lib/i18n/dicionario";
 import {
   diagnosticarDominioDeEnvio,
   dominioDeEndereco,
@@ -200,13 +201,19 @@ describe("os registros da conta são a referência", () => {
 });
 
 describe("DMARC e estado oficial permanecem separados", () => {
+  it("a explicação derivada do DNS possui tradução, sem usar o domínio como chave", () => {
+    const r = linha("mx", []);
+    expect(r.problema).toBeTruthy();
+    expect(traduzir(r.problema!, "es")).not.toBe(r.problema);
+  });
   function diagnostico(dmarcTxt: RespostasDns["dmarcTxt"]) {
     return diagnosticarDominioDeEnvio(dominioOficial(), respostasBoas({ dmarcTxt }), AGORA)!;
   }
   it("preserva os avisos de pct, relatório e alinhamento sem prever entrega", () => {
     const pct = diagnostico([["v=DMARC1; p=reject; pct=25; rua=mailto:d@lojadaana.com"]]);
     expect(pct.registros.at(-1)?.estado).toBe("atencao");
-    expect(pct.avisos.some((a) => a.includes("25%"))).toBe(true);
+    expect(pct.avisos.some((a) => a.includes("pct abaixo de 100"))).toBe(true);
+    expect(pct.registros.at(-1)?.encontrado).toContain("pct=25");
     const semRelatorio = diagnostico([["v=DMARC1; p=reject; adkim=s"]]);
     expect(semRelatorio.avisos.some((a) => a.includes("rua="))).toBe(true);
     expect(semRelatorio.avisos.some((a) => a.includes("estrito"))).toBe(true);

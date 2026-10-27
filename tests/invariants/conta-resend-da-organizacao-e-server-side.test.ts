@@ -271,4 +271,40 @@ describe("a linha semeada numa organização não é lida por authenticated nem 
       `),
     ).toThrow(/permission denied/);
   });
+
+  it("service_role tem somente os quatro privilégios CRUD explícitos", () => {
+    const acl = sql(`
+      select string_agg(a.privilege_type, ',' order by a.privilege_type)
+      from pg_class c join pg_namespace n on n.oid = c.relnamespace
+      cross join lateral aclexplode(c.relacl) a
+      join pg_roles r on r.oid = a.grantee
+      where n.nspname = 'public' and c.relname = 'organization_resend_accounts'
+        and r.rolname = 'service_role';
+    `);
+    expect(acl).toBe("DELETE,INSERT,SELECT,UPDATE");
+  });
+
+  it("não há grant direto para PUBLIC, anon ou authenticated, de qualquer privilégio", () => {
+    expect(sql(`
+      select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
+      cross join lateral aclexplode(c.relacl) a
+      left join pg_roles r on r.oid = a.grantee
+      where n.nspname = 'public' and c.relname = 'organization_resend_accounts'
+        and (a.grantee = 0 or r.rolname in ('anon', 'authenticated'));
+    `)).toBe("0");
+  });
+
+  it("service_role insere, lê, atualiza e apaga a conta sem ganhar TRUNCATE", () => {
+    sql(`set role service_role;
+      insert into public.organization_resend_accounts
+        (organization_id,api_key_ciphertext,api_key_iv,api_key_tag,api_key_last4,from_email)
+      values ('${ORG_B}',decode('00','hex'),decode('00','hex'),decode('00','hex'),'crud','crud@invariant.test');
+    `);
+    expect(sql(`set role service_role; select from_email from public.organization_resend_accounts where organization_id='${ORG_B}';`).split('\n').at(-1)).toBe("crud@invariant.test");
+    sql(`set role service_role; update public.organization_resend_accounts set from_email='atualizado@invariant.test' where organization_id='${ORG_B}';`);
+    expect(sql(`set role service_role; select from_email from public.organization_resend_accounts where organization_id='${ORG_B}';`).split('\n').at(-1)).toBe("atualizado@invariant.test");
+    sql(`set role service_role; delete from public.organization_resend_accounts where organization_id='${ORG_B}';`);
+    expect(sql(`set role service_role; select count(*) from public.organization_resend_accounts where organization_id='${ORG_B}';`).split('\n').at(-1)).toBe("0");
+    expect(sql(`select has_table_privilege('service_role','public.organization_resend_accounts','TRUNCATE');`)).toBe("f");
+  });
 });

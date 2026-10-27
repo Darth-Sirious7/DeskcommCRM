@@ -64714,3 +64714,7 @@ create table if not exists organization_resend_accounts (
 alter table organization_resend_accounts enable row level security;
 
 revoke all on organization_resend_accounts from public, anon, authenticated;
+
+-- O worker recebe só CRUD, sem depender do DEFAULT ALL da instalação.
+revoke all on organization_resend_accounts from service_role;
+grant select, insert, update, delete on organization_resend_accounts to service_role;

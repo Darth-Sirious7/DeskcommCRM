@@ -18102,6 +18102,18 @@ export const DICIONARIO: Traducoes = {
   "Verificação precisa de atenção na Resend": { es: "La verificación necesita atención en Resend" },
   "Pendências do DNS": { es: "Pendientes del DNS" },
   "Esperado": { es: "Esperado" },
+  "Não foi possível consultar este registro. Tente de novo antes de alterar o DNS.": { es: "No se pudo consultar este registro. Inténtalo de nuevo antes de cambiar el DNS." },
+  "Nenhum registro encontrado neste nome.": { es: "No se encontró ningún registro con este nombre." },
+  "O valor publicado difere do informado pela Resend. Confira no painel antes de alterar.": { es: "El valor publicado difiere del indicado por Resend. Revisa el panel antes de cambiarlo." },
+  "Nenhum DMARC encontrado neste nome. Confira também a política do domínio principal.": { es: "No se encontró DMARC con este nombre. Revisa también la política del dominio principal." },
+  "Há mais de um registro DMARC neste nome.": { es: "Hay más de un registro DMARC con este nombre." },
+  "O registro DMARC não tem p=none, p=quarantine ou p=reject válido.": { es: "El registro DMARC no tiene un p=none, p=quarantine o p=reject válido." },
+  "O DMARC consultado declara pct abaixo de 100. Confira o valor publicado.": { es: "El DMARC consultado declara pct por debajo de 100. Revisa el valor publicado." },
+  "O DMARC publicado usa p=none: monitora, sem pedir rejeição das mensagens.": { es: "El DMARC publicado usa p=none: supervisa sin solicitar el rechazo de los mensajes." },
+  "O DMARC consultado não informa rua= para relatórios.": { es: "El DMARC consultado no indica rua= para informes." },
+  "O DMARC consultado declara alinhamento estrito (adkim=s ou aspf=s).": { es: "El DMARC consultado declara alineación estricta (adkim=s o aspf=s)." },
+  "A Resend não informou registros de envio para este domínio. Confira o painel da conta.": { es: "Resend no indicó registros de envío para este dominio. Revisa el panel de la cuenta." },
+  "Política DMARC definida por quem administra o domínio": { es: "Política DMARC definida por quien administra el dominio" },
 };
 
 

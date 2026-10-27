@@ -1360,8 +1360,8 @@ export const AUDIT_ACTIONS = [
   // próprios (não um `org.branding_updated`) porque a pergunta depois é outra —
   // "quem ligou/desligou a conta de e-mail própria, e quando" muda por qual
   // domínio os e-mails saem e onde caem os registros de entrega. A chave em si
-  // NUNCA entra no metadata; só o domínio, já que a coluna é append-only e a
-  // cascata de LGPD não a alcança (mesma razão do `ai.case_alert_settings_removed`).
+  // NUNCA entra no metadata; nem o endereço: só nomes dos campos e o fato da
+  // verificação, pois a trilha append-only não é lugar para identidade pessoal.
   "org.resend_account_connected",
   "org.resend_account_disconnected",
 ] as const;
