@@ -9476,6 +9476,7 @@ export type Database = {
       job_queue: {
         Row: {
           attempts: number;
+          catalog_presentation_snapshot: Json | null;
           contact_id: string | null;
           created_at: string;
           id: string;
@@ -9494,6 +9495,7 @@ export type Database = {
         ComputedFields: never;
         Insert: {
           attempts?: number;
+          catalog_presentation_snapshot?: Json | null;
           contact_id?: string | null;
           created_at?: string;
           id?: string;
@@ -9511,6 +9513,7 @@ export type Database = {
         };
         Update: {
           attempts?: number;
+          catalog_presentation_snapshot?: Json | null;
           contact_id?: string | null;
           created_at?: string;
           id?: string;
