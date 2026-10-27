@@ -8,11 +8,7 @@ import {
   PortaSemCredencialError,
   PortaSemTransporteError,
 } from "@/lib/channels/social/adaptador-da-porta";
-import {
-  inboxSupported,
-  SOCIAL_NETWORKS,
-  SOCIAL_PROVIDER,
-} from "@/lib/channels/social/catalog";
+import { inboxSupported, SOCIAL_NETWORKS, SOCIAL_PROVIDER } from "@/lib/channels/social/catalog";
 import {
   exigenciasEmFalta,
   PORTAS_SOCIAIS,
@@ -40,6 +36,22 @@ import { nomeiaProvider } from "../../scripts/lint-channels.pattern";
  * O que ele NÃO prova: que a conexão direta com o Instagram funcione. Ela não
  * existe — é o recorte declarado do PR, e a prova de que não existe está em (2).
  */
+
+/**
+ * O erro que o envio lançou — e, se ele NÃO lançou, um erro que reprova o teste.
+ *
+ * Existe porque "não lançou" é justamente o defeito que se procura: um helper
+ * que devolvesse `undefined` no caminho feliz esconderia a asserção seguinte
+ * (`erro.message`) e o teste passaria a medir nada.
+ */
+async function recusaDe(promessa: Promise<unknown>): Promise<Error> {
+  try {
+    await promessa;
+  } catch (erro) {
+    return erro as Error;
+  }
+  throw new Error("o envio foi aceito sem credencial — devia ter recusado");
+}
 
 const ENVELOPE: OutboundEnvelope = {
   organizationId: "org-teste",
@@ -182,11 +194,11 @@ describe("o adapter de uma porta sem credencial falha dizendo o que falta", () =
       porta: "intermediada",
       credencial: null,
     });
-    const erro = await adapter.send(ENVELOPE).catch((e: unknown) => e);
+    const erro = await recusaDe(adapter.send(ENVELOPE));
     expect(erro).toBeInstanceOf(PortaSemCredencialError);
     expect((erro as PortaSemCredencialError).falta).toEqual(["credencial_da_conta"]);
-    expect((erro as Error).message).toContain("Instagram");
-    expect((erro as Error).message).toContain("credencial da conta (token de acesso)");
+    expect(erro.message).toContain("Instagram");
+    expect(erro.message).toContain("credencial da conta (token de acesso)");
   });
 
   it("a recusa não nomeia fornecedor — medido pela própria cerca do invariante 1", async () => {
@@ -195,7 +207,7 @@ describe("o adapter de uma porta sem credencial falha dizendo o que falta", () =
       porta: "intermediada",
       credencial: { conta: null, token: null },
     });
-    const erro = await adapter.send(ENVELOPE).catch((e: unknown) => e as Error);
+    const erro = await recusaDe(adapter.send(ENVELOPE));
     expect(nomeiaProvider(erro.message)).toBe(false);
     expect(erro.message).not.toMatch(/zernio|waha|meta_cloud/i);
   });
@@ -276,8 +288,8 @@ describe("o adapter de uma porta sem credencial falha dizendo o que falta", () =
     expect(exigenciasEmFalta(PORTAS_SOCIAIS.intermediada, { conta: "c", token: "t" })).toEqual([]);
     // Espaço em branco não é credencial: a coluna às vezes volta com `" "` de um
     // formulário, e tratar isso como "tem" mandaria a recusa para o transporte.
-    expect(
-      exigenciasEmFalta(PORTAS_SOCIAIS.intermediada, { conta: "c", token: "   " }),
-    ).toEqual(["credencial_da_conta"]);
+    expect(exigenciasEmFalta(PORTAS_SOCIAIS.intermediada, { conta: "c", token: "   " })).toEqual([
+      "credencial_da_conta",
+    ]);
   });
 });

@@ -26,12 +26,7 @@
  * devolve `{ externalId: null }` — esse valor colapsa "não tentei" com "tentei e
  * a resposta não trouxe id", e o chamador grava os dois de formas diferentes.
  */
-import type {
-  ChannelAdapter,
-  ChannelProvider,
-  OutboundEnvelope,
-  RecipientInput,
-} from "../types";
+import type { ChannelAdapter, ChannelProvider, OutboundEnvelope, RecipientInput } from "../types";
 import { redeSocial, type PortaSocialId } from "./catalog";
 import {
   exigenciasEmFalta,
