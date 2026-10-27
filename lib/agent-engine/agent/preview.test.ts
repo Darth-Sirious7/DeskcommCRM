@@ -98,6 +98,31 @@ describe('preview policy shares gates and contains side effects', () => {
     expect(spy).not.toHaveBeenCalled();
     expect(p.result.impediments[0]?.code).toBe('unknown_preview_tool');
   });
+  it('runs a remote MCP tool the agent marked as read, and keeps the one marked as write closed', async () => {
+    // O catálogo de um servidor MCP externo (#2147) chega ao turno pelo nome que o
+    // servidor anuncia; sem isto a prévia — que é também o rascunho do modo
+    // assistido — recusava `buscar_produtos` como `unknown_preview_tool`.
+    const p = preview(),
+      leitura = vi.fn().mockResolvedValue({ itens: [] }),
+      escrita = vi.fn();
+    (p.agent as { toolIds: string[] }).toolIds = [
+      'mcp_externo:leitura:buscar_produtos',
+      'mcp_externo:escrita:cancelar_pedido',
+    ];
+    const tools = applyPreviewPolicy(
+      { buscar_produtos: definition(leitura), cancelar_pedido: definition(escrita) },
+      p,
+      gate(),
+      () => [],
+    );
+    await execute(tools, 'buscar_produtos', { body: 'colar 925' });
+    await execute(tools, 'cancelar_pedido');
+    expect(leitura).toHaveBeenCalledOnce();
+    expect(escrita).not.toHaveBeenCalled();
+    expect(p.result.impediments).toEqual([
+      { code: 'unknown_preview_tool', message: 'cancelar_pedido' },
+    ]);
+  });
   it('does not mutate the original gate context when disclosure amends a body', () => {
     const ctx = {
       ...gate(),
