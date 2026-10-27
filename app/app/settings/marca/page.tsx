@@ -74,17 +74,16 @@ export default async function MarcaDaOrganizacaoPage() {
   // degrada para o Brasil quando a coluna está vazia ou o país é desconhecido
   // — e o Brasil tem lei revisada, então o `?? "LGPD"` cobre só o tipo.
   const perfil = perfilDoPais(data?.country);
-  // O domínio de ENVIO (#3441) parte do "responder para" que a fatia 1 do #3287
-  // já grava: é o endereço que a organização usa para falar com o cliente, e o
-  // domínio dele é o palpite certo para o campo. Sem ele, o campo nasce vazio e
-  // quem confere digita — nunca herda o domínio da PLATAFORMA, que não é dela.
-  const dominioDoRemetente = dominioDeEndereco(gravada?.email_reply_to ?? null);
-
   // A CONTA Resend conectada (#3287, fatia da conta própria). A tabela tem RLS
   // SEM policy (a chave é segredo), então só o admin client lê — e ele lê SÓ as
   // colunas seguras (`from_email`, `api_key_last4`): a chave e o ciphertext não
   // saem do servidor, nem aqui nem em lugar nenhum (critério D).
-  const contaResend = await estadoDaContaResend(createAdminClient(), activeOrg.orgId);
+  let contaResend: Awaited<ReturnType<typeof estadoDaContaResend>> = null;
+  let contaIndisponivel = false;
+  try { contaResend = await estadoDaContaResend(createAdminClient(), activeOrg.orgId); }
+  catch { contaIndisponivel = true; }
+  // Reply-To pode apontar a outra empresa; quem envia é o From da conta.
+  const dominioDoRemetente = dominioDeEndereco(contaResend?.from_email);
 
   return (
     <div className="flex h-full flex-col gap-6 overflow-y-auto p-6">
@@ -115,6 +114,7 @@ export default async function MarcaDaOrganizacaoPage() {
         contaResend={{
           from_email: contaResend?.from_email ?? null,
           last4: contaResend?.api_key_last4 ?? null,
+          indisponivel: contaIndisponivel,
         }}
         // As DUAS camadas de baixo descem para o formulário, e não uma resolução
         // já pronta: a prévia ao vivo remonta a pilha inteira a cada tecla, pelo
@@ -147,7 +147,7 @@ export default async function MarcaDaOrganizacaoPage() {
         }}
       />
 
-      <DominioDeEnvio dominioInicial={dominioDoRemetente} idioma={idioma} />
+      <DominioDeEnvio key={dominioDoRemetente ?? "sem-conta"} dominioInicial={dominioDoRemetente} contaIndisponivel={contaIndisponivel} idioma={idioma} />
     </div>
   );
 }

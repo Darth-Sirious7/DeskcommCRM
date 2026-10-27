@@ -1,28 +1,7 @@
 "use client";
 
-/**
- * O CARD "DOMÍNIO DE ENVIO" das Configurações → Marca (#3441).
- *
- * ─── O que a pessoa faz aqui ────────────────────────────────────────────────
- *
- * Digita o domínio que assina os e-mails da organização (ou cola o endereço de
- * remetente, que traz o domínio junto) e clica em "Conferir". A resposta vem do
- * DNS PÚBLICO, não do painel do provedor: é o que o Gmail e o Yahoo leem.
- *
- * ─── Por que o resultado tem UMA linha por registro, e não um "ok/falhou" ───
- *
- * "Seu domínio está errado" não é acionável: o admin não tem como saber se falta
- * SPF, DKIM, MX de retorno ou DMARC, e cada um se conserta em um lugar diferente
- * do painel do registrador. Cada linha mostra o nome exato (copiável), o que o
- * DNS respondeu, o que deveria responder e o que aquele estado significa. Os
- * bloqueios e os avisos vêm separados porque a ordem de conserto é a dos
- * bloqueios — e `p=none` é aviso, não parede.
- *
- * ─── Por que a conferência é SERVER ACTION, e não `fetch` do navegador ───────
- *
- * Consultar DNS a partir do navegador é impossível (não há API de DNS no
- * browser) e um proxy nosso para isso viraria um oráculo aberto. A ação confere
- * o papel e o segundo fator antes de consultar.
+/** Card da conta conectada: estado oficial da Resend e observação DNS separados.
+ * O servidor resolve o From da organização ativa; a tela não escolhe domínio.
  */
 import { useState, useTransition } from "react";
 
@@ -33,17 +12,11 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import type { DiagnosticoDoDominioDeEnvio, EstadoDoRegistro, TipoDeRegistro } from "@/lib/email/dominio-de-envio";
 import { traduzir } from "@/lib/i18n/dicionario";
 import type { Idioma } from "@/lib/i18n/idiomas";
 
-/**
- * Cada recusa vira uma frase que diz O QUE FAZER, como nos formulários irmãos.
- * `dominio_invalido` é a única que já traz a explicação do servidor — e ela vem
- * de `dominio-de-envio-dns.ts`, para não haver duas réguas do que é domínio.
- */
+/** As recusas usam códigos próprios; mensagem bruta do provedor não vira texto da tela. */
 /** O que o `t()` recebe quando o código não está no mapa — nunca uma chave vazia. */
 const ERRO_DESCONHECIDO = "Não foi possível conferir agora. Tente de novo em instantes.";
 
@@ -55,12 +28,19 @@ const ERRO_DESCONHECIDO = "Não foi possível conferir agora. Tente de novo em i
 const MARCA_DE_QUANDO = "{quando}";
 
 const ERRO_EM_PORTUGUES: Record<string, string> = {
-  validation_failed: "Informe um domínio, como lojadaana.com.",
   unauthenticated: "Sua sessão expirou. Entre de novo.",
   forbidden_tenant: "Você não tem nenhuma organização ativa. Aceite um convite ou contate o admin.",
   forbidden_role: "Só um administrador da organização pode conferir o domínio.",
   mfa_required: "Confirme o segundo fator nesta sessão e tente de novo.",
-  dominio_invalido: "Informe um domínio, como lojadaana.com.",
+  dominio_invalido: "O domínio informado pela conta não pôde ser conferido.",
+  conta_nao_conectada: "Conecte a conta Resend da empresa para conferir o domínio de envio.",
+  conta_indisponivel: "Não foi possível ler a conta de e-mail da empresa. Confira a conexão em Configurações › Marca e tente de novo.",
+  chave_recusada: "A Resend não aceitou esta chave. Confira se você copiou a chave da API dela.",
+  permissao_insuficiente: "Esta chave não permite consultar domínios. Crie uma chave Full Access na Resend e tente de novo.",
+  consulta_indisponivel: "Não consegui consultar a Resend agora. Tente de novo em instantes.",
+  dominio_nao_verificado: "O domínio da conta não foi encontrado na Resend. Confira a conexão da empresa.",
+  sem_endereco: "Use um endereço de e-mail como contato@suaempresa.com",
+  envio_desabilitado: "O envio está desativado para este domínio na Resend. Ative-o no painel da Resend e tente de novo.",
 };
 
 const ROTULO_DO_TIPO: Record<TipoDeRegistro, string> = {
@@ -71,10 +51,11 @@ const ROTULO_DO_TIPO: Record<TipoDeRegistro, string> = {
 };
 
 const ROTULO_DO_ESTADO: Record<EstadoDoRegistro, string> = {
-  ok: "Certo",
+  ok: "Confere com a Resend",
   atencao: "Atenção",
   ausente: "Ausente",
-  conflitante: "Inválido",
+  conflitante: "Diferente do esperado",
+  indisponivel: "Consulta indisponível",
 };
 
 /** A cor do selo por estado — `ausente` e `conflitante` são a mesma parede. */
@@ -83,34 +64,32 @@ const CLASSE_DO_ESTADO: Record<EstadoDoRegistro, string> = {
   atencao: "border-amber-600/40 text-amber-700 dark:text-amber-400",
   ausente: "border-destructive/40 text-destructive",
   conflitante: "border-destructive/40 text-destructive",
+  indisponivel: "border-amber-600/40 text-amber-700 dark:text-amber-400",
 };
 
 export function DominioDeEnvio({
   dominioInicial,
   idioma,
+  contaIndisponivel = false,
 }: {
-  /** O domínio que já se conhece da organização (do "responder para"), se houver. */
+  /** Derivado do From da conta; Reply-To pode pertencer a outro domínio. */
   readonly dominioInicial: string | null;
   readonly idioma: Idioma;
+  readonly contaIndisponivel?: boolean;
 }) {
   const t = (texto: string) => traduzir(texto, idioma);
-  const [valor, setValor] = useState(dominioInicial ?? "");
   const [diagnostico, setDiagnostico] = useState<DiagnosticoDoDominioDeEnvio | null>(null);
-  // O erro guarda o CÓDIGO (para a frase do dicionário) e, quando o servidor
-  // manda uma explicação própria, o texto dela: `t()` nunca recebe variável.
-  const [erro, setErro] = useState<{ codigo: string; frase: string | null } | null>(null);
+  // Guarda só o código; a frase da interface vem do mesmo dicionário.
+  const [erro, setErro] = useState<string | null>(null);
   const [pendente, iniciar] = useTransition();
 
   function conferir(evento: React.FormEvent) {
     evento.preventDefault();
     iniciar(async () => {
-      const resultado: ResultadoDaConferenciaDoDominio = await conferirDominioDeEnvio(valor);
+      const resultado: ResultadoDaConferenciaDoDominio = await conferirDominioDeEnvio();
       if (!resultado.ok) {
         setDiagnostico(null);
-        // As frases de motivo do servidor já estão em português e são a
-        // explicação mais precisa que existe (dizem o que digitar) — a do mapa
-        // só entra quando ele não trouxe nenhuma.
-        setErro({ codigo: resultado.error, frase: resultado.bloqueios?.[0] ?? null });
+        setErro(resultado.error);
         return;
       }
       setErro(null);
@@ -124,31 +103,25 @@ export function DominioDeEnvio({
         <CardTitle>{t("Domínio de envio")}</CardTitle>
         <CardDescription>
           {t(
-            "O domínio pelo qual saem os e-mails das automações e das campanhas. A conferência lê o DNS público e diz o que falta publicar.",
+            "Os registros esperados vêm da conta Resend conectada. A conferência compara o DNS e não garante a entrega na caixa de entrada.",
           )}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <form className="flex flex-wrap items-end gap-2" onSubmit={conferir}>
-          <div className="flex min-w-64 flex-1 flex-col gap-1.5">
-            <Label htmlFor="dominio-de-envio">{t("Domínio ou e-mail")}</Label>
-            <Input
-              id="dominio-de-envio"
-              value={valor}
-              onChange={(e) => setValor(e.target.value)}
-              placeholder="lojadaana.com"
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </div>
-          <Button type="submit" disabled={pendente || valor.trim().length < 3}>
+          <p className="min-w-64 flex-1 font-mono text-sm">
+            {dominioInicial ?? (contaIndisponivel
+              ? t("Não foi possível ler a conta de e-mail da empresa. Confira a conexão em Configurações › Marca e tente de novo.")
+              : t("Conecte a conta Resend da empresa para conferir o domínio de envio."))}
+          </p>
+          <Button type="submit" disabled={pendente || (!dominioInicial && !contaIndisponivel)}>
             {pendente ? t("Conferindo…") : t("Conferir")}
           </Button>
         </form>
 
         {erro ? (
           <p className="text-sm text-destructive" role="alert">
-            {erro.frase ?? t(ERRO_EM_PORTUGUES[erro.codigo] ?? ERRO_DESCONHECIDO)}
+            {t(ERRO_EM_PORTUGUES[erro] ?? ERRO_DESCONHECIDO)}
           </p>
         ) : null}
 
@@ -158,12 +131,13 @@ export function DominioDeEnvio({
               <Badge
                 variant="outline"
                 className={
-                  diagnostico.prontoParaEnviar
+                  diagnostico.estadoNaResend === "verified" && diagnostico.envioHabilitado
                     ? CLASSE_DO_ESTADO.ok
                     : CLASSE_DO_ESTADO.conflitante
                 }
               >
-                {diagnostico.prontoParaEnviar ? t("Pronto para enviar") : t("Falta publicar")}
+                {diagnostico.estadoNaResend === "verified" && diagnostico.envioHabilitado
+                  ? t("Domínio verificado na Resend") : t("Verificação precisa de atenção na Resend")}
               </Badge>
               <span className="font-mono text-xs text-muted-foreground">{diagnostico.dominio}</span>
               <span className="text-xs text-muted-foreground">
@@ -186,20 +160,17 @@ export function DominioDeEnvio({
                 </thead>
                 <tbody>
                   {diagnostico.registros.map((registro) => (
-                    <tr key={registro.tipo} className="border-t align-top">
+                    <tr key={`${registro.tipo}:${registro.tipoDns}:${registro.nome}`} className="border-t align-top">
                       <td className="py-2 pr-3 whitespace-nowrap">{t(ROTULO_DO_TIPO[registro.tipo])}</td>
-                      <td className="py-2 pr-3 font-mono text-xs break-all">{registro.nome}</td>
+                      <td className="py-2 pr-3 font-mono text-xs break-all">{registro.tipoDns}: {registro.nome}</td>
                       <td className="py-2 pr-3 whitespace-nowrap">
                         <Badge variant="outline" className={CLASSE_DO_ESTADO[registro.estado]}>
                           {t(ROTULO_DO_ESTADO[registro.estado])}
                         </Badge>
                       </td>
                       <td className="py-2 font-mono text-xs break-all">
-                        {registro.encontrado ?? (
-                          <span className="text-muted-foreground">
-                            {t("Publicar")}: {registro.esperado}
-                          </span>
-                        )}
+                        <p>{registro.encontrado ?? t("Ausente")}</p>
+                        <p className="text-muted-foreground">{t("Esperado")}: {registro.esperado}</p>
                       </td>
                     </tr>
                   ))}
@@ -209,7 +180,7 @@ export function DominioDeEnvio({
 
             {diagnostico.bloqueios.length > 0 ? (
               <section className="flex flex-col gap-1">
-                <h3 className="text-sm font-medium">{t("Bloqueios")}</h3>
+                <h3 className="text-sm font-medium">{t("Pendências do DNS")}</h3>
                 <ul className="list-disc pl-5 text-sm text-muted-foreground">
                   {diagnostico.bloqueios.map((frase) => (
                     <li key={frase}>{frase}</li>

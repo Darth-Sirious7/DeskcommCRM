@@ -32,6 +32,9 @@ type FalhaDaContaResend = {
     | "mfa_required"
     /** A Resend recusou a chave (ou a chamada falhou) — não é culpa do domínio. */
     | "chave_recusada"
+    | "permissao_insuficiente"
+    | "consulta_indisponivel"
+    | "envio_desabilitado"
     /** O domínio do endereço não está VERIFICADO na conta (critério E). */
     | "dominio_nao_verificado"
     | "sem_endereco"

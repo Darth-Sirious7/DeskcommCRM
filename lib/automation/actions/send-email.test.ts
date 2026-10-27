@@ -856,6 +856,14 @@ describe("a conta Resend da organização na automação (#3287)", () => {
     };
   }
 
+  it("cifra ilegível falha sem tentar o remetente da plataforma", async () => {
+    const linha = { ...linhaContaResend(), api_key_tag: "invalida" };
+    const r = await acao()!.execute(ctx({}, EQUIPE_ATIVA, null, null, undefined, null, linha), CONFIG);
+    expect(r).toMatchObject({ status: "failed", error: "conta_de_email_indisponivel" });
+    expect(enviar).not.toHaveBeenCalled();
+    expect(orgSendMock).not.toHaveBeenCalled();
+  });
+
   it("com conta conectada, o envio sai pela CONTA da organização e o roteador não é chamado", async () => {
     const r = await acao()!.execute(ctx({}, EQUIPE_ATIVA, null, null, undefined, null, linhaContaResend()), CONFIG);
 

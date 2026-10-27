@@ -1,57 +1,37 @@
-/**
- * O DIAGNÓSTICO DO DOMÍNIO DE ENVIO (#3441), na camada PURA.
- *
- * O que este arquivo prova, caso a caso — sem rede, sem banco, sem relógio:
- *
- *   1. `dominioDeEndereco` aceita domínio E endereço de remetente, e recusa o que
- *      não é nome de máquina (esquema, espaço, IP, rótulo com hífen na ponta);
- *   2. o TXT é lido por REGISTRO, com os pedaços de 255 bytes COLADOS — o DKIM da
- *      Resend chega partido, e emendar pedaços de registros diferentes produziria
- *      uma chave que não existe;
- *   3. SPF: um registro e com `all` é `ok`; dois é `conflitante` (RFC 7208 §3.2);
- *      sem `all` e `?all` são `atencao`; nada é `ausente` e o texto DIZ onde
- *      procurar; a raiz serve de reserva para quem publica fora de `send.`;
- *   4. DKIM: chave presente é `ok`; `p=` vazio é `conflitante` (é assim que se
- *      revoga); nada é `ausente` com o nome do seletor na mensagem;
- *   5. MX de retorno: presente é `ok`, `null MX` é `conflitante`, nada é `ausente`;
- *   6. DMARC: `p=reject`/`quarantine` é `ok`; `p=none` e `pct<100` são `atencao`;
- *      sem `p=` e dois registros são `conflitante`; nada é `ausente` e o esperado
- *      já vem com `rua=`;
- *   7. o veredito: qualquer `ausente`/`conflitante` bloqueia, `atencao` não, e o
- *      texto de cada linha é o que a tela mostra — `conferidoEm` vem de fora.
- */
+/** Casos puros do diagnóstico; estado do provedor não equivale a entrega. */
 import { describe, expect, it } from "vitest";
-
 import {
   diagnosticarDominioDeEnvio,
   dominioDeEndereco,
   lerPoliticaDmarc,
+  registrosOficiaisDeEnvio,
   textosDosRegistros,
   type RespostasDns,
-} from "@/lib/email/dominio-de-envio";
-
+} from "./dominio-de-envio";
+import {
+  DOMINIO,
+  SPF,
+  DKIM,
+  dominioOficial,
+  respostasBoas,
+} from "@/tests/fixtures/email-dominio-oficial";
 const AGORA = "2026-10-26T12:00:00.000Z";
-const DOMINIO = "lojadaana.com";
-
-/** O conjunto COMPLETO e correto — cada teste estraga só o que quer medir. */
-function respostasBoas(sobrescreve: Partial<RespostasDns> = {}): RespostasDns {
-  return {
-    raizTxt: [],
-    envioTxt: [["v=spf1 include:amazonses.com ~all"]],
-    envioMx: ["10 feedback-smtp.us-east-1.amazonses.com"],
-    dkimTxt: [["v=DKIM1; k=rsa; p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC7"]],
-    dmarcTxt: [["v=DMARC1; p=quarantine; rua=mailto:dmarc@lojadaana.com"]],
-    ...sobrescreve,
-  };
+function linha(tipo: "spf" | "dkim" | "mx" | "dmarc", valores?: readonly string[]) {
+  const respostas = respostasBoas();
+  const alteradas = valores
+    ? {
+        ...respostas,
+        consultas: respostas.consultas.map((c) =>
+          c.registro.tipo === tipo ? { ...c, valores } : c,
+        ),
+      }
+    : respostas;
+  const r = diagnosticarDominioDeEnvio(dominioOficial(), alteradas, AGORA)?.registros.find(
+    (r) => r.tipo === tipo,
+  );
+  if (!r) throw new Error("linha ausente");
+  return r;
 }
-
-function linha(respostas: RespostasDns, tipo: "spf" | "dkim" | "mx" | "dmarc") {
-  const diag = diagnosticarDominioDeEnvio(DOMINIO, respostas, AGORA);
-  const achado = diag?.registros.find((r) => r.tipo === tipo);
-  if (!achado) throw new Error(`registro ${tipo} ausente do diagnóstico`);
-  return achado;
-}
-
 describe("dominioDeEndereco", () => {
   it("aceita o domínio e o endereço de remetente, normalizados", () => {
     expect(dominioDeEndereco("lojadaana.com")).toBe("lojadaana.com");
@@ -108,172 +88,6 @@ describe("textosDosRegistros", () => {
   });
 });
 
-describe("SPF", () => {
-  it("um registro com `all` no subdomínio de envio é ok", () => {
-    expect(linha(respostasBoas(), "spf")).toMatchObject({
-      nome: "send.lojadaana.com",
-      estado: "ok",
-      encontrado: "v=spf1 include:amazonses.com ~all",
-      problema: null,
-    });
-  });
-
-  it("`-all` (hardfail) também é ok", () => {
-    const r = linha(respostasBoas({ envioTxt: [["v=spf1 include:amazonses.com -all"]] }), "spf");
-    expect(r.estado).toBe("ok");
-  });
-
-  it("dois registros SPF são conflitantes — a norma manda descartar os dois", () => {
-    const r = linha(
-      respostasBoas({
-        envioTxt: [["v=spf1 include:amazonses.com ~all"], ["v=spf1 include:outro.com ~all"]],
-      }),
-      "spf",
-    );
-    expect(r.estado).toBe("conflitante");
-    expect(r.problema).toContain("RFC 7208");
-  });
-
-  it("sem `all` ou com `?all` é aviso, não bloqueio", () => {
-    for (const registro of ["v=spf1 include:amazonses.com", "v=spf1 include:amazonses.com ?all", "v=spf1 all"]) {
-      const r = linha(respostasBoas({ envioTxt: [[registro]] }), "spf");
-      expect(r.estado, registro).toBe("atencao");
-      expect(r.problema, registro).toBeTruthy();
-    }
-  });
-
-  it("ausente diz os DOIS nomes onde procurou", () => {
-    const r = linha(respostasBoas({ envioTxt: [], raizTxt: [] }), "spf");
-    expect(r.estado).toBe("ausente");
-    expect(r.problema).toContain("send.lojadaana.com");
-    expect(r.problema).toContain("lojadaana.com");
-    expect(r.esperado).toContain("include:amazonses.com");
-  });
-
-  it("a raiz serve de reserva para quem publica fora do subdomínio de envio", () => {
-    const r = linha(
-      respostasBoas({ envioTxt: [], raizTxt: [["v=spf1 include:_spf.google.com ~all"]] }),
-      "spf",
-    );
-    expect(r.nome).toBe("lojadaana.com");
-    expect(r.estado).toBe("ok");
-    expect(r.encontrado).toContain("_spf.google.com");
-  });
-
-  it("o subdomínio de envio tem precedência sobre a raiz", () => {
-    const r = linha(
-      respostasBoas({
-        envioTxt: [["v=spf1 include:amazonses.com ~all"]],
-        raizTxt: [["v=spf1 include:outro.com ~all"]],
-      }),
-      "spf",
-    );
-    expect(r.nome).toBe("send.lojadaana.com");
-    expect(r.encontrado).toContain("amazonses.com");
-  });
-});
-
-describe("DKIM", () => {
-  it("chave presente (mesmo partida em pedaços) é ok", () => {
-    const r = linha(
-      respostasBoas({
-        dkimTxt: [["v=DKIM1; k=rsa; ", "p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC7"]],
-      }),
-      "dkim",
-    );
-    expect(r.nome).toBe("resend._domainkey.lojadaana.com");
-    expect(r.estado).toBe("ok");
-    expect(r.encontrado).toBe("v=DKIM1; k=rsa; p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC7");
-  });
-
-  it("`p=` vazio é chave REVOGADA — conflitante, não ausente", () => {
-    const r = linha(respostasBoas({ dkimTxt: [["v=DKIM1; k=rsa; p="]] }), "dkim");
-    expect(r.estado).toBe("conflitante");
-    expect(r.problema).toContain("REVOGA");
-  });
-
-  it("registro sem `p=` é conflitante", () => {
-    const r = linha(respostasBoas({ dkimTxt: [["v=DKIM1; k=rsa"]] }), "dkim");
-    expect(r.estado).toBe("conflitante");
-  });
-
-  it("ausente nomeia o seletor e avisa que outro provedor usa outro", () => {
-    const r = linha(respostasBoas({ dkimTxt: [] }), "dkim");
-    expect(r.estado).toBe("ausente");
-    expect(r.problema).toContain("resend._domainkey.lojadaana.com");
-    expect(r.problema).toContain("outro seletor");
-  });
-});
-
-describe("MX de retorno", () => {
-  it("presente é ok", () => {
-    expect(linha(respostasBoas(), "mx")).toMatchObject({
-      nome: "send.lojadaana.com",
-      estado: "ok",
-      encontrado: "10 feedback-smtp.us-east-1.amazonses.com",
-    });
-  });
-
-  it("`null MX` é conflitante — o domínio se declara não-recebedor", () => {
-    const r = linha(respostasBoas({ envioMx: ["."] }), "mx");
-    expect(r.estado).toBe("conflitante");
-    expect(r.problema).toContain("null MX");
-  });
-
-  it("ausente explica por que a supressão depende dele", () => {
-    const r = linha(respostasBoas({ envioMx: [] }), "mx");
-    expect(r.estado).toBe("ausente");
-    expect(r.problema).toContain("supressão");
-  });
-});
-
-describe("DMARC", () => {
-  it("`p=quarantine` com `rua=` é ok", () => {
-    expect(linha(respostasBoas(), "dmarc")).toMatchObject({ estado: "ok", problema: null });
-  });
-
-  it("`p=none` é aviso — cumpre publicar, mas não pede recusa", () => {
-    const r = linha(respostasBoas({ dmarcTxt: [["v=DMARC1; p=none; rua=mailto:d@lojadaana.com"]] }), "dmarc");
-    expect(r.estado).toBe("atencao");
-    expect(r.problema).toContain("MONITORAMENTO");
-  });
-
-  it("`pct` abaixo de 100 é aviso, com o número na frase", () => {
-    const r = linha(
-      respostasBoas({ dmarcTxt: [["v=DMARC1; p=reject; pct=25; rua=mailto:d@lojadaana.com"]] }),
-      "dmarc",
-    );
-    expect(r.estado).toBe("atencao");
-    expect(r.problema).toContain("25%");
-  });
-
-  it("caixa alta nas tags não engana o leitor", () => {
-    const r = linha(respostasBoas({ dmarcTxt: [["V=DMARC1; P=REJECT; RUA=mailto:d@lojadaana.com"]] }), "dmarc");
-    expect(r.estado).toBe("ok");
-  });
-
-  it("sem `p=` é conflitante", () => {
-    const r = linha(respostasBoas({ dmarcTxt: [["v=DMARC1; rua=mailto:d@lojadaana.com"]] }), "dmarc");
-    expect(r.estado).toBe("conflitante");
-    expect(r.problema).toContain("p=");
-  });
-
-  it("dois registros DMARC são conflitantes", () => {
-    const r = linha(
-      respostasBoas({ dmarcTxt: [["v=DMARC1; p=none"], ["v=DMARC1; p=reject"]] }),
-      "dmarc",
-    );
-    expect(r.estado).toBe("conflitante");
-  });
-
-  it("ausente traz o registro de partida com `rua=` no campo do que publicar", () => {
-    const r = linha(respostasBoas({ dmarcTxt: [] }), "dmarc");
-    expect(r.estado).toBe("ausente");
-    expect(r.esperado).toBe("v=DMARC1; p=none; rua=mailto:dmarc@lojadaana.com");
-    expect(r.problema).toContain("Gmail");
-  });
-});
-
 describe("lerPoliticaDmarc", () => {
   it("lê política, pct, relatório e alinhamento", () => {
     expect(lerPoliticaDmarc("v=DMARC1; p=reject; pct=50; rua=mailto:a@b.com; adkim=s")).toEqual({
@@ -294,72 +108,163 @@ describe("lerPoliticaDmarc", () => {
   });
 });
 
-describe("diagnosticarDominioDeEnvio (veredito)", () => {
-  it("domínio completo: pronto para enviar, sem bloqueio nem aviso", () => {
-    const diag = diagnosticarDominioDeEnvio(DOMINIO, respostasBoas(), AGORA);
-    expect(diag).not.toBeNull();
-    expect(diag!.prontoParaEnviar).toBe(true);
-    expect(diag!.bloqueios).toEqual([]);
-    expect(diag!.avisos).toEqual([]);
-    expect(diag!.conferidoEm).toBe(AGORA);
-    expect(diag!.dominio).toBe(DOMINIO);
-    // A ordem é a da tela: quem pode entregar, assinatura, voltas, política.
-    expect(diag!.registros.map((r) => r.tipo)).toEqual(["spf", "dkim", "mx", "dmarc"]);
+describe("os registros da conta são a referência", () => {
+  it("mantém nomes completos, nomes relativos, tipo, prioridade e estado oficiais", () => {
+    const registros = registrosOficiaisDeEnvio(dominioOficial());
+    expect(registros.map((r) => [r.tipo, r.nome, r.tipoDns])).toEqual([
+      ["spf", "send.lojadaana.com", "TXT"],
+      ["dkim", "resend._domainkey.lojadaana.com", "TXT"],
+      ["mx", "send.lojadaana.com", "MX"],
+    ]);
+    expect(registros[2]).toMatchObject({
+      valor: "10 feedback-smtp.us-east-1.amazonses.com",
+      estadoNaResend: "verified",
+    });
+    expect(
+      registrosOficiaisDeEnvio(
+        dominioOficial({
+          records: [
+            {
+              record: "SPF",
+              name: "outbound.lojadaana.com.",
+              type: "CNAME",
+              value: "envio.provedor.example",
+              status: "pending",
+              ttl: "Auto",
+            },
+          ],
+        }),
+      )[0],
+    ).toMatchObject({
+      nome: "outbound.lojadaana.com",
+      tipoDns: "CNAME",
+      estadoNaResend: "pending",
+    });
   });
 
-  it("um registro ausente BLOQUEIA o veredito e vira frase em bloqueios", () => {
-    const diag = diagnosticarDominioDeEnvio(DOMINIO, respostasBoas({ dkimTxt: [] }), AGORA);
-    expect(diag!.prontoParaEnviar).toBe(false);
-    expect(diag!.bloqueios).toHaveLength(1);
-    expect(diag!.bloqueios[0]).toContain("resend._domainkey.lojadaana.com");
+  it.each([
+    "v=spf1 -all",
+    "v=spf1 include:outro.example ~all",
+    "v=spf1 include:amazonses.com",
+    "v=spf1 include:amazonses.com ?all",
+  ])("SPF %s não confirma o registro esperado da conta", (spf) => {
+    expect(linha("spf", [spf])).toMatchObject({
+      estado: "conflitante",
+      encontrado: spf,
+      esperado: SPF,
+    });
   });
-
-  it("`p=none` não bloqueia — vira aviso", () => {
-    const diag = diagnosticarDominioDeEnvio(
-      DOMINIO,
-      respostasBoas({ dmarcTxt: [["v=DMARC1; p=none; rua=mailto:d@lojadaana.com"]] }),
-      AGORA,
+  it("SPF com -all e include pode coincidir se for o valor efetivamente pedido pela conta", () => {
+    const r = respostasBoas();
+    const valor = "v=spf1 include:amazonses.com -all";
+    const consultas = r.consultas.map((c) =>
+      c.registro.tipo === "spf"
+        ? { ...c, registro: { ...c.registro, valor }, valores: [valor] }
+        : c,
     );
-    expect(diag!.prontoParaEnviar).toBe(true);
-    expect(diag!.avisos).toHaveLength(1);
+    expect(
+      diagnosticarDominioDeEnvio(dominioOficial(), { ...r, consultas }, AGORA)?.registros[0]
+        ?.estado,
+    ).toBe("ok");
   });
+  it("dois SPF não passam mesmo quando um coincide", () => {
+    expect(linha("spf", [SPF, "v=spf1 include:outro.example ~all"]).estado).toBe("conflitante");
+  });
+  it("ausência aponta só o nome oficial consultado, sem inventar reserva na raiz", () => {
+    expect(linha("spf", [])).toMatchObject({
+      estado: "ausente",
+      nome: "send.lojadaana.com",
+      esperado: SPF,
+    });
+  });
+  it.each(["v=DKIM1; k=rsa; p=", "v=DKIM1; k=rsa", "p=abc"])(
+    "DKIM %s difere da chave oficial",
+    (dkim) => {
+      expect(linha("dkim", [dkim])).toMatchObject({ estado: "conflitante", esperado: DKIM });
+    },
+  );
+  it("DKIM e MX publicados conforme a conta conferem; ausentes não conferem", () => {
+    for (const tipo of ["dkim", "mx"] as const) {
+      expect(linha(tipo).estado).toBe("ok");
+      expect(linha(tipo, []).estado).toBe("ausente");
+    }
+  });
+  it.each(["0 .", "10 mx.outro.example"])("MX %s não confirma o retorno da conta", (mx) => {
+    expect(linha("mx", [mx]).estado).toBe("conflitante");
+  });
+  it("domínio oficial inválido não produz diagnóstico", () => {
+    expect(
+      diagnosticarDominioDeEnvio(dominioOficial({ name: "localhost" }), respostasBoas(), AGORA),
+    ).toBeNull();
+  });
+});
 
-  it("DMARC sem `rua=` gera aviso mesmo quando a política está ok", () => {
-    const diag = diagnosticarDominioDeEnvio(
-      DOMINIO,
-      respostasBoas({ dmarcTxt: [["v=DMARC1; p=reject"]] }),
+describe("DMARC e estado oficial permanecem separados", () => {
+  function diagnostico(dmarcTxt: RespostasDns["dmarcTxt"]) {
+    return diagnosticarDominioDeEnvio(dominioOficial(), respostasBoas({ dmarcTxt }), AGORA)!;
+  }
+  it("preserva os avisos de pct, relatório e alinhamento sem prever entrega", () => {
+    const pct = diagnostico([["v=DMARC1; p=reject; pct=25; rua=mailto:d@lojadaana.com"]]);
+    expect(pct.registros.at(-1)?.estado).toBe("atencao");
+    expect(pct.avisos.some((a) => a.includes("25%"))).toBe(true);
+    const semRelatorio = diagnostico([["v=DMARC1; p=reject; adkim=s"]]);
+    expect(semRelatorio.avisos.some((a) => a.includes("rua="))).toBe(true);
+    expect(semRelatorio.avisos.some((a) => a.includes("estrito"))).toBe(true);
+  });
+  it.each([
+    "v=DMARC1; p=quarantine; rua=mailto:dmarc@lojadaana.com",
+    "V=DMARC1; P=REJECT; RUA=mailto:dmarc@lojadaana.com",
+  ])("política %s publicada é lida", (valor) => {
+    expect(diagnostico([[valor]]).registros.at(-1)).toMatchObject({
+      estado: "ok",
+      encontrado: valor,
+    });
+  });
+  it("p=none fica como atenção, sem afirmar entrega", () => {
+    const d = diagnostico([["v=DMARC1; p=none; rua=mailto:d@lojadaana.com"]]);
+    expect(d.registros.at(-1)?.estado).toBe("atencao");
+    expect(d.avisos).toHaveLength(1);
+    expect(d).not.toHaveProperty("prontoParaEnviar");
+  });
+  it.each([
+    [],
+    [["v=DMARC1; rua=mailto:d@lojadaana.com"]],
+    [["v=DMARC1; p=none"], ["v=DMARC1; p=reject"]],
+  ])("ausência/política inválida não recebe selo de envio", (registros) => {
+    expect(diagnostico(registros).bloqueios).toHaveLength(1);
+  });
+  it("estado verified e envio habilitado vêm da Resend, mesmo se o DNS divergir", () => {
+    const r = respostasBoas();
+    const d = diagnosticarDominioDeEnvio(
+      dominioOficial(),
+      { ...r, consultas: r.consultas.map((c) => ({ ...c, valores: [] })) },
       AGORA,
-    );
-    expect(diag!.prontoParaEnviar).toBe(true);
-    expect(diag!.avisos.some((a) => a.includes("rua="))).toBe(true);
+    )!;
+    expect(d.estadoNaResend).toBe("verified");
+    expect(d.envioHabilitado).toBe(true);
+    expect(d.bloqueios).toHaveLength(3);
+    expect(d).not.toHaveProperty("prontoParaEnviar");
+    expect(d.conferidoEm).toBe(AGORA);
+    expect(d.dominio).toBe(DOMINIO);
   });
-
-  it("alinhamento estrito gera aviso de encaminhamento", () => {
-    const diag = diagnosticarDominioDeEnvio(
-      DOMINIO,
-      respostasBoas({ dmarcTxt: [["v=DMARC1; p=reject; adkim=s; rua=mailto:d@lojadaana.com"]] }),
+  it("consulta inconclusiva e DNS vazio não se tornam sucesso", () => {
+    const r = respostasBoas();
+    const d = diagnosticarDominioDeEnvio(
+      dominioOficial({
+        status: "pending",
+        capabilities: { sending: "disabled", receiving: "enabled" },
+      }),
+      {
+        ...r,
+        consultas: r.consultas.map((c) => ({ ...c, valores: [], indisponivel: true })),
+        dmarcTxt: [],
+        dmarcIndisponivel: true,
+      },
       AGORA,
-    );
-    expect(diag!.avisos.some((a) => a.includes("ESTRITO"))).toBe(true);
-  });
-
-  it("entrada que não é domínio devolve null", () => {
-    expect(diagnosticarDominioDeEnvio("localhost", respostasBoas(), AGORA)).toBeNull();
-    expect(diagnosticarDominioDeEnvio("", respostasBoas(), AGORA)).toBeNull();
-  });
-
-  it("DNS vazio de tudo não lança: são quatro bloqueios, um por pergunta", () => {
-    const diag = diagnosticarDominioDeEnvio(
-      DOMINIO,
-      { raizTxt: [], envioTxt: [], envioMx: [], dkimTxt: [], dmarcTxt: [] },
-      AGORA,
-    );
-    expect(diag!.prontoParaEnviar).toBe(false);
-    expect(diag!.bloqueios).toHaveLength(4);
-  });
-
-  it("aceita endereço de remetente na entrada, como a tela entrega", () => {
-    const diag = diagnosticarDominioDeEnvio("contato@lojadaana.com", respostasBoas(), AGORA);
-    expect(diag!.dominio).toBe(DOMINIO);
+    )!;
+    expect(d.registros.every((r) => r.estado === "indisponivel")).toBe(true);
+    expect(d.bloqueios).toHaveLength(4);
+    expect(d.estadoNaResend).toBe("pending");
+    expect(d.envioHabilitado).toBe(false);
   });
 });

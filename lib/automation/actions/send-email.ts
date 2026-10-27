@@ -409,9 +409,19 @@ async function execute(
   // DE QUEM o e-mail sai (#3287, fatia da conta própria): se a organização
   // conectou a CONTA Resend DELA, este envio sai por ela — o domínio no `From:`
   // é o da organização e os eventos de entrega caem na conta dele. Sem conta
-  // (ou sem dar para ler a conta), o roteador da plataforma entrega, byte a byte
-  // como sempre: a invariância "sem conta = como hoje" é medida, não presumida.
-  const conta = await carregarContaResend(ctx.admin, ctx.organizationId);
+  // conectada, o roteador da plataforma entrega como sempre. Erro de leitura
+  // ou cifra inválida não autoriza trocar a identidade de quem envia.
+  let conta;
+  try {
+    conta = await carregarContaResend(ctx.admin, ctx.organizationId);
+  } catch {
+    return {
+      type: "send_email",
+      status: "failed",
+      error: "conta_de_email_indisponivel",
+      detail: { destinatario, via: "resend" },
+    };
+  }
   const resultado = conta
     ? { ...(await enviarPelaContaDaOrganizacao(conta, pedido)), via: "resend" as const }
     : await sendEmail(pedido);

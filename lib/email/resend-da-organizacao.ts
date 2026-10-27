@@ -27,16 +27,13 @@
  * de envio, e nada mais. A tela NUNCA vê a chave: quem lê o estado para a tela
  * é `estadoDaContaResend`, que seleciona só `from_email` + `api_key_last4`.
  *
- * ─── Por que a leitura degrada para "sem conta" ──────────────────────────────
+ * ─── Ausência e falha têm consequências diferentes ──────────────────────────
  *
- * Mesma filosofia da fatia 1 (`remetente-da-organizacao.ts`): quem chama é o
- * disparo de um e-mail. Uma leitura que falhasse (tabela ausente antes da
- * migration, cifra sem a chave da instalação, linha corrompida) trocaria um
- * problema de configuração por um cliente que não recebe nada. Em qualquer
- * falha, o resultado é `null` = sem conta conectada = o envio segue o roteador
- * de sempre.
+ * Só a ausência de linha autoriza usar o transporte da plataforma. Se a conta
+ * não puder ser lida/decifrada, recusar torna o defeito visível sem enviar com
+ * outra identidade nem consumir a conta da instalação em silêncio.
  */
-import { Resend } from "resend";
+import { Resend, type Domain, type GetDomainResponseSuccess } from "resend";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { byteaToBuffer, decryptKey } from "@/lib/crypto/aes_gcm";
@@ -81,14 +78,43 @@ export type VerificacaoDeDominio =
   | { ok: false; motivo: "sem_endereco" }
   /** A chave foi recusada pela Resend (ou a chamada falhou) — não é culpa do domínio. */
   | { ok: false; motivo: "chave_recusada" }
+  | { ok: false; motivo: "permissao_insuficiente" | "consulta_indisponivel" }
+  | { ok: false; motivo: "envio_desabilitado" }
   /** O domínio do endereço NÃO está verificado na conta da Resend. */
   | { ok: false; motivo: "dominio_nao_verificado"; dominio: string };
 
 /** O domínio de um endereço — a parte depois do último `@`. */
 function dominioDe(endereco: string): string | null {
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(endereco)) return null;
   const corte = endereco.lastIndexOf("@");
   if (corte <= 0 || corte === endereco.length - 1) return null;
-  return endereco.slice(corte + 1).trim().toLowerCase() || null;
+  return (
+    endereco
+      .slice(corte + 1)
+      .trim()
+      .toLowerCase() || null
+  );
+}
+
+/** Códigos oficiais; mensagem do provedor não atravessa para a tela. */
+function motivoDaConsulta(error: {
+  name: string;
+  statusCode?: number | null;
+}): "chave_recusada" | "permissao_insuficiente" | "consulta_indisponivel" {
+  if (
+    error.name === "invalid_permission" ||
+    (error.name === "restricted_api_key" && error.statusCode === 401)
+  ) {
+    return "permissao_insuficiente";
+  }
+  if (
+    ["validation_error", "missing_api_key", "restricted_api_key", "suspended_api_key"].includes(
+      error.name,
+    )
+  ) {
+    return "chave_recusada";
+  }
+  return "consulta_indisponivel";
 }
 
 /**
@@ -108,41 +134,107 @@ function dominioDe(endereco: string): string | null {
  * um domínio com só parte dos registros prontos, e aceitar aqui seria prometer
  * envio que falharia.
  */
-export async function verificarDominioNaResend(
+async function localizarDominioNaResend(
   apiKey: string,
   fromEmail: string,
-): Promise<VerificacaoDeDominio> {
-  const dominio = dominioDe((fromEmail ?? "").trim());
-  if (!dominio) return { ok: false, motivo: "sem_endereco" };
+): Promise<
+  Exclude<VerificacaoDeDominio, { ok: true }> | { ok: true; client: Resend; dominio: Domain }
+> {
+  const endereco = (fromEmail ?? "").trim();
+  const dominio = dominioDe(endereco);
+  // A mesma régua que montará o From no envio. Um domínio verificável não
+  // torna válido um endereço com caracteres de cabeçalho.
+  if (!dominio || !fromAddress(endereco)) return { ok: false, motivo: "sem_endereco" };
   const client = new Resend(apiKey);
   let resposta: Awaited<ReturnType<Resend["domains"]["list"]>>;
   try {
     resposta = await client.domains.list();
   } catch {
-    return { ok: false, motivo: "chave_recusada" };
+    return { ok: false, motivo: "consulta_indisponivel" };
   }
-  if (resposta.error || !resposta.data) return { ok: false, motivo: "chave_recusada" };
-  const dominios = resposta.data.data ?? [];
+  if (resposta.error) return { ok: false, motivo: motivoDaConsulta(resposta.error) };
+  if (!resposta.data) return { ok: false, motivo: "consulta_indisponivel" };
+  const dominios = resposta.data.data;
+  if (!Array.isArray(dominios)) return { ok: false, motivo: "consulta_indisponivel" };
   const achado = dominios.find(
-    (d) => typeof d.name === "string" && d.name.toLowerCase() === dominio && d.status === "verified",
+    (d) => typeof d?.name === "string" && d.name.toLowerCase() === dominio,
   );
   if (!achado) return { ok: false, motivo: "dominio_nao_verificado", dominio };
+  return { ok: true, client, dominio: achado };
+}
+
+export async function verificarDominioNaResend(
+  apiKey: string,
+  fromEmail: string,
+): Promise<VerificacaoDeDominio> {
+  const consulta = await localizarDominioNaResend(apiKey, fromEmail);
+  if (!consulta.ok) return consulta;
+  if (consulta.dominio.status !== "verified") {
+    return {
+      ok: false,
+      motivo: "dominio_nao_verificado",
+      dominio: consulta.dominio.name.toLowerCase(),
+    };
+  }
+  if (consulta.dominio.capabilities?.sending === "disabled") {
+    return { ok: false, motivo: "envio_desabilitado" };
+  }
   return { ok: true };
+}
+
+/** Dados públicos de DNS/estado; nunca inclui cliente SDK, chave ou envelope. */
+export type DominioOficialDaContaResend = Pick<
+  GetDomainResponseSuccess,
+  "name" | "status" | "capabilities" | "records"
+>;
+
+/** Lê os nomes/valores da conta; Return-Path e tipo do registro pertencem ao provedor. */
+export async function dominioOficialDaContaResend(
+  conta: ContaResendDaOrganizacao,
+): Promise<
+  Exclude<VerificacaoDeDominio, { ok: true }> | { ok: true; dominio: DominioOficialDaContaResend }
+> {
+  const consulta = await localizarDominioNaResend(conta.apiKey, conta.fromEmail);
+  if (!consulta.ok) return consulta;
+  if (!consulta.dominio.id) return { ok: false, motivo: "consulta_indisponivel" };
+  try {
+    const { data, error } = await consulta.client.domains.get(consulta.dominio.id);
+    if (error) return { ok: false, motivo: motivoDaConsulta(error) };
+    if (
+      !data ||
+      data.name?.toLowerCase() !== consulta.dominio.name.toLowerCase() ||
+      !Array.isArray(data.records) ||
+      !["enabled", "disabled"].includes(data.capabilities?.sending)
+    ) {
+      return { ok: false, motivo: "consulta_indisponivel" };
+    }
+    return {
+      ok: true,
+      dominio: {
+        name: data.name,
+        status: data.status,
+        capabilities: data.capabilities,
+        records: data.records,
+      },
+    };
+  } catch {
+    return { ok: false, motivo: "consulta_indisponivel" };
+  }
 }
 
 /**
  * A linha de `organization_resend_accounts` → a conta decifrada, ou `null`.
  *
  * Função PURA sobre a linha (sem rede) para o teste poder montar a linha que
- * quiser. Qualquer coisa fora do esperado (coluna ausente, cifra torta) devolve
- * `null` — degrada para "sem conta", nunca lança no caminho do envio.
+ * quiser. Coluna ausente/cifra torta devolve `null` como resultado do parser;
+ * o carregador recusa essa linha, sem confundi-la com a ausência de conta.
  */
 export function contaResendDaLinha(linha: unknown): ContaResendDaOrganizacao | null {
   if (typeof linha !== "object" || linha === null) return null;
   const r = linha as Record<string, unknown>;
   if (typeof r.from_email !== "string") return null;
   const fromEmail = r.from_email.trim();
-  if (fromEmail.length === 0) return null;
+  if (!dominioDe(fromEmail) || !fromAddress(fromEmail)) return null;
   try {
     if (
       r.api_key_ciphertext === undefined ||
@@ -160,14 +252,14 @@ export function contaResendDaLinha(linha: unknown): ContaResendDaOrganizacao | n
     return { apiKey, fromEmail };
   } catch {
     // Cifra fechada com outra chave da instalação, bytea torto, tag inválida:
-    // não é conta utilizável. Quem lê é o envio; ele degrada para o roteador.
+    // não é conta utilizável. O carregador distingue isto de ausência de linha.
     return null;
   }
 }
 
 /**
- * Lê a conta conectada desta organização. `null` = não há conta (ou não deu
- * para ler) — o envio segue pelo roteador da plataforma, como sempre.
+ * Lê a conta conectada desta organização. `null` = não há linha. Erro de
+ * leitura ou linha ilegível recusa; o chamador transforma-o em falha visível.
  *
  * O `select` pede SÓ as colunas que a decifragem precisa: nem `api_key_last4`
  * (irrelevante aqui) nem nada além. Quem nunca deve receber a chave em claro é
@@ -183,14 +275,15 @@ export async function carregarContaResend(
     .eq("organization_id", organizationId)
     .maybeSingle();
   if (error) {
-    // Recusa que NÃO derruba o envio: sem conta, o roteador de sempre atende.
-    logger.warn("conta Resend da organização: não deu para ler; vale o roteador da plataforma", {
+    logger.warn("conta Resend da organização: leitura indisponível; envio recusado", {
       codigo: error.code,
-      detalhe: error.message,
     });
-    return null;
+    throw new Error("conta_resend_indisponivel");
   }
-  return contaResendDaLinha(data);
+  if (data === null) return null;
+  const conta = contaResendDaLinha(data);
+  if (!conta) throw new Error("conta_resend_indisponivel");
+  return conta;
 }
 
 /**
@@ -205,14 +298,15 @@ export async function estadoDaContaResend(
   admin: SupabaseClient,
   organizationId: string,
 ): Promise<EstadoDaContaResend | null> {
-  const { data } = await admin
+  const { data, error } = await admin
     .from("organization_resend_accounts")
     .select("from_email, api_key_last4")
     .eq("organization_id", organizationId)
     .maybeSingle();
-  if (!data || typeof data.from_email !== "string" || typeof data.api_key_last4 !== "string") {
-    return null;
-  }
+  if (error) throw new Error("conta_resend_indisponivel");
+  if (data === null) return null;
+  if (!data || typeof data.from_email !== "string" || typeof data.api_key_last4 !== "string")
+    throw new Error("conta_resend_indisponivel");
   return { from_email: data.from_email, api_key_last4: data.api_key_last4 };
 }
 

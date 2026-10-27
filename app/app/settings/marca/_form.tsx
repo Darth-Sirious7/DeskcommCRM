@@ -85,6 +85,7 @@ interface Props {
   readonly contaResend: {
     readonly from_email: string | null;
     readonly last4: string | null;
+    readonly indisponivel?: boolean;
   };
   /** A linha da marca da INSTALAÇÃO — a camada logo abaixo desta. */
   readonly instalacao: LinhaDaInstalacao;
@@ -135,6 +136,9 @@ const ERRO_DA_CONTA_EM_PORTUGUES: Record<string, string> = {
   forbidden_role: "Só quem administra esta empresa pode conectar uma conta de e-mail.",
   mfa_required: "Confirme o código do seu aplicativo de duas etapas e tente de novo.",
   chave_recusada: "A Resend não aceitou esta chave. Confira se você copiou a chave da API dela.",
+  permissao_insuficiente: "Esta chave não permite consultar domínios. Crie uma chave Full Access na Resend e tente de novo.",
+  consulta_indisponivel: "Não consegui consultar a Resend agora. Tente de novo em instantes.",
+  envio_desabilitado: "O envio está desativado para este domínio na Resend. Ative-o no painel da Resend e tente de novo.",
   sem_endereco: "Use um endereço de e-mail como contato@suaempresa.com",
   cifra_indisponivel: "Não consegui guardar esta chave em segurança. Fale com quem instalou o sistema.",
   nao_gravou: "A conta não chegou ao banco — nada foi conectado. Tente de novo.",
@@ -644,7 +648,11 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, contaResend, instalaca
             )}
           </p>
 
-          {contaConectada ? (
+          {contaResend.indisponivel ? (
+            <p className="text-sm text-error-fg" role="alert">
+              {t("Não foi possível ler a conta de e-mail da empresa. Confira a conexão em Configurações › Marca e tente de novo.")}
+            </p>
+          ) : contaConectada ? (
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border px-3 py-2">
               <span className="text-sm text-text">
                 {t("Conectada")}:{" "}
@@ -677,6 +685,9 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, contaResend, instalaca
               spellCheck={false}
               autoComplete="off"
             />
+            <p className="text-xs text-text-muted">
+              {t("Use uma chave Full Access para conferir o domínio da conta. A chave é cifrada e não volta à tela.")}
+            </p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="org_resend_from_email">{t("E-mail de envio no seu domínio")}</Label>

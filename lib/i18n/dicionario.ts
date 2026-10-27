@@ -18076,6 +18076,32 @@ export const DICIONARIO: Traducoes = {
   "Não foi possível conferir agora. Tente de novo em instantes.": {
     es: "No se pudo comprobar ahora. Inténtalo de nuevo en unos instantes.",
   },
+  "Não foi possível ler a conta de e-mail da empresa. Confira a conexão em Configurações › Marca e tente de novo.": {
+    es: "No se pudo leer la cuenta de correo de la empresa. Revisa la conexión en Configuración › Marca e inténtalo de nuevo.",
+  },
+  "Esta chave não permite consultar domínios. Crie uma chave Full Access na Resend e tente de novo.": {
+    es: "Esta clave no permite consultar dominios. Crea una clave Full Access en Resend e inténtalo de nuevo.",
+  },
+  "Não consegui consultar a Resend agora. Tente de novo em instantes.": {
+    es: "No pude consultar Resend ahora. Inténtalo de nuevo en unos instantes.",
+  },
+  "Use uma chave Full Access para conferir o domínio da conta. A chave é cifrada e não volta à tela.": {
+    es: "Usa una clave Full Access para comprobar el dominio de la cuenta. La clave se cifra y no vuelve a la pantalla.",
+  },
+  "O envio está desativado para este domínio na Resend. Ative-o no painel da Resend e tente de novo.": {
+    es: "El envío está desactivado para este dominio en Resend. Actívalo en el panel de Resend e inténtalo de nuevo.",
+  },
+  "Conecte a conta Resend da empresa para conferir o domínio de envio.": { es: "Conecta la cuenta Resend de la empresa para comprobar el dominio de envío." },
+  "O domínio da conta não foi encontrado na Resend. Confira a conexão da empresa.": { es: "No se encontró el dominio de la cuenta en Resend. Revisa la conexión de la empresa." },
+  "O domínio informado pela conta não pôde ser conferido.": { es: "No se pudo comprobar el dominio informado por la cuenta." },
+  "Confere com a Resend": { es: "Coincide con Resend" },
+  "Diferente do esperado": { es: "Diferente de lo esperado" },
+  "Consulta indisponível": { es: "Consulta no disponible" },
+  "Os registros esperados vêm da conta Resend conectada. A conferência compara o DNS e não garante a entrega na caixa de entrada.": { es: "Los registros esperados provienen de la cuenta Resend conectada. La comprobación compara el DNS y no garantiza la entrega en la bandeja de entrada." },
+  "Domínio verificado na Resend": { es: "Dominio verificado en Resend" },
+  "Verificação precisa de atenção na Resend": { es: "La verificación necesita atención en Resend" },
+  "Pendências do DNS": { es: "Pendientes del DNS" },
+  "Esperado": { es: "Esperado" },
 };
 
 
