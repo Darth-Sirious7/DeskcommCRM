@@ -529,8 +529,11 @@ test("retrato antigo informa a última conferência sem antecipar o comando manu
     }, ultimaConferencia);
     await expect(page.getByText(hora, { exact: true })).toBeVisible();
     await expect(page.getByText(/Versão instalada:.*1\.0\.0/)).toBeVisible();
+    const pastaDaEvidencia = path.join("evidence", "retrato-host-3504");
+    fs.mkdirSync(pastaDaEvidencia, { recursive: true });
     await testInfo.attach("retrato-antigo", {
-      body: await page.screenshot(), contentType: "image/png",
+      body: await page.screenshot({ path: path.join(pastaDaEvidencia, "retrato-antigo.png") }),
+      contentType: "image/png",
     });
 
     await heartbeat(request, { current_version: "1.0.0", latest_version: "1.1.0" });
@@ -545,7 +548,8 @@ test("retrato antigo informa a última conferência sem antecipar o comando manu
     await expect(page.getByRole("heading", { name: "Atualização automática indisponível" })).toBeVisible();
     await expect(page.getByText("bash hostgator-setup-kit/update.sh")).toBeVisible();
     await testInfo.attach("agente-offline", {
-      body: await page.screenshot(), contentType: "image/png",
+      body: await page.screenshot({ path: path.join(pastaDaEvidencia, "agente-offline.png") }),
+      contentType: "image/png",
     });
   } finally {
     // Não deixar a idade preparada para as outras jornadas desta instalação.

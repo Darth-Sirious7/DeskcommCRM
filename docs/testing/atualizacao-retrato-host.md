@@ -27,7 +27,9 @@ painel não recebem mocks. O caso confere quatro estados:
 3. Retrato de 31 minutos com versão nova anunciada mantém «Atualizar agora».
 4. Agente sem notícia há 25 horas mantém o aviso existente e o comando manual.
 
-Screenshots dos estados antigo e offline são anexadas ao resultado do teste.
+Screenshots dos estados antigo e offline são gravadas em
+`evidence/retrato-host-3504/` e anexadas ao resultado do teste. Os arquivos novos
+desse diretório entram na coleta existente do CI também quando o caso passa.
 A fixture restaura um heartbeat recente no `finally`, inclusive quando alguma
 asserção falha. A fronteira exata de 30 minutos e a de 24 horas são medidas no
 teste unitário da rota, com relógio controlado.
