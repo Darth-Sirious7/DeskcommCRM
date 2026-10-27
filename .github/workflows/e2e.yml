@@ -1978,6 +1978,14 @@ jobs:
       - name: Publicar o .env.e2e no ambiente do job
         run: grep -vE '^[[:space:]]*(#|$)' .env.e2e >> "$GITHUB_ENV"
 
+      - if: matrix.parte == 1
+        name: Provar importação após chat inválido (HTTP e banco reais)
+        shell: bash
+        run: |
+          mkdir -p evidence/historico-chat-invalido
+          pnpm exec tsx scripts/provas/historico-chat-invalido.ts --executar-banco-local \
+            | tee evidence/historico-chat-invalido/recibo.jsonl
+
       # `pnpm e2e:build`, não `pnpm build`: as três `NEXT_PUBLIC_*` são embutidas
       # no BUNDLE durante o build. Buildar com um env e trocar só no `next start`
       # deixaria a URL errada dentro do JavaScript que roda no browser — servidor
