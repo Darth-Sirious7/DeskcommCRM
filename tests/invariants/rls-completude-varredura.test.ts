@@ -267,6 +267,7 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "da organização viraram venda, e quem o lê é o servidor com o admin client " +
       "filtrando organization_id à mão (a tela `/app/settings/conversoes`).",
   },
+  { tabela: "meta_ctwa_click_dispatches", razao: "tests/invariants/meta-lead-por-clique.test.ts — deny-all como ad_conversion_dispatches (doc 199): anon e authenticated levam `permission denied` ao ler, inserir, alterar e apagar; service_role lê (controle positivo). Livro dos cliques CTWA; só o servidor lê, filtrando organization_id à mão." },
   {
     tabela: "ad_hierarchy_cache",
     razao:
