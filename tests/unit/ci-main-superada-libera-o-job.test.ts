@@ -162,7 +162,7 @@ it("verify executa sua asserção real: cancelado/skipped/failure não são prov
     const concreto = script.replace(/\$\{\{ needs\.verify-parte\.result \}\}/g, resultado);
     const filho = spawnSync("bash", ["-e", "-c", concreto], {
       encoding: "utf8",
-      env: { PATH: process.env.PATH },
+      env: { PATH: process.env.PATH, NODE_ENV: "test" },
       timeout: 5000,
     });
     expect(filho.error).toBeUndefined();
