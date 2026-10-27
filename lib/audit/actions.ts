@@ -1330,6 +1330,7 @@ export const AUDIT_ACTIONS = [
   "agenda.service_unblock",
   // Reenvio de mensagem que falhou, na mesma linha (POST /api/v1/messages/{id}/retry).
   "message.retried",
+  "conversions.meta_lead_birth_updated",
   // Participante ligado a / desligado de um negócio (`crm_lead_links` com
   // target_kind='contact', #3083). metadata leva só o contact_id e se havia
   // papel — nunca o texto do papel, que é livre.
