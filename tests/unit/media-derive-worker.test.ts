@@ -197,6 +197,76 @@ describe("deriveMessageMedia", () => {
     );
   });
 
+  it.each(["audio", "image", "document", "video"])(
+    "recusa caminho de outra organização antes dos efeitos privilegiados (%s)",
+    async (tipo) => {
+      messageRow.type = tipo;
+      messageRow.media_storage_path = "org2/conversa-alheia/arquivo-privado.ogg";
+      const resultado = await deriveMessageMedia(eventRow());
+      expect(downloadMock).not.toHaveBeenCalled();
+      expect(deriveMediaText).not.toHaveBeenCalled();
+      expect(resolveOrgLlmConfig).not.toHaveBeenCalled();
+      expect(updateEqMock).not.toHaveBeenCalled();
+      expect(inboxInsertMock).not.toHaveBeenCalled();
+      expect(resultado).toEqual({
+        consumer_key: "media_derive_v1",
+        status: "skipped",
+        detail: "invalid_media_path",
+      });
+    },
+  );
+
+  it.each([
+    "org11/conversa/arquivo.ogg",
+    "org1/../org2/arquivo.ogg",
+    "org1/conversa/%2e%2e/arquivo.ogg",
+    "org1/conversa\\arquivo.ogg",
+    "org1//arquivo.ogg",
+    "org1/conversa/arquivo.ogg?download=1",
+    "org1/conversa/arquivo.ogg#fragmento",
+    "org1/conversa/arquivo.ogg ",
+  ])("recusa caminho ambíguo sem baixar nem regravar: %s", async (caminho) => {
+    messageRow.media_storage_path = caminho;
+    const resultado = await deriveMessageMedia(eventRow());
+    expect(downloadMock).not.toHaveBeenCalled();
+    expect(deriveMediaText).not.toHaveBeenCalled();
+    expect(resolveOrgLlmConfig).not.toHaveBeenCalled();
+    expect(updateEqMock).not.toHaveBeenCalled();
+    expect(inboxInsertMock).not.toHaveBeenCalled();
+    expect(resultado).toEqual({
+      consumer_key: "media_derive_v1", status: "skipped", detail: "invalid_media_path",
+    });
+  });
+
+  it.each([null, ""])("preserva markSkipped para mídia sem caminho (%s)", async (caminho) => {
+    messageRow.media_storage_path = caminho;
+    const resultado = await deriveMessageMedia(eventRow());
+    expect(downloadMock).not.toHaveBeenCalled();
+    expect(deriveMediaText).not.toHaveBeenCalled();
+    expect(resolveOrgLlmConfig).not.toHaveBeenCalled();
+    expect(updateEqMock).toHaveBeenCalledExactlyOnceWith({ media_derived_status: "skipped" });
+    expect(resultado).toEqual({
+      consumer_key: "media_derive_v1", status: "skipped", detail: "no media",
+    });
+  });
+
+  it("preserva o caminho legítimo sem exigir pasta de conversa e ignora org do payload", async () => {
+    messageRow.type = "document";
+    messageRow.media_mime = "application/pdf";
+    messageRow.media_storage_path = "org1/proposta.pdf";
+    const evento = eventRow();
+    const resultado = await deriveMessageMedia({
+      ...evento,
+      payload: { ...evento.payload, organization_id: "org2" },
+    });
+    expect(resultado.status).toBe("ok");
+    expect(downloadMock).toHaveBeenCalledExactlyOnceWith("org1/proposta.pdf");
+    expect(deriveMediaText).toHaveBeenCalledOnce();
+    expect(updateEqMock).toHaveBeenCalledWith(
+      expect.objectContaining({ media_derived_status: "ready" }),
+    );
+  });
+
   it("pula se já derivado (idempotência)", async () => {
     messageRow.media_derived_status = "ready";
     const r = await deriveMessageMedia(eventRow());

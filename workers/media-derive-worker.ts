@@ -29,6 +29,7 @@ import { createPool } from "@/lib/agent-engine/db/pool";
 import { env } from "@/lib/env";
 import type { EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { deriveMediaText, type DeriveDeps } from "@/lib/messaging/media/derive";
+import { isMediaPathInOrganization } from "@/lib/messaging/media/upload-validation";
 import { MARCADOR_NAO_LIDA, TIPOS_DERIVAVEIS } from "@/lib/messaging/media/derivable";
 import { deriveVideoText } from "@/lib/messaging/media/video-derive";
 import {
@@ -110,6 +111,12 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
 
   const msg = data as MessageRow | null;
   if (!msg) return { consumer_key, status: "skipped", detail: "no media" };
+
+  // A linha é da org do evento; o objeto apontado por ela ainda precisa ser.
+  // O admin ignora a RLS do Storage: recuse antes de baixar, derivar ou gravar.
+  if (msg.media_storage_path && !isMediaPathInOrganization(msg.media_storage_path, row.organization_id)) {
+    return { consumer_key, status: "skipped", detail: "invalid_media_path" };
+  }
 
   // Desistir DE PROPÓSITO grava `skipped` (terminal em DERIVACAO_TERMINADA).
   // Sem a marca, a linha ficava com status null para sempre e o drain do turno,
