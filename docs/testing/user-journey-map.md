@@ -10,6 +10,8 @@
 
 ## Convenções
 
+Atendimento conjunto (#2542/#2848): a repetição com gestor, convidada, colega sem convite e viewer está **pendente**, junto da organização vizinha e da remoção/reentrada entre sessões abertas. Escopo, controles e limites medidos em [atendimento-conjunto-2848.md](atendimento-conjunto-2848.md); ainda não é prova visual verde.
+
 - `[P0]` primeira impressão — bug aqui é vergonha pública; prioridade máxima.
 - `[P1]` rotina diária do operador/atendente.
 - `[P2]` exploração/edge.
@@ -713,6 +715,7 @@ num job que já leva meia hora.
 | J12.8 | O push sai pelo funil, e no modo oculto sem corpo nem ícone | `lib/notifications/web_push.test.ts`, `tests/unit/push-sai-so-pelo-funil.test.ts` | PASS (unit) |
 | J12.9 | Sair, desligar os alertas e «Sair de todos os dispositivos» encerram o push; «Sair» desconecta TODOS os aparelhos (o `signOut()` do auth-js é `global`) e por isso apaga as inscrições de todos eles — achado da prova pela tela do #3113: só a do aparelho que saiu era apagada; com o push de mensagem desligado, os outros pushes aparecem desligados e travados, e o aparelho não volta a se inscrever | `lib/notifications/push_client.test.ts`, `app/app/settings/notifications/_client.test.tsx`, `hooks/auth/AuthProvider.signOut.test.tsx`, `app/actions/settings/signOutEverywhere.test.ts`, `app/actions/auth/signOut.test.ts`; sem e2e (o CI não tem VAPID, não há inscrição) | PASS (unit) |
 | J12.10 | Recarregar Configurações › Notificações com a permissão do navegador concedida deixa os interruptores de Push usáveis; com ela negada, o aviso de bloqueio aparece sem erro de hidratação — achado da prova pela tela do #3113: o snapshot de servidor da permissão era o valor real, e os seis ficavam `disabled` para sempre (e #418 a cada carga com permissão negada) | `app/app/settings/notifications/_client.hidratacao.test.tsx` (HTML do servidor + `hydrateRoot`) | PASS (unit) |
+| J12.11 | A tela de atualização distingue retrato recente, retrato antigo e agente offline; uma versão nova já anunciada permanece disponível | `tests/e2e/system-update.spec.ts`, caso «retrato antigo informa a última conferência sem antecipar o comando manual»; login e API reais, idade preparada somente na fixture, screenshots anexadas | PREPARADO — execução real pendente no CI; [contrato e limites](atualizacao-retrato-host.md) |
 
 **Por que J12.5 não é `e2e`, medido e não suposto.** Ela nasceu como asserção
 `toBeEnabled()` na spec, e não podia viver lá. Medido no Chromium do Playwright,
@@ -3990,3 +3993,26 @@ compartilhados, transporte sintético e limites em
 | #3402 | Número e Não lidos por organização, recarga, A/B/A, removido e armazenamento bloqueado | `inbox-busca-e-filtros-dizem-a-verdade.spec.ts`; PNG em `evidence/antigos-core-3402/` |
 | #3405 | Resposta rápida criada pela tela e texto recebido por HTTP; campanha prepara reserva e nome no snapshot real | `qa-l12-inbox.spec.ts` e `campanha-com-modelo-aprovado.spec.ts`; PNG em `evidence/antigos-core-3405/` |
 | #3458 | Par handler/ferramenta com resposta LLM sintética, SQL real e o card após genérica, concreta, preservação e null | `qa-l12-funil.spec.ts`; PNG em `evidence/antigos-core-3458/` |
+
+## Lote de correções de acesso, documento e atendimento (2026-10-26)
+
+**Preparado; NÃO EXECUTADO neste lote no navegador nem em Postgres local.**
+Os specs existentes no CI usam usuários sintéticos, app e banco reais. O CI
+publica a evidência nova em `evidence/lote-bugfixes-01a178b3/` somente se a parte
+passar. Este documento não afirma que capturas já existam.
+
+| Jornada | Instrumento preparado |
+|---|---|
+| Rascunho preservado, apagar religa, `/` substitui e recurso com imagem abre prévia sem enviar | `inbox-responder-citando.spec.ts`, upload real no Storage e contagem de mensagens |
+| CPF inválido após blur, corrigir e criar; vazio opcional; organização PT confere NIF em vez de CPF | `contato-salva-email.spec.ts`, cliques reais e POST do formulário |
+| Dois CNPJs informados inválidos não criam empresas, pessoas ou contatos de mesmo nome | `importar-leads-planilha.spec.ts`, API multipart real, lote/linhas e tabelas relidas |
+| Em Só os seus, abrir conversa livre assume; repetir abertura e dois claims 409 não repetem auditoria, evento nem atividade | `inbox-responder-citando.spec.ts`, sessão agent real e quatro contagens no banco |
+| Exceção SQL só para claim próprio com CAS, transferência recusada, dois tenants e dois claims concorrentes com um vencedor | `assumir-conversa-livre-claim-cas.test.ts`, invariante Postgres, sem alterar a cerca de transferência anterior |
+| Conta nova por convite, alternar cadastro/login sem perder token, confirmar no Mailpit e entrar só na equipe convidada | `invite-lifecycle.spec.ts`, conta ausente antes, token_hash de confirmação, assinatura adulterada não preenche e-mail, vínculo agent único e convite aceito; até quatro capturas |
+
+Os registros anteriores de #3475 permanecem acima com seu head efetivamente
+medido. Não provam este lote. As ofertas de campanha são capacidade nova do
+#3503 e permanecem fora desta integração; não há receiver LLM ou prova de MCP
+neste recorte. Não houve execução de build, typecheck, DB, Docker ou browser local.
+A aprovação continua dependendo dos checks obrigatórios e da inspeção dos
+artefatos produzidos no head do lote.
