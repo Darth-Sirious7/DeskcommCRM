@@ -430,8 +430,17 @@ describe("tela de atualização — retrato velho do host (#3488)", () => {
     const d = new Date(ULTIMA_BATIDA);
     const hora = `${String(d.getHours()).padStart(2, "0")}h${String(d.getMinutes()).padStart(2, "0")}`;
     expect(screen.getByText(hora)).toBeInTheDocument();
-    // E a saída manual continua ali: "não sei" sem caminho é só ansiedade.
+    // O retrato antigo orienta conferir a conexão; ainda não é agente offline.
+    expect(screen.queryByText(/hostgator-setup-kit\/update\.sh/)).toBeNull();
+    expect(screen.getByText(/verifique a conexão do servidor com a internet/)).toBeInTheDocument();
+  });
+
+  it("agente offline preserva o caminho manual, mesmo com retrato velho", () => {
+    renderTela({ ...RETRATO_VELHO, agent_online: false });
+
+    expect(screen.getByText("Atualização automática indisponível")).toBeInTheDocument();
     expect(screen.getByText(/hostgator-setup-kit\/update\.sh/)).toBeInTheDocument();
+    expect(screen.queryByText("Não sei se há versão nova")).toBeNull();
   });
 
   it("⭐ (b) CONTROLE — retrato fresco PODE dizer 'é a mais recente'", () => {

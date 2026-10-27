@@ -7480,8 +7480,8 @@ export const DICIONARIO: Traducoes = {
   ". É ele quem confere se saiu versão nova — então não posso afirmar que esta é a mais recente.": {
     es: ". Es él quien comprueba si salió una versión nueva, así que no puedo afirmar que esta sea la más reciente.",
   },
-  "Assim que ele voltar a falar comigo, esta tela se atualiza sozinha. Se demorar, quem tem acesso ao servidor pode conferir na hora com:": {
-    es: "En cuanto vuelva a comunicarse conmigo, esta pantalla se actualizará sola. Si tarda, quien tenga acceso al servidor puede comprobarlo de inmediato con:",
+  "Assim que ele voltar a falar comigo, esta tela se atualiza sozinha. Se demorar, verifique a conexão do servidor com a internet ou peça ajuda a quem cuida dele.": {
+    es: "En cuanto vuelva a comunicarse conmigo, esta pantalla se actualizará sola. Si tarda, comprueba la conexión del servidor a internet o pide ayuda a quien lo administra.",
   },
   "Ainda não há nenhuma versão publicada": { es: "Todavía no hay ninguna versión publicada" },
   "Este projeto ainda não tem nenhuma versão publicada para comparar com a sua instalação — normal em um fork novo ou recém-criado a partir do código-fonte.": {

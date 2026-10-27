@@ -574,10 +574,9 @@ export function UpdatePanel() {
         </p>
         <p className="mt-3 text-sm">
           {t(
-            "Assim que ele voltar a falar comigo, esta tela se atualiza sozinha. Se demorar, quem tem acesso ao servidor pode conferir na hora com:",
+            "Assim que ele voltar a falar comigo, esta tela se atualiza sozinha. Se demorar, verifique a conexão do servidor com a internet ou peça ajuda a quem cuida dele.",
           )}
         </p>
-        <Comando comando={COMANDO_MANUAL} />
         <p className="mt-3 text-sm text-muted-foreground">
           {t("Versão instalada:")} {versao}.
         </p>

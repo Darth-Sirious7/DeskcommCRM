@@ -64,5 +64,6 @@ describe("retratoDoHostVelho — a idade do retrato do host (#3488)", () => {
     // valor da válvula antiga (24h): os dois extremos são o defeito.
     expect(RETRATO_VELHO_APOS_MS).toBeGreaterThan(5 * 60 * 1000);
     expect(RETRATO_VELHO_APOS_MS).toBeLessThan(24 * 60 * 60 * 1000);
+    expect(RETRATO_VELHO_APOS_MS).toBe(30 * 60 * 1000);
   });
 });

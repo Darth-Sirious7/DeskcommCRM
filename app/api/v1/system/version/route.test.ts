@@ -360,6 +360,30 @@ describe("GET /api/v1/system/version", () => {
     expect(body.data.agent_stale).toBe(false);
   });
 
+  it.each([
+    { idade: 30 * 60_000 - 1, velho: false, online: true },
+    { idade: 30 * 60_000, velho: false, online: true },
+    { idade: 30 * 60_000 + 1, velho: true, online: true },
+    { idade: 24 * 60 * 60_000 - 1, velho: true, online: true },
+    { idade: 24 * 60 * 60_000, velho: true, online: false },
+  ])("idade $idade ms: retrato velho=$velho e agente online=$online", async ({ idade, velho, online }) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const agora = new Date("2026-10-26T19:00:00.000Z");
+      vi.setSystemTime(agora);
+      versionRow.agent_last_seen_at = new Date(agora.getTime() - idade).toISOString();
+      vi.mocked(loadAuthUser).mockResolvedValue(OWNER as never);
+      const { GET } = await import("../version/route");
+      const body = await (await GET(get())).json();
+
+      expect(body.data.agent_stale).toBe(velho);
+      expect(body.data.agent_online).toBe(online);
+      expect(body.data.agent_last_seen_at).toBe(versionRow.agent_last_seen_at);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("entrega as versões do run e o log da tentativa (o diagnóstico da falha)", async () => {
     // `current_version` é o `git describe` do HOST e, numa falha, já aponta
     // para a versão que QUEBROU (o checkout acontece antes de o app subir).
