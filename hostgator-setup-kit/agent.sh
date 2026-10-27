@@ -122,6 +122,11 @@ json_field() {  # json_field <corpo> <campo> — sem jq, que pode não existir n
   printf '%s' "$1" | tr ',' '\n' | grep -o "\"$2\":[^,}]*" | head -1 | cut -d: -f2- | tr -d '" '
 }
 
+# Não confunde o booleano JSON true com a string "true" ou outro valor.
+json_bool_true() {
+  printf '%s' "$1" | LC_ALL=C grep -E "\"$2\"[[:space:]]*:[[:space:]]*true([[:space:]]*[,}]|[[:space:]]*$)" >/dev/null
+}
+
 # Escapa texto pra caber dentro de uma string JSON, sem depender de jq:
 # 1) remove controle C0 cru (0x00-0x08, 0x0B-0x0C, 0x0E-0x1F) e DEL — cobre
 #    inclusive sequências ANSI (ESC=0x1B), que o PRÓPRIO update.sh emite via
@@ -396,7 +401,7 @@ if [ -n "$DE_VOLTA" ]; then
   fi
 fi
 
-BODY="{\"kind\":\"heartbeat\",\"current_version\":\"${CURRENT}\",\"current_sha\":\"${CURRENT_SHA}\",\"off_release\":${OFF_RELEASE},\"latest_version\":\"${LATEST_TAG}\",\"compare_failed\":${COMPARE_FAILED},\"has_known_release\":${HAS_KNOWN_RELEASE},\"changelog\":\"$(esc "$CHANGELOG")\",\"runtime_confirmation\":$RUNTIME_CONFIRMATION}" || true
+BODY="{\"kind\":\"heartbeat\",\"supports_forced_update\":true,\"current_version\":\"${CURRENT}\",\"current_sha\":\"${CURRENT_SHA}\",\"off_release\":${OFF_RELEASE},\"latest_version\":\"${LATEST_TAG}\",\"compare_failed\":${COMPARE_FAILED},\"has_known_release\":${HAS_KNOWN_RELEASE},\"changelog\":\"$(esc "$CHANGELOG")\",\"runtime_confirmation\":$RUNTIME_CONFIRMATION}" || true
 
 # Só no log do host, de propósito. Mandar isto no heartbeat seria inútil: o
 # schema da rota é `z.object` sem `.strict()`, então o Zod DESCARTA chave
@@ -412,9 +417,12 @@ RESP="$(post "$BODY")"
 RUN_ID="$(json_field "$RESP" run_id)" || true
 [ -n "$RUN_ID" ] || exit 0
 
-# Revalidate old queued requests too: the API may have accepted one before
-# this heartbeat established a customized or incomplete runtime.
-if [ "$RUNTIME_CONFIRMATION" != null ] && ! runtime_can_install_release; then
+# Revalida também pedidos antigos. Força nunca usa o fallback legado sem
+# observação: o helper pode ter sumido depois de o app aceitar o pedido.
+FORCA_PEDIDA=""
+json_bool_true "$RESP" force_requested && FORCA_PEDIDA=1
+if { [ "$RUNTIME_CONFIRMATION" != null ] || [ -n "$FORCA_PEDIDA" ]; } &&
+   { [ "$RUNTIME_CONFIRMATION" = null ] || ! runtime_can_install_release; }; then
   post "{\"kind\":\"run_result\",\"run_id\":\"${RUN_ID}\",\"status\":\"failed\",\"log_tail\":\"A execução está incompleta ou personalizada. Concilie e confirme os serviços antes de instalar imagens de uma release pública.\"}" >/dev/null || true
   exit 0
 fi
@@ -479,6 +487,12 @@ export API SECRET ERRLOG RUN_ID
 # à tela pelo log_tail, em vez de o run sumir sem explicação).
 ALVO="$(json_field "$RESP" to_version)" || ALVO=""
 [ -n "$ALVO" ] || ALVO="$LATEST_TAG"
+# O alvo vem da rota autenticada, mas o host mantém o vocabulário restrito.
+if [ -n "$ALVO" ] && ! [[ "$ALVO" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  log_err "pedido de atualização recusado: alvo não é uma tag de versão publicada"
+  post "{\"kind\":\"run_result\",\"run_id\":\"${RUN_ID}\",\"status\":\"failed\",\"log_tail\":\"O alvo do pedido não é uma versão publicada válida. Nenhuma atualização foi executada.\"}" >/dev/null || true
+  exit 0
+fi
 UPDATE_ARGS=()
 [ -n "$ALVO" ] && UPDATE_ARGS=(--to "$ALVO")
 # A MESMA guarda do update.sh contra "versão ANTERIOR à já instalada"
@@ -491,7 +505,7 @@ if [ -n "$ALVO" ] && [ "$ALVO" != "$CURRENT_TAG" ]; then
   is_already_in_head "$ALVO" && CONTIDA=0 || CONTIDA=$?
   [ "$CONTIDA" = 0 ] && VOLTA_NO_TEMPO=1
 fi
-[ -n "$VOLTA_NO_TEMPO" ] && UPDATE_ARGS+=(--force)
+if [ -n "$VOLTA_NO_TEMPO" ] || [ -n "$FORCA_PEDIDA" ]; then UPDATE_ARGS+=(--force); fi
 
 # Cada execução do agente começa sem medição nenhuma do banco: o arquivo da
 # rodada é desta rodada, e resíduo da execução anterior não pode virar história

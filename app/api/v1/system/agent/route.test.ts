@@ -89,11 +89,8 @@ beforeEach(() => {
           if (!insertError) inserts.push({ table, ...patch });
           return { error: insertError };
         },
-        update: (patch: Record<string, unknown>) => ({
-          eq: async () => {
-            // A escrita da RODADA DO BANCO é reconhecível pelas próprias colunas:
-            // o caso que mede "coluna cosmética não derruba o desfecho" precisa
-            // derrubar SÓ ela, e deixar a que fecha o run passar.
+        update: (patch: Record<string, unknown>) => {
+          const aplicar = async () => {
             const soARodada =
               "disputa_de_banco" in patch ||
               "retentativas_do_banco" in patch ||
@@ -101,9 +98,17 @@ beforeEach(() => {
             const error =
               (soARodada ? rodadaWriteError : null) ?? updateErrorByTable[table] ?? null;
             if (!error) updates.push({ table, ...patch });
-            return { error };
-          },
-        }),
+            return { error, data: runRow?.status === "dispatched" ? { id: runRow.id } : null };
+          };
+          const query = {
+            eq: () => query,
+            select: () => query,
+            maybeSingle: aplicar,
+            then: (resolve: (value: Awaited<ReturnType<typeof aplicar>>) => unknown) =>
+              aplicar().then(resolve),
+          };
+          return query;
+        },
       };
     },
   } as never);
@@ -543,7 +548,10 @@ describe("runtime confirmation on the authenticated heartbeat", () => {
     const { POST } = await import("./route");
     const snapshot = confirmedRuntime();
     expect((await POST(req({ ...HEARTBEAT, runtime_confirmation: snapshot }))).status).toBe(200);
-    expect(lastUpdate("system_version")?.runtime_confirmation).toEqual(snapshot);
+    expect(lastUpdate("system_version")?.runtime_confirmation).toEqual({
+      ...snapshot,
+      supports_forced_update: false,
+    });
     expect((await POST(req(HEARTBEAT))).status).toBe(200);
     expect(lastUpdate("system_version")?.runtime_confirmation).toBeNull();
   });
@@ -557,4 +565,64 @@ describe("runtime confirmation on the authenticated heartbeat", () => {
     ).toBe(401);
     expect(updates).toEqual([]);
   });
+});
+
+describe("força limitada ao código do agente em execução", () => {
+  it("entrega a intenção booleana persistida no run", async () => {
+    runRow = { id: RUN_ID, status: "dispatched", to_version: "v1.0.0", force_requested: true };
+    const { POST } = await import("./route");
+    const body = await (
+      await POST(
+        req({
+          ...HEARTBEAT,
+          supports_forced_update: true,
+          runtime_confirmation: confirmedRuntime(),
+        }),
+      )
+    ).json();
+    expect(body.data.force_requested).toBe(true);
+  });
+
+  it("pedido antigo sem booleano mantém false", async () => {
+    runRow = { id: RUN_ID, status: "dispatched", to_version: "v1.0.0" };
+    const { POST } = await import("./route");
+    const body = await (await POST(req(HEARTBEAT))).json();
+    expect(body.data.force_requested).toBe(false);
+  });
+
+  it("o helper novo não concede capacidade ao agente antigo que não a anuncia", async () => {
+    const { confirmedRuntime } = await import("@/tests/helpers/runtime-confirmation");
+    const { POST } = await import("./route");
+    const response = await POST(
+      req({
+        ...HEARTBEAT,
+        runtime_confirmation: { ...confirmedRuntime(), supports_forced_update: true },
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(lastUpdate("system_version")?.runtime_confirmation).toMatchObject({
+      supports_forced_update: false,
+    });
+  });
+
+  it("o anúncio explícito do próprio agente chega à observação persistida", async () => {
+    const { confirmedRuntime } = await import("@/tests/helpers/runtime-confirmation");
+    const { POST } = await import("./route");
+    const response = await POST(
+      req({ ...HEARTBEAT, supports_forced_update: true, runtime_confirmation: confirmedRuntime() }),
+    );
+    expect(response.status).toBe(200);
+    expect(lastUpdate("system_version")?.runtime_confirmation).toMatchObject({
+      supports_forced_update: true,
+    });
+  });
+});
+
+it("não entrega força já enfileirada ao agente que perdeu a capacidade", async () => {
+  runRow = { id: RUN_ID, status: "dispatched", to_version: "v1.0.0", force_requested: true };
+  const { POST } = await import("./route");
+  const response = await POST(req(HEARTBEAT));
+  expect(response.status).toBe(200);
+  expect((await response.json()).data.update_requested).toBe(false);
+  expect(lastUpdate("system_update_runs")).toMatchObject({ status: "failed" });
 });

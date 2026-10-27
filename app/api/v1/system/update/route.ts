@@ -34,7 +34,11 @@ import {
 import { loadAuthUser } from "@/lib/auth/server";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { runtimeIdentity, newerOfficialRelease } from "@/lib/system/runtime-identity";
+import {
+  runtimeIdentity,
+  newerOfficialRelease,
+  supportsForcedUpdate,
+} from "@/lib/system/runtime-identity";
 import { ehVersaoPublicada, isRunStale } from "@/lib/system/update-run";
 
 export const dynamic = "force-dynamic";
@@ -122,12 +126,24 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
   if (
     !querVoltar &&
+    !querForcar &&
     (version?.compare_failed ||
       (identity.status === "confirmed" && newerOfficialRelease(current, latest) !== true))
   ) {
     return fail(
       "state_conflict",
       "Não há atualização posterior confirmada para esta instalação.",
+      409,
+    );
+  }
+
+  if (
+    querForcar &&
+    !supportsForcedUpdate(version?.runtime_confirmation, version?.agent_last_seen_at)
+  ) {
+    return fail(
+      "state_conflict",
+      "O agente do servidor ainda não confirmou suporte para refazer a atualização pela tela.",
       409,
     );
   }
@@ -209,7 +225,9 @@ export async function POST(req: NextRequest): Promise<Response> {
     if (leituraFalha) {
       // Silêncio aqui mudaria a AÇÃO: o botão executaria `--force` sem `--to`
       // enquanto a tela ao lado prometia o retorno para a versão anterior.
-      logger.error("[system/update] leitura do run da força falhou", { error: leituraFalha.message });
+      logger.error("[system/update] leitura do run da força falhou", {
+        error: leituraFalha.message,
+      });
       return fail("internal_error", "Não consegui montar o pedido de força.", 500);
     }
 
@@ -293,6 +311,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       from_version: current,
       to_version: alvo,
       status: "dispatched",
+      force_requested: querForcar,
       requested_by: user.id,
     })
     .select()

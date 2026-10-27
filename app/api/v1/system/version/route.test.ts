@@ -383,23 +383,26 @@ describe("GET /api/v1/system/version", () => {
     { idade: 30 * 60_000 + 1, velho: true, online: true },
     { idade: 24 * 60 * 60_000 - 1, velho: true, online: true },
     { idade: 24 * 60 * 60_000, velho: true, online: false },
-  ])("idade $idade ms: retrato velho=$velho e agente online=$online", async ({ idade, velho, online }) => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    try {
-      const agora = new Date("2026-10-26T19:00:00.000Z");
-      vi.setSystemTime(agora);
-      versionRow.agent_last_seen_at = new Date(agora.getTime() - idade).toISOString();
-      vi.mocked(loadAuthUser).mockResolvedValue(OWNER as never);
-      const { GET } = await import("../version/route");
-      const body = await (await GET(get())).json();
+  ])(
+    "idade $idade ms: retrato velho=$velho e agente online=$online",
+    async ({ idade, velho, online }) => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      try {
+        const agora = new Date("2026-10-26T19:00:00.000Z");
+        vi.setSystemTime(agora);
+        versionRow.agent_last_seen_at = new Date(agora.getTime() - idade).toISOString();
+        vi.mocked(loadAuthUser).mockResolvedValue(OWNER as never);
+        const { GET } = await import("../version/route");
+        const body = await (await GET(get())).json();
 
-      expect(body.data.agent_stale).toBe(velho);
-      expect(body.data.agent_online).toBe(online);
-      expect(body.data.agent_last_seen_at).toBe(versionRow.agent_last_seen_at);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+        expect(body.data.agent_stale).toBe(velho);
+        expect(body.data.agent_online).toBe(online);
+        expect(body.data.agent_last_seen_at).toBe(versionRow.agent_last_seen_at);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it("entrega as versões do run e o log da tentativa (o diagnóstico da falha)", async () => {
     // `current_version` é o `git describe` do HOST e, numa falha, já aponta
@@ -1155,5 +1158,24 @@ describe("runtime identity through native routes", () => {
     const { POST } = await import("../update/route");
     expect((await POST(post())).status).toBe(409);
     expect(inserted).toBeNull();
+  });
+});
+
+describe("capacidade de força apresentada ao dono", () => {
+  it("expõe o anúncio apenas com a observação oficial recente", async () => {
+    const snapshot = { ...confirmedRuntime("1.89.0"), supports_forced_update: true };
+    versionRow.runtime_confirmation = snapshot;
+    versionRow.agent_last_seen_at = snapshot.collected_at;
+    vi.mocked(loadAuthUser).mockResolvedValue(OWNER as never);
+    const { GET } = await import("./route");
+    expect((await (await GET(get())).json()).data.force_update_supported).toBe(true);
+    snapshot.services[1]!.healthy = false;
+    expect((await (await GET(get())).json()).data.force_update_supported).toBe(false);
+  });
+  it("confirmação antiga sem anúncio não autoriza a tela a prometer força", async () => {
+    versionRow.runtime_confirmation = confirmedRuntime("1.89.0");
+    vi.mocked(loadAuthUser).mockResolvedValue(OWNER as never);
+    const { GET } = await import("./route");
+    expect((await (await GET(get())).json()).data.force_update_supported).toBe(false);
   });
 });

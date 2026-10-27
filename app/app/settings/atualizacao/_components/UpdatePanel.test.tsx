@@ -61,9 +61,7 @@ describe("tela de atualização — o botão não fica atrás do changelog", () 
     const changelog = screen.getByText("O que muda");
 
     expect(
-      Boolean(
-        botao.compareDocumentPosition(changelog) & Node.DOCUMENT_POSITION_FOLLOWING,
-      ),
+      Boolean(botao.compareDocumentPosition(changelog) & Node.DOCUMENT_POSITION_FOLLOWING),
     ).toBe(true);
   });
 
@@ -79,9 +77,9 @@ describe("tela de atualização — o botão não fica atrás do changelog", () 
     const aviso = screen.getByText("Requer atenção", { exact: false });
     const botao = screen.getByRole("button", { name: "Atualizar agora" });
 
-    expect(
-      Boolean(aviso.compareDocumentPosition(botao) & Node.DOCUMENT_POSITION_FOLLOWING),
-    ).toBe(true);
+    expect(Boolean(aviso.compareDocumentPosition(botao) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(
+      true,
+    );
   });
 
   it("o aviso de histórico incompleto continua ANTES do botão — com ele, o 'Requer atenção' pode estar faltando itens", () => {
@@ -93,9 +91,9 @@ describe("tela de atualização — o botão não fica atrás do changelog", () 
     const aviso = screen.getByText("Este histórico começa na versão", { exact: false });
     const botao = screen.getByRole("button", { name: "Atualizar agora" });
 
-    expect(
-      Boolean(aviso.compareDocumentPosition(botao) & Node.DOCUMENT_POSITION_FOLLOWING),
-    ).toBe(true);
+    expect(Boolean(aviso.compareDocumentPosition(botao) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(
+      true,
+    );
   });
 });
 
@@ -248,9 +246,7 @@ describe("tela de atualização — a rodada conta a disputa do banco", () => {
   it("rodada medida SEM disputa: conta que foi de uma vez e não aponta log nenhum", () => {
     // O controle do issue: aviso sem motivo vira ruído, e quem para de ler o
     // ruído para de ler o aviso. Endereço de log é linha só quando há o que ler.
-    renderTela(
-      rodada({ rodada_do_banco: { disputa: false, retentativas: 0, passada: 1 } }),
-    );
+    renderTela(rodada({ rodada_do_banco: { disputa: false, retentativas: 0, passada: 1 } }));
 
     expect(screen.getByText(/atualizou de uma vez, na primeira passada/)).toBeInTheDocument();
     expect(screen.queryByText(/\.update\.log/)).not.toBeInTheDocument();
@@ -344,7 +340,9 @@ describe("tela de atualização — o aviso da volta automática (#2757)", () =>
     renderTela(volta({ volta_automatica: false }));
 
     expect(screen.queryByTestId("volta-automatica")).toBeNull();
-    expect(screen.getByText("Voltei o sistema para a versão", { exact: false })).toBeInTheDocument();
+    expect(
+      screen.getByText("Voltei o sistema para a versão", { exact: false }),
+    ).toBeInTheDocument();
   });
 
   it("⭐ a volta que TERMINOU não oferece o botão de voltar — o alvo dele já é a versão no ar", () => {
@@ -370,7 +368,9 @@ describe("tela de atualização — o aviso da volta automática (#2757)", () =>
     // é o status, nunca a marca de autoria.
     renderTela(volta({ status: "failed" }));
 
-    expect(screen.getByRole("button", { name: "Voltar para a versão anterior" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Voltar para a versão anterior" }),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/que é a que está no ar agora/)).toBeNull();
     expect(screen.getByText(/o sistema pode estar rodando a versão/)).toBeInTheDocument();
   });
@@ -422,9 +422,7 @@ describe("tela de atualização — retrato velho do host (#3488)", () => {
     expect(screen.queryByText(/Você está na versão/)).toBeNull();
 
     expect(screen.getByText("Não sei se há versão nova")).toBeInTheDocument();
-    expect(
-      screen.getByText(/não posso afirmar que esta é a mais recente/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/não posso afirmar que esta é a mais recente/)).toBeInTheDocument();
     // A idade da informação é dita, não escondida: a hora é a da última batida
     // que o retrato registrou (renderizada no fuso de quem lê).
     const d = new Date(ULTIMA_BATIDA);
@@ -533,7 +531,6 @@ describe("tela de atualização — recusa por falta do código leva ao desafio"
   });
 });
 
-
 /**
  * #2756 — o `--force` vira CLIQUE.
  *
@@ -554,6 +551,14 @@ describe("tela de atualização — o botão de força (#2756)", () => {
       // reporta a versão ALVO, e ela É a mais recente — é este o estado que o
       // 409 do caminho de atualizar barra e que só a força atravessa.
       current_version: "1.5.0",
+      identity: {
+        status: "confirmed",
+        base_version: "1.5.0",
+        revision: "a".repeat(40),
+        customized: false,
+        confirmed_at: new Date().toISOString(),
+      },
+      force_update_supported: true,
       is_owner: true,
       latest_version: "1.5.0",
       update_available: true,
@@ -586,9 +591,9 @@ describe("tela de atualização — o botão de força (#2756)", () => {
 
     // "Junto": o botão vem ANTES do `<code>` no mesmo bloco — é o clique daquela
     // linha, não um atalho solto em outro canto da tela.
-    expect(
-      Boolean(botao.compareDocumentPosition(comando) & Node.DOCUMENT_POSITION_FOLLOWING),
-    ).toBe(true);
+    expect(Boolean(botao.compareDocumentPosition(comando) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(
+      true,
+    );
     // E o botão de ATUALIZAR continua DESLIGADO aqui: sem força ele é o falso
     // sucesso descrito no doc de `Saida`.
     expect(screen.queryByRole("button", { name: "Atualizar agora" })).toBeNull();
@@ -664,5 +669,49 @@ describe("tela de atualização — o botão de força (#2756)", () => {
       screen.getAllByText("Não consegui iniciar a atualização", { exact: false }),
     ).toHaveLength(1);
     expect(irAoDesafioDeMfa).not.toHaveBeenCalled();
+  });
+  it("agente legado não recebe promessa de força pela tela", () => {
+    renderTela({ ...falha(), identity: undefined, force_update_supported: undefined });
+    expect(screen.queryByRole("button", { name: "Forçar atualização" })).toBeNull();
+    expect(
+      screen.getByText("bash hostgator-setup-kit/update.sh --to v1.4.2 --force"),
+    ).toBeInTheDocument();
+  });
+
+  it("sem anúncio do host confirmado não oferece força", () => {
+    renderTela({ ...falha(), force_update_supported: false });
+    expect(screen.queryByRole("button", { name: "Forçar atualização" })).toBeNull();
+  });
+
+  it("personalização não ganha força mesmo com capacidade anunciada", () => {
+    const dados = falha();
+    renderTela({
+      ...dados,
+      identity: { ...dados.identity!, customized: true },
+      manual_reconciliation_required: true,
+    });
+    expect(screen.queryByRole("button", { name: "Forçar atualização" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Voltar para a versão anterior" })).toBeNull();
+  });
+  it("origem com sufixo usa o comando sem tag e não oferece volta para uma imagem inexistente", () => {
+    renderTela(falha({ from_version: "1.4.2-dev" }));
+    expect(screen.getByText("bash hostgator-setup-kit/update.sh --force")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Voltar para a versão anterior" })).toBeNull();
+  });
+
+  it("identidade moderna preserva o destino, a hora e o motivo da volta automática", () => {
+    const quando = "2026-10-20T12:13:00.000Z";
+    renderTela(
+      falha({ status: "failed_rolled_back", volta_automatica: true, finished_at: quando }),
+    );
+    const texto = screen.getByTestId("volta-automatica").textContent ?? "";
+    const d = new Date(quando);
+    expect(texto).toContain("voltou sozinho");
+    expect(texto).toContain("1.4.2");
+    expect(texto).toContain("1.5.0");
+    expect(texto).toContain(
+      `${String(d.getHours()).padStart(2, "0")}h${String(d.getMinutes()).padStart(2, "0")}`,
+    );
+    expect(texto).toContain("site não respondeu");
   });
 });

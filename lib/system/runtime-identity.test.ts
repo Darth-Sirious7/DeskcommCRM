@@ -5,6 +5,7 @@ import {
   newerOfficialRelease,
   RUNTIME_MAX_AGE_MS,
   runtimeIdentity,
+  supportsForcedUpdate,
 } from "./runtime-identity";
 
 const at = "2026-10-20T12:00:00.000Z";
@@ -93,6 +94,29 @@ describe("host observation of applicable running services", () => {
       failureSupersededByRuntime(
         { ...identity(confirmedRuntime("1.89.0", at)), status: "partial" },
         run,
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("capacidade restrita de refazer atualização", () => {
+  it("ausência de anúncio não concede capacidade ao host", () => {
+    expect(supportsForcedUpdate(confirmedRuntime("1.89.0", at), at, now)).toBe(false);
+    expect(supportsForcedUpdate(null, at, now)).toBe(false);
+  });
+  it("só uma identidade oficial confirmada e recente pode anunciar força", () => {
+    const snapshot = { ...confirmedRuntime("1.89.0", at), supports_forced_update: true };
+    expect(supportsForcedUpdate(snapshot, at, now)).toBe(true);
+    expect(
+      supportsForcedUpdate(snapshot, at, new Date(now.getTime() + RUNTIME_MAX_AGE_MS + 1)),
+    ).toBe(false);
+    snapshot.services[1]!.healthy = false;
+    expect(supportsForcedUpdate(snapshot, at, now)).toBe(false);
+    expect(
+      supportsForcedUpdate(
+        { ...confirmedRuntime("1.89.0", at, true), supports_forced_update: true },
+        at,
+        now,
       ),
     ).toBe(false);
   });

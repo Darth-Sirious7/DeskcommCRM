@@ -10,6 +10,7 @@ export const runtimeConfirmationSchema = z.object({
   schema: z.literal(1),
   collected_at: z.string().datetime(),
   project: z.string().min(1).max(128),
+  supports_forced_update: z.boolean().optional(),
   published_release: release.nullable().optional(),
   services: z
     .array(
@@ -154,4 +155,20 @@ export function newerOfficialRelease(installed: string, latest: string): boolean
     if (value !== other) return other > value;
   }
   return false;
+}
+
+/** A capacidade vem do agente em execução e só vale com identidade oficial recente. */
+export function supportsForcedUpdate(
+  raw: unknown,
+  receivedAt: string | null | undefined,
+  now = new Date(),
+): boolean {
+  const snapshot = runtimeConfirmationSchema.safeParse(raw);
+  const identity = runtimeIdentity(raw, receivedAt, now);
+  return (
+    snapshot.success &&
+    snapshot.data.supports_forced_update === true &&
+    identity.status === "confirmed" &&
+    identity.customized === false
+  );
 }

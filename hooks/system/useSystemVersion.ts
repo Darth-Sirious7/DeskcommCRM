@@ -10,6 +10,8 @@ export interface SystemVersion {
   identity?: RuntimeIdentity;
   runtime_services?: RuntimeConfirmation["services"] | null;
   manual_reconciliation_required?: boolean;
+  /** O agente em execução confirmou suporte; ausência não autoriza força. */
+  force_update_supported?: boolean;
   is_owner: boolean;
   latest_version?: string;
   official_latest_version?: string;

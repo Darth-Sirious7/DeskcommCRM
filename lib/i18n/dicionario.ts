@@ -18107,6 +18107,9 @@ export const DICIONARIO: Traducoes = {
   "A confirmação do servidor venceu": { es: "La confirmación del servidor ha caducado" },
   "Não confirmado": { es: "No confirmado" },
   "Última release oficial": { es: "Última versión oficial publicada" },
+  "O agente do servidor ainda não confirmou suporte para refazer a atualização pela tela.": {
+    es: "El agente del servidor aún no ha confirmado soporte para repetir la actualización desde esta pantalla.",
+  },
 };
 
 /**

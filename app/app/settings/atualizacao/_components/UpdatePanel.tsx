@@ -374,6 +374,16 @@ export function UpdatePanel() {
   // Falha já superada por um deploy posterior não é mais o estado do servidor:
   // mostrar o aviso dela (sem botão) travaria a próxima atualização pela tela.
   const falhaVigente = !data.run?.superseded;
+  const podeForcar =
+    data.force_update_supported === true &&
+    data.identity?.status === "confirmed" &&
+    data.identity.customized === false &&
+    !data.manual_reconciliation_required;
+  const podeVoltar =
+    data.identity?.status === "confirmed" &&
+    !data.manual_reconciliation_required &&
+    ehVersaoPublicada(data.run?.from_version) &&
+    !(data.run?.status === "failed_rolled_back" && data.run.volta_automatica);
 
   if (
     falhaVigente &&
@@ -391,10 +401,11 @@ export function UpdatePanel() {
             "A última tentativa falhou. O estado instalado aparece na confirmação dos serviços acima.",
           )}
         </p>
+        {data.run?.status === "failed_rolled_back" && data.run.volta_automatica ? (
+          <AvisoVoltaAutomatica anterior={anterior} alvo={alvo} finishedAt={data.run.finished_at} />
+        ) : null}
         <DetalhesTecnicos texto={data.run?.log_tail} />
-        {data.identity.status === "confirmed" &&
-        !data.manual_reconciliation_required &&
-        ehVersaoPublicada(data.run?.from_version) ? (
+        {podeVoltar ? (
           <BotaoVoltar
             destino={anterior}
             mutate={() => voltar.mutate()}
@@ -404,6 +415,22 @@ export function UpdatePanel() {
         ) : (
           <p className="mt-3 text-sm">
             {t("Confira a execução e preserve as alterações próprias antes de trocar as imagens.")}
+          </p>
+        )}
+        {podeForcar ? (
+          <div className="mt-3">
+            <BotaoForcar
+              mutate={() => forcar.mutate()}
+              isPending={forcar.isPending}
+              erro={podeVoltar ? null : erro}
+            />
+            <Comando comando={comandoDeVolta(data.run?.from_version)} />
+          </div>
+        ) : (
+          <p className="mt-3 text-sm text-muted-foreground">
+            {t(
+              "O agente do servidor ainda não confirmou suporte para refazer a atualização pela tela.",
+            )}
           </p>
         )}
       </Layout>
@@ -427,17 +454,7 @@ export function UpdatePanel() {
             Só aparece quando NINGUÉM pediu o run — uma volta pedida pela tela
             continua dizendo "Voltei o sistema", que ali é verdade. */}
         {data.run.volta_automatica ? (
-          <p className="text-sm" data-testid="volta-automatica">
-            {t("O sistema voltou sozinho para a versão")} <strong>{anterior}</strong>
-            {data.run.finished_at ? (
-              <>
-                {" "}
-                {t("às")} <strong>{horaCurta(data.run.finished_at)}</strong>
-              </>
-            ) : null}
-            {t(", porque o site não respondeu logo depois da atualização para a versão")}{" "}
-            <strong>{alvo}</strong>.
-          </p>
+          <AvisoVoltaAutomatica anterior={anterior} alvo={alvo} finishedAt={data.run.finished_at} />
         ) : null}
         <p className={data.run.volta_automatica ? "mt-3 text-sm" : "text-sm"}>
           {t("Voltei o sistema para a versão")} {anterior},{" "}
@@ -492,7 +509,9 @@ export function UpdatePanel() {
           // versão publicada de propósito: é o único caminho de saída numa
           // instalação fora de release, onde o `voltar` acima recusa com 409 e
           // o `comandoDeVolta` devolve `--force` sem `--to`.
-          forcar={{ mutate: () => forcar.mutate(), isPending: forcar.isPending }}
+          forcar={
+            podeForcar ? { mutate: () => forcar.mutate(), isPending: forcar.isPending } : undefined
+          }
         />
       </Layout>
     );
@@ -542,7 +561,9 @@ export function UpdatePanel() {
           }
           // Mesmo atalho do estado anterior (#2756): o comando logo abaixo é o
           // alvo, e é o SERVIDOR que o deriva — a tela só manda `{ force: true }`.
-          forcar={{ mutate: () => forcar.mutate(), isPending: forcar.isPending }}
+          forcar={
+            podeForcar ? { mutate: () => forcar.mutate(), isPending: forcar.isPending } : undefined
+          }
         />
       </Layout>
     );
@@ -610,9 +631,6 @@ export function UpdatePanel() {
           )}
         </p>
         <Comando comando={COMANDO_MANUAL} />
-        <p className="mt-3 text-sm text-muted-foreground">
-          {t("Versão instalada:")} {versao}.
-        </p>
       </Layout>
     );
   }
@@ -670,16 +688,13 @@ export function UpdatePanel() {
           )}
         </p>
         <p className="mt-3 text-sm text-muted-foreground">
-          <strong>{t("Não quer dizer que esteja desatualizado, nem que esteja em dia")}</strong>
-          : {t("quer dizer que eu não sei.")}
+          <strong>{t("Não quer dizer que esteja desatualizado, nem que esteja em dia")}</strong>:{" "}
+          {t("quer dizer que eu não sei.")}
         </p>
         <p className="mt-3 text-sm">
           {t(
             "Assim que ele voltar a falar comigo, esta tela se atualiza sozinha. Se demorar, verifique a conexão do servidor com a internet ou peça ajuda a quem cuida dele.",
           )}
-        </p>
-        <p className="mt-3 text-sm text-muted-foreground">
-          {t("Versão instalada:")} {versao}.
         </p>
       </Layout>
     );
@@ -1126,6 +1141,31 @@ function Reiniciando({ semSmtp }: { semSmtp?: boolean }) {
         {t("O sistema está voltando. Esta página se atualiza sozinha em alguns instantes.")}
       </p>
     </Layout>
+  );
+}
+
+function AvisoVoltaAutomatica({
+  anterior,
+  alvo,
+  finishedAt,
+}: {
+  anterior: string;
+  alvo: string;
+  finishedAt?: string | null;
+}) {
+  const t = useT();
+  return (
+    <p className="text-sm" data-testid="volta-automatica">
+      {t("O sistema voltou sozinho para a versão")} <strong>{anterior}</strong>
+      {finishedAt ? (
+        <>
+          {" "}
+          {t("às")} <strong>{horaCurta(finishedAt)}</strong>
+        </>
+      ) : null}
+      {t(", porque o site não respondeu logo depois da atualização para a versão")}{" "}
+      <strong>{alvo}</strong>.
+    </p>
   );
 }
 

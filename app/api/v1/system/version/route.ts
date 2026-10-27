@@ -16,6 +16,7 @@ import {
   runtimeIdentity,
   runtimeConfirmationSchema,
   newerOfficialRelease,
+  supportsForcedUpdate,
 } from "@/lib/system/runtime-identity";
 import { extractChangelogRange } from "@/lib/system/changelog";
 import { retratoDoHostVelho } from "@/lib/system/retrato";
@@ -172,6 +173,11 @@ export async function GET(_req: NextRequest): Promise<Response> {
       : (version?.latest_version ?? ""),
     manual_reconciliation_required: identity.customized === true,
     is_owner: true,
+    force_update_supported: supportsForcedUpdate(
+      version?.runtime_confirmation,
+      version?.agent_last_seen_at,
+      now,
+    ),
     smtp_configured: smtpConfigurado,
     latest_version: latest,
     update_available:

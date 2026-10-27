@@ -280,7 +280,7 @@ function semPrefixoV(versao: string): string {
  * nunca discordarem sobre o que é uma versão.
  */
 export function ehVersaoPublicada(versao: string | null | undefined): boolean {
-  return /^\d+\.\d+\.\d+/.test(semPrefixoV(versao ?? ""));
+  return /^\d+\.\d+\.\d+$/.test(semPrefixoV(versao ?? ""));
 }
 
 /** APP_VERSION corroborates a later host observation; it never replaces it. */
