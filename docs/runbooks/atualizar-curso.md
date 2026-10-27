@@ -81,6 +81,12 @@ recurso novo, aula ausente ou jornada afetada mesmo que o catálogo antigo não 
 Documente as decisões de alcance e as reduções do recorte em evidência pública sem dados de
 cliente. Corrija as aulas e recalcule o plano depois de novo commit/merge que altere a fonte.
 
+Os alvos traduzem os rótulos da interface. Um nome da semente pode coincidir com um desses
+rótulos: o plano chamado `Profissional`, por exemplo, continua com esse nome em ES. Marque
+esse alvo com `literal: true` para preservá-lo. O sinalizador também vale em `dentro`: um
+botão `Salvar` continua sendo traduzido para `Guardar`, mesmo dentro do cartão literal do
+plano. Não crie uma expressão regular artificial para escapar da tradução.
+
 ## 2. Preparar a bancada isolada
 
 Use um worktree próprio, fora de `/tmp`, com Node 22 e `pnpm install --frozen-lockfile`.
@@ -113,6 +119,10 @@ Suba o app em outro terminal gerenciado da bancada, mantendo o processo disponí
 ```bash
 node --env-file=.env.e2e node_modules/next/dist/bin/next start --hostname 127.0.0.1 --port 3460
 ```
+
+Os capturadores usam Chromium. Prepare-o com `pnpm exec playwright install chromium`; se já
+existe Google Chrome nesta máquina, `CURSO_BROWSER_CHANNEL=chrome` usa esse navegador em um
+contexto descartável, sem abrir o perfil pessoal.
 
 Use `next start` com o build de teste, pois `NEXT_PUBLIC_*` entra no bundle no build.
 **Mantenha worker e scheduler parados** nesta bancada: mensagens fictícias podem acordar a IA e
@@ -153,6 +163,13 @@ o módulo. O comando de `CURSO_ANTES_DA_LICAO` é escrito pela sessão a partir 
 curso, nunca de texto não confiável. Ele restaura o estado antes de cada aula, sem mudar o idioma.
 
 Jornadas relacionadas são uma captura própria, pois seus roteiros semeiam/evoluem o cenário:
+
+A história `e-commerce-consultar-pedido` exige a fonte fictícia real de pedidos, preparada
+por `curso/preparar-fonte-loja.ts` conforme [a reprodução das jornadas](../testing/curso-em-acao.md).
+Use o Postgres **da bancada** em `SUPABASE_DB_URL`, um IPv4 LAN alcançável pelo app em
+`CURSO_FONTE_HOST` e sua porta em `CURSO_FONTE_PORT`; preserve as guardas de destino e de
+ownership do helper. A conexão deve existir na organização ativa antes da captura. As fontes
+inoperantes das aulas de cadastro não substituem essa integração, nem comprovam uma consulta.
 
 ```bash
 CURSO_IDIOMA=es CURSO_SAIDA=curso/saida/es CURSO_URL=http://127.0.0.1:3460 pnpm exec tsx --env-file=.env.e2e curso/capturar-jornadas.ts clinicas-primeira-consulta

@@ -24,7 +24,7 @@ import { type User, createClient } from "@supabase/supabase-js";
 import pg from "pg";
 
 import { exigirBancoLocal, exigirHttpLocal, validarOrganizacoesExtras } from "./seguranca";
-import { idiomaDaCaptura } from "./idioma";
+import { idiomaDaCaptura } from "./configuracao";
 import { textoDaDemonstracao as demo } from "./espanhol-demonstracao";
 
 const SENHA = process.env.CURSO_SENHA ?? "Curso!Demo2026";

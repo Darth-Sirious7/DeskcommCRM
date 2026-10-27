@@ -97,8 +97,7 @@ async function mostrar(
       }).format(inicio);
       const hora = new Intl.DateTimeFormat(idiomaDaCaptura(), {
         timeZone: estado.fusoCompromisso,
-        hour: "2-digit",
-        minute: "2-digit",
+        timeStyle: "short",
         hourCycle: "h23",
       }).format(inicio);
       await expect(detalhe.getByTestId("compromisso-horario")).toContainText(data, {
@@ -270,42 +269,63 @@ async function main() {
       const receita = receitas.find((r) => r.jornada === historia.id)!;
       for (const [indice, cena] of historia.cenas.entries()) {
         const chave = chaveDaCena(historia.id, cena.id);
-        await registrar(chave, async () => {
-          const commit_fonte = commitDaFoto();
-          const estado = await semearCena(ctx, historia, receita, indice);
-          const alvo = await mostrar(pagina, base, historia, receita, indice, estado);
-          await esperarCarregar(pagina);
-          // As esperas de identidade acima evitam aceitar o vazio anterior à consulta.
-          // A bolinha da sidebar pode pulsar por canal parado: é saúde da conexão,
-          // não carregamento. A exceção só vale para esse span no link de Conexões.
-          const queda = JSON.stringify(textoDaInterface("Uma conexão caiu"));
-          const pulsoDeConexao = `a[href='/app/connections'] > span[aria-label=${queda}][title=${queda}]`;
-          await expect(
-            pagina.locator(
-              `[data-esqueleto]:visible, .animate-pulse:visible:not(${pulsoDeConexao}), [aria-busy='true']:visible`,
-            ),
-          ).toHaveCount(0, { timeout: 15_000 });
-          await expect(
-            pagina.getByText(/^(?:Carregando|Cargando)(?:\b|…|\.{3})/).filter({ visible: true }),
-          ).toHaveCount(0, { timeout: 15_000 });
-          await pagina.addStyleTag({ content: CSS_DE_FOTO });
-          await tirarFocoDeClique(pagina);
-          await pagina.mouse.move(0, 899);
-          const caixa = await medir(pagina, alvo);
-          const foto = `capturas/${chave}.jpg`;
-          await pagina.screenshot({ path: path.join(saida, foto), type: "jpeg", quality: 72 });
-          const captura: Captura = {
-            foto,
-            clicar: null,
-            // A legenda é traduzida pelo site, depois de aplicar as medidas ES.
-            destaques: [{ ...caixa, rotulo: cena.titulo, tipo: "caixa" }],
-            versao,
-            idioma,
-            commit_fonte,
-            capturado_em: new Date().toISOString(),
-          };
-          return captura;
-        });
+        let fase = "preparar";
+        try {
+          await registrar(chave, async () => {
+            const commit_fonte = commitDaFoto();
+            fase = "semear-cena";
+            const estado = await semearCena(ctx, historia, receita, indice);
+            fase = "abrir-superficie";
+            const alvo = await mostrar(pagina, base, historia, receita, indice, estado);
+            fase = "aguardar-tela";
+            await esperarCarregar(pagina);
+            // As esperas de identidade acima evitam aceitar o vazio anterior à consulta.
+            // A bolinha da sidebar pode pulsar por canal parado: é saúde da conexão,
+            // não carregamento. A exceção só vale para esse span no link de Conexões.
+            const queda = JSON.stringify(textoDaInterface("Uma conexão caiu"));
+            const pulsoDeConexao = `a[href='/app/connections'] > span[aria-label=${queda}][title=${queda}]`;
+            await expect(
+              pagina.locator(
+                `[data-esqueleto]:visible, .animate-pulse:visible:not(${pulsoDeConexao}), [aria-busy='true']:visible`,
+              ),
+            ).toHaveCount(0, { timeout: 15_000 });
+            await expect(
+              pagina.getByText(/^(?:Carregando|Cargando)(?:\b|…|\.{3})/).filter({ visible: true }),
+            ).toHaveCount(0, { timeout: 15_000 });
+            await pagina.addStyleTag({ content: CSS_DE_FOTO });
+            await tirarFocoDeClique(pagina);
+            await pagina.mouse.move(0, 899);
+            fase = "medir-alvo";
+            const caixa = await medir(pagina, alvo);
+            const foto = `capturas/${chave}.jpg`;
+            fase = "gravar-foto";
+            await pagina.screenshot({ path: path.join(saida, foto), type: "jpeg", quality: 72 });
+            const captura: Captura = {
+              foto,
+              clicar: null,
+              // A legenda é traduzida pelo site, depois de aplicar as medidas ES.
+              destaques: [{ ...caixa, rotulo: cena.titulo, tipo: "caixa" }],
+              versao,
+              idioma,
+              commit_fonte,
+              capturado_em: new Date().toISOString(),
+            };
+            return captura;
+          });
+        } catch (erro) {
+          // Só fase, códigos e identificadores públicos do schema: nunca SQL,
+          // valores de linhas, URL de conexão ou a mensagem integral do erro.
+          const mensagem = erro instanceof Error ? erro.message : "";
+          const codigo = mensagem.match(/"code"\s*:\s*"([A-Z0-9_]{3,12})"/)?.[1];
+          const schema = [...mensagem.replaceAll('\\"', '"').matchAll(/\b(column|relation|constraint) "([a-z][a-z0-9_]*)"/g)]
+            .map((m) => `${m[1]}=${m[2]}`).join(", ");
+          const traducao = mensagem.startsWith("texto demonstrativo sem tradução") ? "; traducao-demonstracao-ausente" : "";
+          console.error(`FALHA ${chave}: ${fase}${codigo ? `; codigo=${codigo}` : ""}${schema ? `; ${schema}` : ""}${traducao}; confira a imagem de diagnóstico`);
+          await pagina
+            .screenshot({ path: path.join(saida, `falha-${chave}.jpg`), type: "jpeg", quality: 60 })
+            .catch(() => {});
+          throw erro;
+        }
         console.info(`ok ${chave}`);
       }
     }

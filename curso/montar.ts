@@ -219,5 +219,5 @@ const DOCUMENTO = `<!doctype html>
 `;
 writeFileSync(path.join(SAIDA, "index.html"), BASE ? DOCUMENTO + html : html);
 console.info(
-  `curso/saida/index.html — ${modulos.length} módulo(s), ${Object.keys(capturas).length} fotos, versão ${versao}`,
+  `${path.relative(process.cwd(), path.join(SAIDA, "index.html"))} — ${modulos.length} módulo(s), ${Object.keys(capturas).length} fotos, versão ${versao}`,
 );

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import { traduzir } from "../lib/i18n/dicionario";
 import catalogoJson from "./espanhol-alvos.json";
+import { traducaoDaDemonstracao } from "./espanhol-demonstracao";
 
 const catalogo: Readonly<Record<string, string>> = catalogoJson;
 const t = (texto: string) => traduzir(texto, "es");
@@ -45,6 +46,17 @@ function alvosDasLicoes() {
 }
 
 describe("alvos em espanhol das fotografias do curso", () => {
+  it("acompanha os nomes de etapas traduzidos pela semente", () => {
+    const primeiro = traducaoDaDemonstracao("Primeiro contato");
+    const consulta = traducaoDaDemonstracao("Consulta agendada");
+    expect(primeiro).toBe("Primer contacto");
+    expect(consulta).toBe("Consulta programada");
+    expect(catalogo["Nome da etapa «Primeiro contato»"]).toBe(`${t("Nome da etapa")} «${primeiro}»`);
+    expect(catalogo["Nome da etapa «Consulta agendada»"]).toBe(`${t("Nome da etapa")} «${consulta}»`);
+    expect(catalogo["3h em Primeiro contato"]).toBe(`3h ${t("em")} ${primeiro}`);
+    expect(catalogo["em Consulta agendada"]).toBe(`${t("em")} ${consulta}`);
+    expect(catalogo["Selecionar todos em Primeiro contato"]).toBe(`${t("Selecionar todos em")} ${primeiro}`);
+  });
   it("mantém um JSON sem duplicatas e somente exceções usadas nas lições", () => {
     const fonte = readFileSync("curso/espanhol-alvos.json", "utf8");
     const chaves = [...fonte.matchAll(/^  ("(?:[^"\\]|\\.)*"):/gm)]

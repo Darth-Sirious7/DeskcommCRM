@@ -15,7 +15,7 @@ import {
   type Receita,
 } from "./receitas-jornadas";
 import { textoDaDemonstracao, traducaoDaDemonstracao } from "./espanhol-demonstracao";
-import { idiomaDaCaptura } from "./idioma";
+import { idiomaDaCaptura } from "./configuracao";
 
 export async function contextoDaBancada(): Promise<Contexto> {
   const url = exigirHttpLocal(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "");
@@ -99,6 +99,61 @@ export function horarioDaHistoria(remarcado = false) {
   ).toISOString();
 }
 
+type IntervaloDaBancada = { starts_at: string; ends_at: string };
+
+/** Só organiza compromissos fictícios da bancada, sem alterar a agenda alheia.
+ * Conserva o dia escolhido pelo roteiro; lotação desse dia pede revisão da
+ * bancada, em vez de mudar silenciosamente a data da história.
+ */
+export function horarioLivreDaBancada(
+  preferido: string,
+  ocupados: IntervaloDaBancada[],
+  proprio?: IntervaloDaBancada,
+): string {
+  const meiaHora = 30 * 60_000;
+  const dia = (instante: number) =>
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Sao_Paulo",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date(instante));
+  const pedido = Date.parse(preferido);
+  const intervalos = ocupados.map((i) => ({
+    inicio: Date.parse(i.starts_at),
+    fim: Date.parse(i.ends_at),
+  }));
+  if (
+    !Number.isFinite(pedido) ||
+    intervalos.some(
+      (i) => !Number.isFinite(i.inicio) || !Number.isFinite(i.fim) || i.fim <= i.inicio,
+    )
+  ) {
+    throw new Error("intervalo inválido na agenda fictícia da bancada");
+  }
+  const colide = (inicio: number, fim: number) =>
+    intervalos.some((i) => i.inicio < fim && i.fim > inicio);
+  if (proprio && dia(Date.parse(proprio.starts_at)) === dia(pedido)) {
+    const inicio = Date.parse(proprio.starts_at),
+      fim = Date.parse(proprio.ends_at);
+    if (!Number.isFinite(inicio) || !Number.isFinite(fim) || fim <= inicio || colide(inicio, fim)) {
+      throw new Error("o horário próprio da história deixou de estar livre na bancada");
+    }
+    return proprio.starts_at;
+  }
+  let inicio = pedido;
+  for (const intervalo of intervalos.sort((a, b) => a.inicio - b.inicio)) {
+    if (inicio + meiaHora <= intervalo.inicio) break;
+    if (intervalo.inicio < inicio + meiaHora && intervalo.fim > inicio) {
+      inicio = Math.ceil(intervalo.fim / meiaHora) * meiaHora;
+    }
+  }
+  if (dia(inicio) !== dia(pedido) || dia(inicio + meiaHora - 1) !== dia(pedido)) {
+    throw new Error("o dia escolhido pela história está ocupado; revise a bancada");
+  }
+  return new Date(inicio).toISOString();
+}
+
 export async function semearCena(
   ctx: Contexto,
   historia: Historia,
@@ -178,18 +233,16 @@ export async function semearCena(
     // sem alterar a conversa/canal originais e sem publicar outro agente.
     sessaoDaHistoria = id(9);
     semErro(
-      await db
-        .from("channel_sessions")
-        .upsert({
-          id: sessaoDaHistoria,
-          organization_id: org,
-          provider: "waha",
-          waha_session_name: "curso-loja-reconstituicao",
-          webhook_secret_encrypted: "\\x00",
-          status: "STOPPED",
-          display_name: textoDaDemonstracao("Casa das Trilhas · demonstração sem envio"),
-          phone_number: null,
-        }),
+      await db.from("channel_sessions").upsert({
+        id: sessaoDaHistoria,
+        organization_id: org,
+        provider: "waha",
+        waha_session_name: "curso-loja-reconstituicao",
+        webhook_secret_encrypted: "\\x00",
+        status: "STOPPED",
+        display_name: textoDaDemonstracao("Casa das Trilhas · demonstração sem envio"),
+        phone_number: null,
+      }),
       "canal exclusivo da reconstituição",
     );
   }
@@ -235,31 +288,27 @@ export async function semearCena(
   );
   if (!contatoExistente)
     semErro(
-      await db
-        .from("contacts")
-        .upsert({
-          id: contato,
-          organization_id: org,
-          name: receita.pessoa,
-          phone_number:
-            historia.id === "e-commerce-consultar-pedido"
-              ? "+5511000000997"
-              : `+551199900${String(receitas.indexOf(receita) + 1).padStart(4, "0")}`,
-          tags: ["exemplo-ficticio"],
-        }),
+      await db.from("contacts").upsert({
+        id: contato,
+        organization_id: org,
+        name: receita.pessoa,
+        phone_number:
+          historia.id === "e-commerce-consultar-pedido"
+            ? "+5511000000997"
+            : `+551199900${String(receitas.indexOf(receita) + 1).padStart(4, "0")}`,
+        tags: ["exemplo-ficticio"],
+      }),
       "contato fictício",
     );
   semErro(
-    await db
-      .from("conversations")
-      .upsert({
-        id: conversa,
-        organization_id: org,
-        contact_id: contato,
-        channel_session_id: sessaoDaHistoria,
-        status: "claimed",
-        bot_silenced_until: "infinity",
-      }),
+    await db.from("conversations").upsert({
+      id: conversa,
+      organization_id: org,
+      contact_id: contato,
+      channel_session_id: sessaoDaHistoria,
+      status: "claimed",
+      bot_silenced_until: "infinity",
+    }),
     "conversa fictícia",
   );
   semErro(
@@ -277,43 +326,39 @@ export async function semearCena(
   // Mensagens encenadas versionadas, coerentes com os personagens; nunca atribuídas ao motor.
   for (const [i] of historia.cenas.slice(0, indice + 1).entries()) {
     semErro(
-      await db
-        .from("messages")
-        .insert({
+      await db.from("messages").insert({
+        organization_id: org,
+        conversation_id: conversa,
+        contact_id: contato,
+        channel_session_id: sessaoDaHistoria,
+        type: "text",
+        body: textoDaDemonstracao(receita.cenas[i]!.mensagem),
+        direction: "inbound",
+        status: "received",
+        sent_via: "external_device",
+        sent_at: em(i),
+        created_at: em(i),
+        metadata: { curso_roteiro: true },
+      }),
+      "mensagem fictícia",
+    );
+    if (receita.cenas[i]!.resposta)
+      semErro(
+        await db.from("messages").insert({
           organization_id: org,
           conversation_id: conversa,
           contact_id: contato,
           channel_session_id: sessaoDaHistoria,
           type: "text",
-          body: textoDaDemonstracao(receita.cenas[i]!.mensagem),
-          direction: "inbound",
-          status: "received",
-          sent_via: "external_device",
-          sent_at: em(i),
-          created_at: em(i),
+          body: textoDaDemonstracao(receita.cenas[i]!.resposta),
+          direction: "outbound",
+          status: "read",
+          sent_via: receita.cenas[i]!.resposta_observada ? "ai" : "user",
+          sent_by_user_id: receita.cenas[i]!.resposta_observada ? null : pessoa.helena,
+          sent_at: new Date(Date.parse(em(i)) + 10_000).toISOString(),
+          created_at: new Date(Date.parse(em(i)) + 10_000).toISOString(),
           metadata: { curso_roteiro: true },
         }),
-      "mensagem fictícia",
-    );
-    if (receita.cenas[i]!.resposta)
-      semErro(
-        await db
-          .from("messages")
-          .insert({
-            organization_id: org,
-            conversation_id: conversa,
-            contact_id: contato,
-            channel_session_id: sessaoDaHistoria,
-            type: "text",
-            body: textoDaDemonstracao(receita.cenas[i]!.resposta),
-            direction: "outbound",
-            status: "read",
-            sent_via: receita.cenas[i]!.resposta_observada ? "ai" : "user",
-            sent_by_user_id: receita.cenas[i]!.resposta_observada ? null : pessoa.helena,
-            sent_at: new Date(Date.parse(em(i)) + 10_000).toISOString(),
-            created_at: new Date(Date.parse(em(i)) + 10_000).toISOString(),
-            metadata: { curso_roteiro: true },
-          }),
         "resposta humana encenada",
       );
   }
@@ -360,16 +405,14 @@ export async function semearCena(
   );
   if (indice > 0)
     semErro(
-      await db
-        .from("conversation_notes")
-        .insert({
-          organization_id: org,
-          conversation_id: conversa,
-          created_by_user_id: pessoa.helena,
-          created_by_name: "Helena Prado",
-          body: `${receita.pessoa} · ${textoDaDemonstracao(cena.titulo)}\n${textoDaDemonstracao(historia.contexto)} ${textoDaDemonstracao("Próximo passo")}: ${textoDaDemonstracao(cena.valor)}`,
-          created_at: em(indice + 1),
-        }),
+      await db.from("conversation_notes").insert({
+        organization_id: org,
+        conversation_id: conversa,
+        created_by_user_id: pessoa.helena,
+        created_by_name: "Helena Prado",
+        body: `${receita.pessoa} · ${textoDaDemonstracao(cena.titulo)}\n${textoDaDemonstracao(historia.contexto)} ${textoDaDemonstracao("Próximo passo")}: ${textoDaDemonstracao(cena.valor)}`,
+        created_at: em(indice + 1),
+      }),
       "nota da etapa",
     );
 
@@ -395,10 +438,32 @@ export async function semearCena(
       "limpar compromisso próprio",
     );
   if (superficies.includes("agenda")) {
-    const comeca =
+    const preferido =
       historia.id === "clinicas-primeira-consulta"
         ? "2026-10-27T12:30:00.000Z"
         : horarioDaHistoria(historia.id === "clinicas-remarcar-sessao" && indice >= 2);
+    const existentes = exigir(
+      await db
+        .from("calendar_appointments")
+        .select("id, starts_at, ends_at")
+        .eq("organization_id", org)
+        .eq("id", compromisso),
+      "compromisso próprio",
+    ) as Array<IntervaloDaBancada & { id: string }>;
+    let comeca = preferido;
+    if (historia.id !== "clinicas-primeira-consulta") {
+      const ocupados = exigir(
+        await db
+          .from("calendar_appointments")
+          .select("starts_at, ends_at")
+          .eq("organization_id", org)
+          .eq("owner_user_id", responsavelAgenda)
+          .in("status", ["pending", "confirmed"])
+          .neq("id", compromisso),
+        "intervalos ocupados da bancada",
+      ) as IntervaloDaBancada[];
+      comeca = horarioLivreDaBancada(preferido, ocupados, existentes[0]);
+    }
     inicioCompromisso = comeca;
     // O piloto real permanece intacto. Quando presente, a foto lê seu compromisso original.
     // A reconstituição ES usa o ID próprio: não traduz nem altera o registro
@@ -448,14 +513,6 @@ export async function semearCena(
         created_by_user_id: pessoa.helena,
         source: "ui",
       };
-      const existentes = exigir(
-        await db
-          .from("calendar_appointments")
-          .select("id")
-          .eq("organization_id", org)
-          .eq("id", compromisso),
-        "compromisso próprio",
-      ) as Array<{ id: string }>;
       semErro(
         existentes.length
           ? await db
@@ -494,19 +551,17 @@ export async function semearCena(
         );
     }
     semErro(
-      await db
-        .from("crm_leads")
-        .insert({
-          id: negocio,
-          organization_id: org,
-          pipeline_id: funil.id,
-          stage_id: funil.etapas[indice >= 3 ? 2 : 0],
-          contact_id: contato,
-          title: titulo,
-          status: "open",
-          value_cents: 0,
-          currency: "BRL",
-        }),
+      await db.from("crm_leads").insert({
+        id: negocio,
+        organization_id: org,
+        pipeline_id: funil.id,
+        stage_id: funil.etapas[indice >= 3 ? 2 : 0],
+        contact_id: contato,
+        title: titulo,
+        status: "open",
+        value_cents: 0,
+        currency: "BRL",
+      }),
       "negócio aberto",
     );
   }
@@ -515,57 +570,51 @@ export async function semearCena(
     throw new Error("receita sem situação da tarefa nesta cena");
   if (superficies.includes("tarefa"))
     semErro(
-      await db
-        .from("crm_tasks")
-        .insert({
-          id: tarefa,
-          organization_id: org,
-          title: titulo,
-          description: textoDaDemonstracao(cena.operacao),
-          contact_id: contato,
-          lead_id: superficies.includes("negocio") ? negocio : null,
-          status: tarefaStatus,
-          priority: "medium",
-          assigned_to: pessoa.helena,
-          created_by: pessoa.helena,
-          due_date: horarioDaHistoria(),
-        }),
+      await db.from("crm_tasks").insert({
+        id: tarefa,
+        organization_id: org,
+        title: titulo,
+        description: textoDaDemonstracao(cena.operacao),
+        contact_id: contato,
+        lead_id: superficies.includes("negocio") ? negocio : null,
+        status: tarefaStatus,
+        priority: "medium",
+        assigned_to: pessoa.helena,
+        created_by: pessoa.helena,
+        due_date: horarioDaHistoria(),
+      }),
       "tarefa da equipe",
     );
   if (superficies.includes("caso")) {
     const evolucao = evolucaoDoCaso(receita, indice);
     semErro(
-      await db
-        .from("agent_cases")
-        .insert({
-          id: caso,
-          organization_id: org,
-          conversation_id: conversa,
-          agent_id: agenteId,
-          status: evolucao.status,
-          kind: "duvida",
-          source: "agent",
-          title: casoTitulo,
-          summary: textoDaDemonstracao(historia.contexto),
-          blocker: textoDaDemonstracao(historia.cenas[1]!.operacao),
-          opened_at: em(1),
-          closed_at: evolucao.fechado ? em(indice + 1) : null,
-        }),
+      await db.from("agent_cases").insert({
+        id: caso,
+        organization_id: org,
+        conversation_id: conversa,
+        agent_id: agenteId,
+        status: evolucao.status,
+        kind: "duvida",
+        source: "agent",
+        title: casoTitulo,
+        summary: textoDaDemonstracao(historia.contexto),
+        blocker: textoDaDemonstracao(historia.cenas[1]!.operacao),
+        opened_at: em(1),
+        closed_at: evolucao.fechado ? em(indice + 1) : null,
+      }),
       "caso demonstrativo",
     );
     semErro(
-      await db
-        .from("agent_case_events")
-        .insert({
-          organization_id: org,
-          case_id: caso,
-          kind: "opened",
-          actor_kind: "system",
-          body: textoDaDemonstracao(
-            "Estado semeado para o roteiro demonstrativo; não é execução observada de IA.",
-          ),
-          created_at: em(1),
-        }),
+      await db.from("agent_case_events").insert({
+        organization_id: org,
+        case_id: caso,
+        kind: "opened",
+        actor_kind: "system",
+        body: textoDaDemonstracao(
+          "Estado semeado para o roteiro demonstrativo; não é execução observada de IA.",
+        ),
+        created_at: em(1),
+      }),
       "origem do exemplo",
     );
     if (evolucao.eventos.length)
@@ -587,18 +636,16 @@ export async function semearCena(
   }
   if (superficies.includes("configuracao-externa") || superficies.includes("fonte-externa")) {
     semErro(
-      await db
-        .from("platform_config")
-        .upsert(
-          {
-            chave: "MODULO_BANCO_EXTERNO",
-            valor: "ligado",
-            eh_segredo: false,
-            semeado_do_env: false,
-            updated_by: pessoa.helena,
-          },
-          { onConflict: "chave" },
-        ),
+      await db.from("platform_config").upsert(
+        {
+          chave: "MODULO_BANCO_EXTERNO",
+          valor: "ligado",
+          eh_segredo: false,
+          semeado_do_env: false,
+          updated_by: pessoa.helena,
+        },
+        { onConflict: "chave" },
+      ),
       "habilitar tela de configuração",
     );
   }

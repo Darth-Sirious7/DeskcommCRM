@@ -4,7 +4,7 @@
  * dos personagens foram traduzidas aqui. Nenhum arquivo do site é lido em runtime.
  */
 import catalogo from "./espanhol-demonstracao.json";
-import { idiomaDaCaptura } from "./idioma";
+import { idiomaDaCaptura } from "./configuracao";
 
 /** Consulta independente do idioma para seletores de dados semeados. */
 export function traducaoDaDemonstracao(texto: string): string | undefined {

@@ -115,9 +115,10 @@ export async function esperarCarregar(page: Page) {
   await page.waitForFunction(
     // Os divs cobrem o carregamento legado do Funil. Ícones e a bolinha de
     // saúde de Conexões também pulsam, mas não representam carregamento.
-    () => ![...document.querySelectorAll("[data-esqueleto], [aria-busy='true'], div.animate-pulse")].some((e) =>
-      e.getClientRects().length > 0 && getComputedStyle(e).visibility !== "hidden",
-    ),
+    () =>
+      ![
+        ...document.querySelectorAll("[data-esqueleto], [aria-busy='true'], div.animate-pulse"),
+      ].some((e) => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== "hidden"),
     null,
     { timeout: 15_000 },
   );
@@ -277,8 +278,13 @@ async function main() {
               if (passo.rota) {
                 await page.goto(URL_BASE + passo.rota);
                 await page.waitForLoadState("networkidle");
-                if (bloquearNotificacoes && await page.evaluate(() => Notification.permission) !== "denied") {
-                  throw new Error("a permissão real do navegador não reproduz o bloqueio ensinado nesta aula");
+                if (
+                  bloquearNotificacoes &&
+                  (await page.evaluate(() => Notification.permission)) !== "denied"
+                ) {
+                  throw new Error(
+                    "a permissão real do navegador não reproduz o bloqueio ensinado nesta aula",
+                  );
                 }
               }
               await page.addStyleTag({ content: CSS_DE_FOTO });
@@ -288,24 +294,50 @@ async function main() {
               await esperarCarregar(page);
               // Percorre o grupo inteiro: um primeiro alvo já visível perto do rodapé
               // não garante que os controles logo abaixo também caibam na foto.
-              const alvos = [...passo.destaques.map((d) => d.alvo), ...(passo.clicar ? [passo.clicar] : [])];
-              for (const alvo of alvos) await localizar(page, alvo).scrollIntoViewIfNeeded({ timeout: 8_000 });
-              // tira o hover que sobrou da última ação — menos quando o hover É o que o passo mostra
-              if (passo.antes.at(-1)?.acao !== "hover") await page.mouse.move(0, ALTURA - 1);
-              await esperarCarregar(page);
-              await tirarFocoDeClique(page);
-              await page.waitForTimeout(400);
-              const destaques = [];
-              for (const d of passo.destaques) {
-                destaques.push({ ...(await medir(page, d.alvo)), rotulo: d.rotulo, tipo: d.tipo });
+              const alvos = [
+                ...passo.destaques.map((d) => d.alvo),
+                ...(passo.clicar ? [passo.clicar] : []),
+              ];
+              let medidas: Pick<Captura, "destaques" | "clicar"> | undefined;
+              for (let tentativa = 0; tentativa < 3; tentativa++) {
+                for (const alvo of alvos)
+                  await localizar(page, alvo).scrollIntoViewIfNeeded({ timeout: 8_000 });
+                // Tira o hover, menos quando ele é o que o passo mostra.
+                if (passo.antes.at(-1)?.acao !== "hover") await page.mouse.move(0, ALTURA - 1);
+                await esperarCarregar(page);
+                await tirarFocoDeClique(page);
+                await page.waitForTimeout(400);
+                try {
+                  const destaques = [];
+                  for (const d of passo.destaques) {
+                    destaques.push({
+                      ...(await medir(page, d.alvo)),
+                      rotulo: d.rotulo,
+                      tipo: d.tipo,
+                    });
+                  }
+                  medidas = {
+                    destaques,
+                    clicar: passo.clicar ? await medir(page, passo.clicar) : null,
+                  };
+                  break;
+                } catch (erro) {
+                  // Conteúdo tardio pode mudar a altura depois da primeira rolagem.
+                  // Reenquadra e mede de verdade; nunca repete as ações da aula.
+                  if (
+                    !(erro instanceof Error) ||
+                    !erro.message.startsWith("alvo fora da foto") ||
+                    tentativa === 2
+                  )
+                    throw erro;
+                }
               }
-              const clicar = passo.clicar ? await medir(page, passo.clicar) : null;
+              if (!medidas) throw new Error("não foi possível enquadrar os alvos da foto");
               const foto = `capturas/${chave}.jpg`;
               await page.screenshot({ path: path.join(SAIDA, foto), type: "jpeg", quality: 72 });
               return {
                 foto,
-                destaques,
-                clicar,
+                ...medidas,
                 ...(process.env.CURSO_VERSAO_FOTOS
                   ? { versao: process.env.CURSO_VERSAO_FOTOS.replace(/^v/, "") }
                   : {}),
@@ -339,7 +371,7 @@ async function main() {
               .getByRole("cell", { name: "Agenda online do site", exact: true })
               .waitFor({ state: "visible", timeout: 8_000 });
             const revogar = page
-              .getByRole("row", { name: /Prontuário eletrônico da clínica/ })
+              .getByRole("row", { name: textoDaInterface("Prontuário eletrônico da clínica") })
               .getByRole("button", { name: textoDaInterface("Revogar"), exact: true });
             if (await revogar.count()) {
               await revogar.click();
@@ -372,7 +404,9 @@ if (
   path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname)
 ) {
   main().catch((e) => {
-    console.error(e instanceof Error ? e.message.split("\n")[0] : "Falha na captura; confira a bancada local.");
+    console.error(
+      e instanceof Error ? e.message.split("\n")[0] : "Falha na captura; confira a bancada local.",
+    );
     process.exit(1);
   });
 }

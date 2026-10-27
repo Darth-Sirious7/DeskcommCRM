@@ -218,9 +218,7 @@
           "destaques": [
             {
               "alvo": {
-                "role": "button",
-                "nome": "Menu do usuário",
-                "exato": false
+                "css": "button[aria-label^='Menu do usuário']"
               },
               "rotulo": "Foto ou iniciais",
               "tipo": "seta"

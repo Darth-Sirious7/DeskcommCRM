@@ -56,6 +56,9 @@ do clone; o diretório global da skill não contém o curso.
    recurso novo, atualize o catálogo; não esconda a novidade porque o mapa anterior não a conhece.
    Traduza também título, instruções, busca, dicas, rótulos e o conteúdo correspondente no site.
    ES não pode recorrer silenciosamente ao texto ou às imagens de PT.
+   Prepare também as dependências declaradas da história: a consulta de pedidos, por exemplo,
+   usa uma fonte fictícia real separada, descrita no runbook. Uma tela de erro ou outra conexão
+   não substitui a integração exigida pelo roteiro.
 
 3. Prepare a bancada pelo runbook. Fotografe somente o recorte confirmado, em cada idioma pedido,
    usando `capturar.ts [modulo] [licao]` e `capturar-jornadas.ts [nicho/jornada]` com

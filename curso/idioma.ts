@@ -42,8 +42,21 @@ export function textoDoAlvo(texto: string, regex = false): string {
  */
 function trechoDaDemonstracao(texto: string): string {
   const direto = textoDoAlvo(texto);
-  if (direto !== texto || idiomaDaCaptura() === "pt-BR" || Object.hasOwn(dadosEs, texto) || Object.hasOwn(DICIONARIO, texto) || texto.length < 8) return direto;
-  const encontrados = [...new Set(Object.entries(dadosEs).filter(([pt]) => pt.includes(texto)).map(([, es]) => es))];
+  if (
+    direto !== texto ||
+    idiomaDaCaptura() === "pt-BR" ||
+    Object.hasOwn(dadosEs, texto) ||
+    Object.hasOwn(DICIONARIO, texto) ||
+    texto.length < 8
+  )
+    return direto;
+  const encontrados = [
+    ...new Set(
+      Object.entries(dadosEs)
+        .filter(([pt]) => pt.includes(texto))
+        .map(([, es]) => es),
+    ),
+  ];
   return encontrados.length === 1 ? encontrados[0]! : direto;
 }
 
@@ -68,6 +81,9 @@ export function seletorNoIdioma(css: string): string {
 }
 
 export function alvoNoIdioma<T extends Alvo>(alvo: T): T {
+  if (alvo.literal) {
+    return { ...alvo, ...(alvo.dentro ? { dentro: alvoNoIdioma(alvo.dentro) } : {}) };
+  }
   return {
     ...alvo,
     ...(alvo.nome !== undefined ? { nome: textoDoAlvo(alvo.nome, alvo.regex) } : {}),
