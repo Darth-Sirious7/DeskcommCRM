@@ -273,6 +273,37 @@ alter default privileges for role postgres in schema public grant all on tables 
 alter default privileges for role postgres in schema public grant all on tables to authenticated;
 alter default privileges for role postgres in schema public grant all on tables to service_role;
 
+-- O MESMO DEFAULT ACL, PARA SEQUENCES (issue #887).
+--
+-- Terceira e última família do `pg_default_acl` que um projeto Supabase carrega
+-- em `public`. Sem ela a reprodução continuava parcial: uma tabela nova com
+-- `bigserial` nasceria com a coluna concedida aos três papéis e a SEQUÊNCIA dela
+-- não — e `nextval` é privilégio de sequence, não de coluna. Invariante do tipo
+-- "authenticated não escreve nesta tabela" ficaria verde por construção enquanto
+-- o `insert` real do produto falharia com `42501 permission denied for sequence`.
+--
+-- Hoje o schema não tem sequência nenhuma (`grep -ci 'create sequence'` no
+-- baseline = 0; nenhum `bigserial`), então isto não muda veredito de invariante
+-- algum. Está aqui para que a afirmação "o prelude reproduz o default ACL do
+-- Supabase em public" seja verdadeira INTEIRA, e não verdadeira "para o que o
+-- baseline usa hoje" — a diferença entre as duas é exatamente o que a #887 cobra.
+--
+-- Medido em 2026-10-26 no `pg_default_acl` do Supabase local desta máquina
+-- (supabase/postgres:15.19.0.004), as três famílias de uma vez:
+--
+--     postgres | public | TABLES    | {postgres=arwdDxt,anon=arwdDxt,
+--                                      authenticated=arwdDxt,service_role=arwdDxt}
+--     postgres | public | SEQUENCES | {postgres=rwU,anon=rwU,
+--                                      authenticated=rwU,service_role=rwU}
+--     postgres | public | FUNCTIONS | {postgres=X,anon=X,
+--                                      authenticated=X,service_role=X}
+--
+-- `grant all` em sequence é `r` (SELECT), `w` (UPDATE) e `U` (USAGE): `nextval`
+-- exige `U`, e `currval`/`lastval` vêm de graça.
+alter default privileges for role postgres in schema public grant all on sequences to anon;
+alter default privileges for role postgres in schema public grant all on sequences to authenticated;
+alter default privileges for role postgres in schema public grant all on sequences to service_role;
+
 create schema if not exists auth;
 create schema if not exists extensions;
 
@@ -439,6 +470,39 @@ if [ "$fidelidade_tabelas" != "3" ]; then
   exit 1
 fi
 echo "    ✓ tabela nova nasce com DELETE direto para anon, authenticated e service_role"
+
+# A TERCEIRA FAMÍLIA: SEQUENCE (issue #887), no mesmo instante e pelo mesmo motivo.
+# O `pg_dump` também grava o `ALTER DEFAULT PRIVILEGES … ON SEQUENCES` dele, na
+# mesma região do fim do arquivo (~:4762) — depois do corpo —, então depois do
+# baseline a linha existe com ou sem o prelude e uma asserção ali seria verde por
+# construção. Antes dele, só o prelude pode ter gravado.
+#
+# Mede USAGE nos três papéis: `nextval` exige USAGE, e USAGE é o privilégio de
+# sequence que faz um `insert` em tabela com `bigserial` funcionar pelo
+# PostgREST. `aclexplode` e não `has_sequence_privilege` pelo mesmo motivo da
+# sonda de funções: o grant DIRETO é o que distingue o banco fiel do fictício.
+# Hoje nenhuma sequência existe no schema; a sonda cria a dela.
+fidelidade_sequences="$(docker exec -i "$CONTAINER" psql -U postgres -d "$TEMPLATE" -v ON_ERROR_STOP=1 -q -tA -f - <<'SQL'
+create sequence public.sonda_fidelidade_do_harness_seq;
+select count(distinct a.grantee)
+  from pg_class c, aclexplode(c.relacl) a
+ where c.oid = 'public.sonda_fidelidade_do_harness_seq'::regclass
+   and a.privilege_type = 'USAGE'
+   and a.grantee in ('anon'::regrole, 'authenticated'::regrole, 'service_role'::regrole);
+drop sequence public.sonda_fidelidade_do_harness_seq;
+SQL
+)"
+if [ "$fidelidade_sequences" != "3" ]; then
+  echo "FATAL: neste banco uma SEQUENCE nova em public NÃO nasce com USAGE direto para anon," >&2
+  echo "       authenticated e service_role (achei ${fidelidade_sequences:-nada} de 3). Num projeto" >&2
+  echo "       Supabase de verdade ela nasce: o bootstrap grava ALTER DEFAULT PRIVILEGES … ON" >&2
+  echo "       SEQUENCES em pg_default_acl antes de qualquer SQL nosso. Sem isto, tabela com" >&2
+  echo "       'bigserial' funcionaria no gate e responderia 'permission denied for sequence' no" >&2
+  echo "       produto (issue #887). Restaure as 3 linhas de" >&2
+  echo "       'alter default privileges … on sequences' no prelude acima." >&2
+  exit 1
+fi
+echo "    ✓ sequence nova nasce com USAGE direto para anon, authenticated e service_role"
 
 echo "==> modo INSTALL: aplicando baseline.sql com ON_ERROR_STOP=1"
 aplicar_baseline
