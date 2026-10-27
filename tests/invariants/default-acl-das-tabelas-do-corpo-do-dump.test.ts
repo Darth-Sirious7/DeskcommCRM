@@ -81,6 +81,15 @@ import { sql } from "./psql-transporte";
  * pegar verde por construção. Por isso aqui cada privilégio é perguntado
  * sozinho, e o resultado é comparado como CONJUNTO.
  *
+ * ─── O que a matriz do CI ensinou (pg17) ───────────────────────────────────
+ *
+ * O primeiro push reprovou em `invariants-majors (17)`: no pg17 `grant all`
+ * concede `MAINTAIN` (`m`) além das sete letras, e o conjunto DIRETO saía com
+ * oito contra uma régua de sete. O caso reprovava por MAJOR, não por ACL — dois
+ * bancos fiéis, um veredito. O conjunto direto passou a ser lido só no universo
+ * das sete, que é o que existe nas duas majors (`m` só existe no pg17, e o
+ * mesmo `grant all` do prelude o reproduz lá).
+ *
  * ─── Como mede ─────────────────────────────────────────────────────────────
  *
  * Depois do baseline, o que ainda distingue o banco fiel do fictício são as
@@ -158,7 +167,13 @@ function acls(tabela: string, papel: string): { diretos: string[]; efetivos: str
         || coalesce((select string_agg(distinct a.privilege_type, ',' order by a.privilege_type)
                        from pg_class c, aclexplode(c.relacl) a
                       where c.oid = t.oid and a.grantee = '${papel}'::regrole
-                        and not a.is_grantable), '-')
+                        and not a.is_grantable
+                        -- Só o universo das sete: o pg17 acrescenta MAINTAIN (`m`)
+                        -- ao `grant all`, e ele não existe no pg15. Comparar sem
+                        -- filtrar faria o caso reprovar por MAJOR, não por ACL —
+                        -- dois bancos fiéis, um veredito. O `m` está reproduzido
+                        -- pelo mesmo `grant all` do prelude nas duas majors.
+                        and a.privilege_type = any (array[${lista}]::text[])), '-')
         || '|'
         || coalesce((select string_agg(p.privilegio, ',' order by p.privilegio)
                        from p
