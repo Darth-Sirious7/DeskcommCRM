@@ -8,7 +8,7 @@ import path from "node:path";
 import { createClient } from "@supabase/supabase-js";
 
 import type { EventRow } from "@/lib/event-log/dispatcher";
-import { destinoEhLocal } from "../lib/env-de-teste";
+import { destinoEhLocal } from "../../scripts/lib/env-de-teste";
 
 /** PDF sintético mínimo; a extração abaixo usa a engine de produção. */
 function pdfComTexto(texto: string): Buffer {
@@ -90,6 +90,7 @@ async function main(): Promise<void> {
   const marcador = randomUUID().replaceAll("-", "");
   const senha = `Prova-${randomUUID()}!`;
   const inserir = async (tabela: string, valores: Record<string, unknown>): Promise<string> => {
+    fase = `fixture-${tabela}`;
     const { data, error } = await admin.from(tabela).insert(valores).select("id").single();
     assert.equal(error, null, `fixture recusada: ${tabela}`);
     return (data as { id: string }).id;
@@ -111,6 +112,7 @@ async function main(): Promise<void> {
     const orgA = organizacoes[0]!;
     const orgB = organizacoes[1]!;
     const email = `media-derive-${marcador}@invariant.test`;
+    fase = "fixture-usuario-auth";
     const criado = await admin.auth.admin.createUser({ email, password: senha, email_confirm: true });
     assert.equal(criado.error, null, "usuário sintético recusado");
     usuario = criado.data.user!.id;
@@ -128,6 +130,7 @@ async function main(): Promise<void> {
         status: "open",
       });
       const objeto = `${org}/${conversa}/prova.pdf`;
+      fase = "fixture-upload";
       const upload = await admin.storage.from("whatsapp-media").upload(objeto, indice === 0 ? bytesA : bytesB, { contentType: "application/pdf" });
       assert.equal(upload.error, null, "upload sintético recusado");
       objetos.push(objeto);
@@ -140,14 +143,30 @@ async function main(): Promise<void> {
     const msgA = mensagens[0]!;
     const msgB = mensagens[1]!;
     const controleB = await lerMensagem(msgB, orgB);
+    fase = "autenticacao-jwt";
     const acesso = await sessao.auth.signInWithPassword({ email, password: senha });
     assert.equal(acesso.error, null, "login sintético recusado");
     assert.equal(acesso.data.user?.id, usuario);
-    const permitido = await sessao.storage.from("whatsapp-media").download(objetos[0]!);
-    assert.equal(permitido.error, null, "JWT próprio precisa baixar o objeto próprio");
-    assert.deepEqual(Buffer.from(await permitido.data!.arrayBuffer()), bytesA);
-    const proibido = await sessao.storage.from("whatsapp-media").download(objetos[1]!);
-    assert(proibido.error && !proibido.data, "JWT próprio não pode baixar objeto B");
+    fase = "leituras-jwt";
+    const propria = await sessao.from("messages").select("id,organization_id")
+      .eq("id", msgA).eq("organization_id", orgA).single();
+    assert.equal(propria.error, null, "JWT próprio precisa ler a mensagem própria");
+    assert.deepEqual(propria.data, { id: msgA, organization_id: orgA });
+    const alheia = await sessao.from("messages").select("id").eq("id", msgB).eq("organization_id", orgB);
+    assert.equal(alheia.error, null);
+    assert.deepEqual(alheia.data, [], "JWT próprio não pode ler a mensagem B");
+    // Spec 08: whatsapp-media é privado, lido só por signed URL/service role.
+    // Nem o objeto próprio é download direto do JWT; a autorização positiva
+    // dele é na mensagem, e o handler privilegiado é medido abaixo.
+    fase = "storage-direto-jwt";
+    for (const objeto of objetos) {
+      const proibido = await sessao.storage.from("whatsapp-media").download(objeto);
+      assert(proibido.error && !proibido.data, "JWT não baixa objeto diretamente do bucket privado");
+    }
+    fase = "storage-controle-admin";
+    const controleObjetoA = await admin.storage.from("whatsapp-media").download(objetos[0]!);
+    assert.equal(controleObjetoA.error, null);
+    assert.deepEqual(Buffer.from(await controleObjetoA.data!.arrayBuffer()), bytesA);
     const controleObjetoB = await admin.storage.from("whatsapp-media").download(objetos[1]!);
     assert.equal(controleObjetoB.error, null);
     assert.deepEqual(Buffer.from(await controleObjetoB.data!.arrayBuffer()), bytesB);
@@ -204,7 +223,7 @@ async function main(): Promise<void> {
       head: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
       run_id: process.env.GITHUB_RUN_ID ?? null,
       banco_e_storage: "reais locais", handler: "deriveMessageMedia real sobre EventRow persistido",
-      jwt_proprio: { objeto_a: "bytes A", objeto_b: "negado", alteracao_linha_a: "permitida" },
+      jwt_proprio: { mensagem_a: "permitida", mensagem_b: "negada", storage_direto_a: "negado", storage_direto_b: "negado", alteracao_linha_a: "permitida" },
       negativos: 3, downloads_negativos: 0, marcas_skipped_negativas: 3, outras_escritas_negativas: 0,
       positivo: { downloads: 1, status: "ready", texto: textoA, extrator: "PDF real" },
       controle_b_inalterado: true, chamadas_provedor_externo: redeExterna,

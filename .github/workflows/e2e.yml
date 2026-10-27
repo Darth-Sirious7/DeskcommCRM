@@ -1991,7 +1991,7 @@ jobs:
       # Handler, JWT e Storage reais no stack já pronto; PDF local, sem IA paga.
       - name: Provar isolamento do worker de derivação de mídia
         if: matrix.parte == 1
-        run: pnpm exec tsx scripts/provas/media-derive-isolamento.ts
+        run: pnpm exec tsx tests/provas/media-derive-isolamento.ts
 
       # `pnpm e2e:build`, não `pnpm build`: as três `NEXT_PUBLIC_*` são embutidas
       # no BUNDLE durante o build. Buildar com um env e trocar só no `next start`
