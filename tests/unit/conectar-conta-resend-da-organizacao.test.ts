@@ -137,6 +137,14 @@ describe("conectarContaResendDaOrganizacao", () => {
     expect(r).toEqual({ ok: false, error: "nao_gravou" });
   });
 
+  it("erro bruto de gravação não volta ao navegador com conteúdo da credencial", async () => {
+    vi.mocked(createAdminClient).mockReturnValue(adminClient({ data: null, error: { message: `invalid bytea ${CHAVE_ORG}` } }));
+    const r = await conectarContaResendDaOrganizacao(INPUT);
+    expect(r).toEqual({ ok: false, error: "db_error" });
+    expect(JSON.stringify(r)).not.toContain(CHAVE_ORG);
+    expect(audit).not.toHaveBeenCalled();
+  });
+
   it("sem papel de admin é `forbidden_role`, e nada é gravado", async () => {
     vi.mocked(podeAdministrarEmpresa).mockReturnValue(false as never);
     const r = await conectarContaResendDaOrganizacao(INPUT);
@@ -160,5 +168,15 @@ describe("desconectarContaResendDaOrganizacao", () => {
     expect(r).toEqual({ ok: true });
     expect(deleteMock).toHaveBeenCalledWith("organization_id", "org-1");
     expect(audit).toHaveBeenCalled();
+  });
+
+  it("erro bruto de exclusão não volta ao navegador", async () => {
+    const deleteMock = vi.fn(async () => ({ error: { message: `database detail ${CHAVE_ORG}` } }));
+    vi.mocked(createAdminClient).mockReturnValue({ from: () => ({ delete: () => ({ eq: deleteMock }) }) } as never);
+    const r = await desconectarContaResendDaOrganizacao();
+    expect(r).toEqual({ ok: false, error: "db_error" });
+    expect(JSON.stringify(r)).not.toContain(CHAVE_ORG);
+    expect(deleteMock).toHaveBeenCalledWith("organization_id", "org-1");
+    expect(audit).not.toHaveBeenCalled();
   });
 });

@@ -136,7 +136,7 @@ export async function conectarContaResendDaOrganizacao(
     )
     .select("organization_id");
 
-  if (error) return { ok: false, error: "db_error", details: error.message };
+  if (error) return { ok: false, error: "db_error" };
   // A CATRACA da issue #144: `data` vazio é escrita que não casou — a tela não
   // pode dizer "conectada" com nada gravado.
   if (!data || data.length !== 1) return { ok: false, error: "nao_gravou" };
@@ -178,7 +178,7 @@ export async function desconectarContaResendDaOrganizacao(): Promise<
     .from("organization_resend_accounts")
     .delete()
     .eq("organization_id", autor.orgId);
-  if (error) return { ok: false, error: "db_error", details: error.message };
+  if (error) return { ok: false, error: "db_error" };
 
   await audit({
     action: "org.resend_account_disconnected",

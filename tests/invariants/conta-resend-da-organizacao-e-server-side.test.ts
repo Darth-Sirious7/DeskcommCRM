@@ -292,6 +292,17 @@ describe("a linha semeada numa organização não é lida por authenticated nem 
       where n.nspname = 'public' and c.relname = 'organization_resend_accounts'
         and (a.grantee = 0 or r.rolname in ('anon', 'authenticated'));
     `)).toBe("0");
+    // Privilégio efetivo inclui herança e PUBLIC: sete do piso pg15, com
+    // TRUNCATE (sem RLS), REFERENCES e TRIGGER; MAINTAIN existe desde pg17.
+    expect(sql(`
+      select bool_and(not has_table_privilege(r, 'public.organization_resend_accounts', o))
+        from unnest(array['anon', 'authenticated']) r
+       cross join unnest(
+         array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']
+         || case when current_setting('server_version_num')::int >= 170000
+              then array['MAINTAIN'] else array[]::text[] end
+       ) o;
+    `)).toBe("t");
   });
 
   it("service_role insere, lê, atualiza e apaga a conta sem ganhar TRUNCATE", () => {
