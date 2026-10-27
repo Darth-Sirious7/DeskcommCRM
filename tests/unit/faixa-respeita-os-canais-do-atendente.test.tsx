@@ -206,8 +206,12 @@ describe("a faixa de conexão caída respeita os canais do atendente", () => {
 
     const caidas = await payloadDaFaixa(ORG);
 
-    // Sem este caso, "esconder tudo" passaria como conserto.
-    expect(caidas!.map((c) => c.apelido)).toEqual(["Vendas"]);
+    // Sem este caso, "esconder tudo" passaria como conserto. Ele mede PRESENÇA,
+    // e só isso: afirmar aqui a lista exata repetiria a ausência do caso
+    // anterior, e os dois ficariam vermelhos juntos — a sabotagem não
+    // conseguiria mostrar que este é o que distingue "filtrou" de "escondeu".
+    expect(caidas!.map((c) => c.id)).toContain("sess-vendas");
+    expect(caidas!.find((c) => c.id === "sess-vendas")?.apelido).toBe("Vendas");
     expect(caidas!.find((c) => c.id === "sess-vendas")?.status).toBe("FAILED");
   });
 
