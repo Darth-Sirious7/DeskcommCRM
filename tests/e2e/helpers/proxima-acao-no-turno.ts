@@ -97,7 +97,9 @@ if (argumento >= 0) {
         nextAction: z.string().nullable(),
       })
       .parse(JSON.parse(process.argv[argumento + 1] ?? "null"));
-    const pool = new pg.Pool({ connectionString: url, max: 1 });
+    // before_send mantém um client até persistir a auditoria autônoma pelo
+    // pool; uma segunda conexão é necessária para esse caminho completar.
+    const pool = new pg.Pool({ connectionString: url, max: 2 });
     try {
       await proximaAcaoNoTurno(pool, entrada.ids, entrada.nextAction);
     } finally {

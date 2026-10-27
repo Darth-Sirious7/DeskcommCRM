@@ -660,9 +660,9 @@ test("próxima ação genérica preserva a proposta anterior e null limpa pelo t
   const { loginComoAdmin, lerCreds } = await import("./helpers/login-admin");
   const { applyLeadStateUpdate } = await import("../../lib/agent-engine/agent/lead-state");
   const { seedPlatformPlaybook } = await import("../../lib/agent-engine/agent/playbook-seed");
-  const { execFile } = await import("node:child_process");
-  const { promisify } = await import("node:util");
-  const executarTurno = promisify(execFile);
+  const { iniciarFilhoDoTurno } = await import("./helpers/filho-do-turno-local");
+  const filhos: ReturnType<typeof iniciarFilhoDoTurno>[] = [];
+  const fimDosTurnos = Date.now() + 120_000;
   const ambiente = credenciaisSupabaseDeTeste();
   expect(["127.0.0.1", "localhost"]).toContain(new URL(ambiente.dbUrl).hostname);
   const pool = new pg.Pool({ connectionString: ambiente.dbUrl, max: 2 });
@@ -709,8 +709,7 @@ test("próxima ação genérica preserva a proposta anterior e null limpa pelo t
       // explicitamente; o handler e o writer usam o Postgres real da suíte.
       // O grafo do motor usa o loader tsx do worker, em um filho isolado:
       // não mistura sua resolução CJS/ESM com a transformação do Playwright.
-      await executarTurno(
-        process.execPath,
+      const filho = iniciarFilhoDoTurno(
         [
           "--max-old-space-size=768",
           "--import",
@@ -722,8 +721,11 @@ test("próxima ação genérica preserva a proposta anterior e null limpa pelo t
             nextAction: passo.texto,
           }),
         ],
-        { env: { ...process.env, E2E_TURNO_DB_URL: ambiente.dbUrl } },
+        Math.min(30_000, fimDosTurnos - Date.now()),
+        { E2E_TURNO_DB_URL: ambiente.dbUrl },
       );
+      filhos.push(filho);
+      await filho.resultado;
       const direta = await applyLeadStateUpdate(pool, { tenantId: org, leadId: contatos[1]! }, { next_action: passo.texto });
       expect(direta.ok).toBe(true);
       const { rows } = await pool.query("select next_action, next_action_seq from lead_state where organization_id=$1 and contact_id=any($2::uuid[]) order by contact_id", [org, contatos]);
@@ -742,6 +744,8 @@ test("próxima ação genérica preserva a proposta anterior e null limpa pelo t
     await page.screenshot({ path: "evidence/antigos-core-3458/proposta-limpa.png" });
   } finally {
     try {
+      // Junta somente os filhos desta prova antes de remover qualquer fixture.
+      for (const filho of filhos) await filho.encerrar();
       if (org) {
         const limpeza = await admin.from("organizations").delete().eq("id", org);
         expect(limpeza.error).toBeNull();
