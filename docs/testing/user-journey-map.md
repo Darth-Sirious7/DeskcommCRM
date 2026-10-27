@@ -4059,7 +4059,7 @@ relógio, cujo reparo central entra pela composição da main, sem repetir a rod
 @webtecnica (`48895c6f`) é preservada na composição. Destino: **núcleo**, pois
 cadastro, edição e uso de respostas rápidas pertencem ao atendimento comum.
 
-`respostas-rapidas-conteudos.spec.ts`, na parte3, prepara uma organização e uma
+`respostas-rapidas-conteudos.spec.ts`, no CI canônico, prepara uma organização e uma
 sessão manager novas, cadastra as sete combinações pela tela e usa os botões do
 Inbox com prévia e confirmação. App, autenticação, PostgREST, Storage, pipeline
 de envio e bytes são reais; somente o transporte do fornecedor usa um receptor
@@ -4084,7 +4084,9 @@ templates. A regra herdada de legenda após falha parcial de envio está fora
 deste recorte.
 
 PNG e recibo sanitizado são gravados em `evidence/respostas-rapidas-3538/`
-antes da limpeza, inclusive na falha. Trace e vídeo ficam desligados apenas
+e anexados por arquivo ao resultado Playwright, inclusive na falha. O recibo
+vem antes da limpeza e recebe seu resultado ao final; falha de evidência também
+reprova, depois da tentativa de limpeza. Trace e vídeo ficam desligados apenas
 nesta spec para não arquivar URLs assinadas. A limpeza é limitada aos UUIDs
 sintéticos desta execução. A coleta `--list` não é prova de UX; a aceitação
 depende do CI do candidato e da inspeção das capturas produzidas.
