@@ -7474,6 +7474,15 @@ export const DICIONARIO: Traducoes = {
   },
   "Você está na versão": { es: "Estás en la versión" },
   "É a mais recente. Não há nada a fazer.": { es: "Es la más reciente. No hay nada que hacer." },
+  // #3488 — o retrato do host envelheceu: a tela não afirma que está em dia.
+  "Não sei se há versão nova": { es: "No sé si hay una versión nueva" },
+  "O servidor não fala comigo desde": { es: "El servidor no se comunica conmigo desde" },
+  ". É ele quem confere se saiu versão nova — então não posso afirmar que esta é a mais recente.": {
+    es: ". Es él quien comprueba si salió una versión nueva, así que no puedo afirmar que esta sea la más reciente.",
+  },
+  "Assim que ele voltar a falar comigo, esta tela se atualiza sozinha. Se demorar, quem tem acesso ao servidor pode conferir na hora com:": {
+    es: "En cuanto vuelva a comunicarse conmigo, esta pantalla se actualizará sola. Si tarda, quien tenga acceso al servidor puede comprobarlo de inmediato con:",
+  },
   "Ainda não há nenhuma versão publicada": { es: "Todavía no hay ninguna versión publicada" },
   "Este projeto ainda não tem nenhuma versão publicada para comparar com a sua instalação — normal em um fork novo ou recém-criado a partir do código-fonte.": {
     es: "Este proyecto aún no tiene ninguna versión publicada con la que comparar tu instalación. Es normal en un fork nuevo o recién creado a partir del código fuente.",
