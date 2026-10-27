@@ -5426,6 +5426,13 @@ grant execute on function public.fn_can_view_conversation(uuid, uuid)
 -- linha-por-linha que vivia aqui era reinstalada a cada update.sh e valia até
 -- aquele bloco, e era ela que fazia a caixa de entrada custar ~7 ms por linha
 -- (#3090): quem derruba o clone antigo é o `drop` colado no bloco final.
+-- A policy `conversations_select` saiu daqui: a 0035 a criava só com
+-- `fn_can_view_conversation` e o ramo de PARTICIPANTE da 0661 a redefine adiante.
+-- Deixar as duas reabria uma janela — em todo install/update a versão
+-- intermediária (sem o `or exists`) valia até a final chegar, e o convidado não
+-- via a conversa nesse intervalo. O `drop policy if exists` do bloco da 0661
+-- continua, e é ele que limpa o clone que recebeu a versão antiga. Vigiado por
+-- `tests/unit/baseline-nao-constroi-o-que-derruba.test.ts`.
 
 drop policy if exists "conversations_agent_write" on public.conversations;
 drop policy if exists "conversations_agent_insert" on public.conversations;
@@ -54434,6 +54441,55 @@ $$;
 revoke execute on function public.fn_vocabulario_de_tags_operar(uuid, text, text, text, text) from public, anon;
 grant  execute on function public.fn_vocabulario_de_tags_operar(uuid, text, text, text, text) to authenticated, service_role;
 
+-- ---- participantes do atendimento conjunto (migration 0661, issue #2542) ----
+-- Tabela introduzida pela 0661. A policy final vive na forward-fix 9016,
+-- depois do escopo em lote da 0726; cadeia e baseline terminam na mesma regra.
+-- Nasce ANTES da VARREDURA anon por vizinhança, embora não crie função.
+--
+-- A tabela, a RLS de leitura (organização + papel + a PRÓPRIA linha) e — a
+-- linha que faz o convidado VER — o ramo de participante no `conversations_select`
+-- (o `fn_can_view_conversation` continua a régua; aqui só se ACRESCENTA a porta).
+-- `messages` herda o escopo por `exists` na própria policy. O DONO único
+-- (`assigned_to_user_id`) não é tocado por nada disto: entrar não é assumir.
+create table if not exists public.conversation_participants (
+  id               uuid primary key default gen_random_uuid(),
+  organization_id  uuid not null references public.organizations(id) on delete cascade,
+  conversation_id  uuid not null references public.conversations(id) on delete cascade,
+  user_id          uuid not null references auth.users(id) on delete cascade,
+  invited_by       uuid references auth.users(id) on delete set null,
+  joined_at        timestamptz not null default now(),
+  left_at          timestamptz,
+  constraint conversation_participants_unico unique (conversation_id, user_id)
+);
+
+alter table public.conversation_participants add column if not exists invited_by uuid;
+alter table public.conversation_participants add column if not exists joined_at timestamptz not null default now();
+alter table public.conversation_participants add column if not exists left_at timestamptz;
+
+create index if not exists participantes_por_usuario
+  on public.conversation_participants (organization_id, user_id)
+  where left_at is null;
+create index if not exists participantes_por_conversa
+  on public.conversation_participants (organization_id, conversation_id);
+
+alter table public.conversation_participants enable row level security;
+
+revoke all    on public.conversation_participants from anon, authenticated;
+grant  select on public.conversation_participants to authenticated;
+grant  all    on public.conversation_participants to service_role;
+
+drop policy if exists tenant_isolation_conversation_participants_select on public.conversation_participants;
+create policy tenant_isolation_conversation_participants_select
+  on public.conversation_participants
+  for select to authenticated
+  using (
+    organization_id in (select public.fn_user_org_ids())
+    and public.fn_role_at_least(organization_id, 'agent')
+    and user_id = auth.uid()
+  );
+
+do $f$ begin perform public.fn_aplicar_travas_de_suporte(); end $f$;
+
 -- manifest: **O entregue e o lido da API oficial chegam ao destinatário da campanha (issue #2937).** `fn_campanha_sincroniza_ack` saía cedo quando `new.status is not distinct from old.status` e o gatilho escutava só `after update of status`: na API oficial o webhook de entrega/leitura mantém `messages.status = 'sent'` e grava apenas `delivered_at`/`read_at` (`lib/channels/meta/status-update.ts:23-31`), então o gatilho nem disparava ou saía no primeiro `if` — `campaign_recipients.delivered_at`/`read_at` ficavam nulos para sempre e as taxas de entrega/leitura da campanha, zeradas. A função passa a derivar o "status efetivo" dos carimbos quando o canal não muda o `status`, e o gatilho passa a escutar exatamente as três colunas que aquele ack toca (`status`, `delivered_at`, `read_at`). O caminho do canal não oficial (o `status` chega `delivered`/`read`, `lib/waha/ingest.ts`), a regra de "status analítico nunca retrocede" e o caminho de `failed` seguem idênticos. Gate: `tests/invariants/ack-da-api-oficial-alcanca-o-destinatario.test.ts` (vermelho na main, verde aqui).
 
 -- ---- o ack da API oficial alcança o destinatário da campanha (migration 0678, issue #2937) ----
@@ -58377,25 +58433,6 @@ $$;
 revoke all on function public.fn_conversation_scope() from public, anon;
 grant execute on function public.fn_conversation_scope() to authenticated, service_role;
 
--- A policy: o mesmo resultado da 0035, sem uma chamada por linha.
-drop policy if exists "conversations_select" on public.conversations;
-create policy "conversations_select" on public.conversations
-  for select using (
-    (select public.fn_is_platform_admin())
-    or organization_id in (
-         select s.organization_id from public.fn_conversation_scope() s where s.org_wide_read
-       )
-    or (
-         assigned_to_user_id = auth.uid()
-         and organization_id in (select s.organization_id from public.fn_conversation_scope() s)
-       )
-    or (
-         assigned_to_user_id is null
-         and organization_id in (
-              select s.organization_id from public.fn_conversation_scope() s where s.sees_unassigned
-            )
-       )
-  );
 
 -- 0734 — avaliação única de permissões (#3087)
 -- manifest: Avalia papel e contexto de suporte uma vez por verificação RBAC (#3087), preservando regras, grants e limites.
@@ -60114,6 +60151,148 @@ $$;
 
 revoke execute on function public.fn_enfileirar_midia_vencida(integer) from public, anon, authenticated;
 grant execute on function public.fn_enfileirar_midia_vencida(integer) to service_role;
+-- ---- 0563: contato pessoal — a coluna e a saída de campanha (spec 21, fatia 1) ----
+-- Espelho idempotente da migration 0563. É este apêndice que chega a todo
+-- self-host: o install.sh aplica o baseline num banco novo e o update.sh o
+-- re-aplica num banco existente; nenhum dos dois roda as migrations.
+-- `is_personal` nasce desligado: contato novo é operacional até alguém marcar.
+-- O status `personal` é saída própria de campanha — nunca `opted_out`, para
+-- não inflar "pediu para parar".
+alter table public.contacts
+  add column if not exists is_personal boolean default false not null;
+
+comment on column public.contacts.is_personal is
+  'Contato de vida pessoal (spec 21): escondido da operação e inutilizado para envio. Só gerente/dono marca e desmarca, pela rota personal; quem/quando fica em auditoria + timeline, nunca aqui.';
+
+create index if not exists idx_contacts_org_personal
+  on public.contacts (organization_id)
+  where (is_personal = true);
+
+alter table public.campaign_recipients
+  drop constraint if exists campaign_recipients_status_check;
+
+alter table public.campaign_recipients
+  add constraint campaign_recipients_status_check check (status in (
+    'pending','queued','sending','sent','delivered','read','replied',
+    'failed','skipped','cancelled','opted_out','personal'
+  ));
+
+notify pgrst, 'reload schema';
+
+-- manifest: Preserva atendimento conjunto depois do escopo em lote da 0726, limita convite a leitura/resposta sem conceder controle e entrega entrada/saída pelo Realtime (#2542, integração #2848).
+-- ---- atendimento conjunto: controle e atualização da tela (migration 9016) ----
+-- A 0661 precede a 0726 na cadeia. Esta forward-fix reinstala a policy atual
+-- COM participação depois dela, sem editar nenhuma migration já publicada.
+do $conversations_select$ begin
+  -- O ramo de PARTICIPANTE (conversa atendida em conjunto) fica, e a forma da
+  -- main também: escopo resolvido em conjunto por fn_conversation_scope(), ANTES
+  -- do scan. A forma antiga do PR (fn_can_view_conversation por linha) fazia o
+  -- planner voltar a chamar a função por candidata — reprovado por
+  -- tests/invariants/escopo-da-conversa-avaliado-uma-vez.test.ts (#2848 sobre o
+  -- conserto #3090). A política abaixo é a da main (58213) + o ramo participante.
+  drop policy if exists "conversations_select" on public.conversations;
+  create policy "conversations_select" on public.conversations
+    for select using (
+      (select public.fn_is_platform_admin())
+      or organization_id in (
+           select s.organization_id from public.fn_conversation_scope() s where s.org_wide_read
+         )
+      or (
+           assigned_to_user_id = auth.uid()
+           and organization_id in (select s.organization_id from public.fn_conversation_scope() s)
+         )
+      or (
+           assigned_to_user_id is null
+           and organization_id in (
+                select s.organization_id from public.fn_conversation_scope() s where s.sees_unassigned
+              )
+         )
+      or exists (
+           select 1
+             from public.conversation_participants cp
+            where cp.conversation_id = conversations.id
+              and cp.organization_id = conversations.organization_id
+              and cp.user_id = auth.uid()
+              and cp.left_at is null
+              and not exists (
+                select 1 from public.contacts pc
+                 where pc.id=conversations.contact_id
+                   and pc.organization_id=conversations.organization_id
+                   and pc.is_personal
+              )
+         )
+    );
+end $conversations_select$;
+
+-- O convite não amplia UPDATE/DELETE. Mantém o escopo anterior de quem já
+-- escrevia: owner, gestor e o modo de visibilidade configurado no banco.
+-- WITH CHECK true preserva a mudança de responsável que já era permitida;
+-- o USING mede a linha ANTES da escrita, não a identidade que o corpo propõe.
+drop policy if exists conversation_participant_read_is_not_control_update on public.conversations;
+create policy conversation_participant_read_is_not_control_update
+  on public.conversations as restrictive for update to authenticated
+  using (public.fn_can_view_conversation(organization_id, assigned_to_user_id))
+  with check (true);
+drop policy if exists conversation_participant_read_is_not_control_delete on public.conversations;
+create policy conversation_participant_read_is_not_control_delete
+  on public.conversations as restrictive for delete to authenticated
+  using (public.fn_can_view_conversation(organization_id, assigned_to_user_id));
+
+
+-- Responder não dá edição/exclusão do histórico de outra pessoa. Quem já
+-- tinha escopo mantém a escrita anterior; a convidada pode editar/revogar sua
+-- própria saída, como exige messages/[id], sem poder apagar linhas do histórico.
+drop policy if exists message_participant_reply_is_not_history_update on public.messages;
+create policy message_participant_reply_is_not_history_update
+  on public.messages as restrictive for update to authenticated
+  using (
+    (sent_by_user_id=auth.uid() and direction='outbound' and sent_via in ('user','crm'))
+    or exists (select 1 from public.conversations c
+      where c.id=messages.conversation_id and c.organization_id=messages.organization_id
+        and public.fn_can_view_conversation(c.organization_id,c.assigned_to_user_id))
+  ) with check (
+    exists (select 1 from public.conversations c
+      where c.id=messages.conversation_id and c.organization_id=messages.organization_id
+        and (public.fn_can_view_conversation(c.organization_id,c.assigned_to_user_id)
+          or (messages.sent_by_user_id=auth.uid() and messages.direction='outbound'
+            and messages.sent_via in ('user','crm'))))
+  );
+drop policy if exists message_participant_reply_is_not_history_delete on public.messages;
+create policy message_participant_reply_is_not_history_delete
+  on public.messages as restrictive for delete to authenticated
+  using (exists (select 1 from public.conversations c
+    where c.id=messages.conversation_id and c.organization_id=messages.organization_id
+      and public.fn_can_view_conversation(c.organization_id,c.assigned_to_user_id)));
+
+-- O vínculo só é escrito pelo servidor. O toque notifica quem já observa a
+-- conversa, sem conceder SELECT nas participações alheias e sem trocar o dono.
+create or replace function public.fn_participacao_atualiza_conversa()
+returns trigger language plpgsql set search_path=public as $$
+begin
+  update public.conversations set updated_at=clock_timestamp()
+   where id=new.conversation_id and organization_id=new.organization_id;
+  return new;
+end;
+$$;
+revoke execute on function public.fn_participacao_atualiza_conversa() from public, anon, authenticated;
+grant execute on function public.fn_participacao_atualiza_conversa() to service_role;
+drop trigger if exists participacao_atualiza_conversa on public.conversation_participants;
+create trigger participacao_atualiza_conversa
+  after insert or update on public.conversation_participants
+  for each row execute function public.fn_participacao_atualiza_conversa();
+
+-- A própria linha continua legível depois de left_at, então o removido recebe
+-- a revogação. Publication pode não existir num Postgres puro do self-host.
+do $participacoes_realtime$ begin
+  if exists (select 1 from pg_publication where pubname='supabase_realtime')
+     and not exists (select 1 from pg_publication_tables
+       where pubname='supabase_realtime' and schemaname='public' and tablename='conversation_participants') then
+    alter publication supabase_realtime add table public.conversation_participants;
+  end if;
+end $participacoes_realtime$;
+
+notify pgrst, 'reload schema';
+
 
 -- ---- leitura sensível pelo poder de plataforma pede a sessão confirmada (migration 0762) ----
 -- `decrypt_cpf` troca `fn_is_platform_admin()` por `fn_is_platform_admin_full()`
@@ -60983,6 +61162,306 @@ $$;
 -- explícita para quem aplica só esta correção: apenas o servidor executa.
 revoke execute on function public.fn_lgpd_cascade_redact_contact(uuid, uuid, uuid) from public, anon, authenticated;
 grant execute on function public.fn_lgpd_cascade_redact_contact(uuid, uuid, uuid) to service_role;
+-- ---- traço do turno do agente (migration 0721) ----
+-- manifest: traço do turno do agente — uma linha por execução, chave `job_id` (issue #2869).
+
+-- ═══ O que esta tabela responde, e por que ela existe ═════════════════════════
+--
+-- O turno real do agente é auditável hoje em pedaços que moram longe um do
+-- outro: `llm_calls` guarda cada chamada de modelo, `skill_activations` guarda
+-- quais skills entraram, `event_log` guarda a cadeia de eventos. Nenhuma linha
+-- responde "o que aconteceu NESTE turno": quais ferramentas o modelo chamou (e
+-- qual falhou), qual janela de histórico foi carregada, quais fontes de
+-- conhecimento estavam ligadas e como o turno terminou. Um turno que respondeu
+-- errado só se explica lendo o código.
+--
+-- ═══ Por que tabela nova, e não `ai_agent_runs` ═══════════════════════════════
+--
+-- `ai_agent_runs` nasceu com a forma disso (0023) e o motor vivo NUNCA escreveu
+-- nela: o único escritor é a prévia (`is_dry_run = true`), e por isso a aba
+-- Execuções passou a ler `llm_calls` (medido: 0 linhas em produção com 130
+-- chamadas `agent_turn`). Reaproveitá-la significaria decidir, de passagem, que
+-- ela volta a ser a fonte do turno real — decisão do mantenedor, não nossa.
+-- Esta tabela é ADITIVA: a tela de Execuções continua lendo o que já lê.
+--
+-- ═══ Por que SEM trigger de auditoria ════════════════════════════════════════
+--
+-- Toda outra tabela do módulo de IA audita cada linha. Aqui não, de propósito:
+-- é uma escrita por TURNO, e o conteúdo do traço já é o registro do que
+-- aconteceu. Auditar a auditoria dobraria o volume de `audit_log` sem responder
+-- nenhuma pergunta nova. Se a política mudar, é um `create trigger` de uma linha.
+--
+-- ═══ O que esta fatia ainda NÃO grava ════════════════════════════════════════
+--
+-- O snapshot/hash da composição do prompt, os trechos de conhecimento
+-- efetivamente recuperados, a janela de histórico REALMENTE carregada (a coluna
+-- `historico_mensagens` existe para a fatia que medir isso, e nasce `null` em
+-- vez de receber a janela PEDIDA, que é outra coisa) e a comparação entre a
+-- resposta crua do modelo e o texto enviado ficam para as fatias seguintes. O
+-- que esta já separa é prévia de turno real (`is_dry_run`).
+
+create table if not exists public.agent_turn_traces (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  -- Turno real: `job_id` (o job da fila É o run). Prévia: `preview_run_id`.
+  -- Exatamente um dos dois — o CHECK abaixo é o que impede a linha órfã.
+  job_id uuid,
+  preview_run_id text,
+  conversation_id uuid,
+  contact_id uuid,
+  agent_id uuid,
+  agent_version_id uuid,
+  is_dry_run boolean not null default false,
+  status text not null check (status in ('completed', 'failed', 'aborted')),
+  abort_reason text,
+  error_code text,
+  error_message text,
+  provider text,
+  model text,
+  messages_sent integer not null default 0 check (messages_sent >= 0),
+  historico_mensagens integer check (historico_mensagens is null or historico_mensagens >= 0),
+  -- Agregados do job, somados na hora de gravar (não há segunda escrita).
+  tokens_in integer not null default 0 check (tokens_in >= 0),
+  tokens_out integer not null default 0 check (tokens_out >= 0),
+  cost_cents numeric not null default 0,
+  latency_ms integer not null default 0 check (latency_ms >= 0),
+  -- Skills ativadas no turno (`skill_activations` do mesmo job).
+  skills jsonb not null default '[]'::jsonb,
+  -- Ferramentas chamadas: nome, estado (ok|falhou|bloqueada), erro e duração.
+  ferramentas jsonb not null default '[]'::jsonb,
+  ferramentas_truncadas boolean not null default false,
+  -- Fontes de conhecimento ligadas ao agente, com versão e hash.
+  kb_sources jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint agent_turn_traces_chave check (
+    (job_id is not null and preview_run_id is null)
+    or (job_id is null and preview_run_id is not null)
+  )
+);
+
+comment on table public.agent_turn_traces is
+  'Uma linha por execução do agente (issue #2869): chave `job_id` no turno real, `preview_run_id` na prévia. Agrega tokens/custo/latência de `llm_calls` e as skills de `skill_activations` do mesmo job, e guarda o que só existe no turno: as ferramentas chamadas (nome, estado, erro, duração), a janela de histórico e as fontes de conhecimento ligadas. Escrita melhor-esforço pelo motor — falhar aqui nunca derruba o atendimento.';
+
+-- A chave do turno real. Parcial de propósito: a prévia não tem job, e uma
+-- coluna nula não colide no Postgres — sem o `where`, o upsert do turno real
+-- não teria em que se apoiar (e o `on conflict` da gravação é o que torna a
+-- repetição de um turno idempotente em vez de duplicar a linha).
+create unique index if not exists agent_turn_traces_job_idx
+  on public.agent_turn_traces (job_id) where job_id is not null;
+
+create index if not exists agent_turn_traces_org_created_idx
+  on public.agent_turn_traces (organization_id, created_at desc);
+
+create index if not exists agent_turn_traces_preview_idx
+  on public.agent_turn_traces (preview_run_id) where preview_run_id is not null;
+
+-- O agregado do traço lê `skill_activations` pelo `job_id` a cada turno, e a
+-- tabela só tinha índice por organização e por skill (0078). Sem isto, cada
+-- turno paga uma varredura da tabela inteira para descobrir o que ele mesmo
+-- acabou de gravar.
+create index if not exists idx_skill_activations_job
+  on public.skill_activations (job_id) where job_id is not null;
+
+-- RLS: o traço é da organização e ninguém mais o lê. A leitura é do painel
+-- (sessão do usuário, `authenticated`), por uma policy só de `select`. A
+-- escrita é só do worker, que passa por fora do RLS: por isso `authenticated`
+-- perde o grant de escrita (o molde de `automation_rodizio_atribuicoes`, 0692),
+-- e `anon` não recebe nada em hipótese alguma: um traço carrega o texto do erro
+-- e os ids das fontes de conhecimento.
+alter table public.agent_turn_traces enable row level security;
+
+drop policy if exists tenant_isolation_agent_turn_traces_all on public.agent_turn_traces;
+drop policy if exists tenant_isolation_agent_turn_traces_select on public.agent_turn_traces;
+create policy tenant_isolation_agent_turn_traces_select on public.agent_turn_traces
+  for select using (organization_id in (select public.fn_user_org_ids()));
+
+revoke all on public.agent_turn_traces from anon, authenticated;
+grant select on public.agent_turn_traces to authenticated;
+grant all on public.agent_turn_traces to service_role;
+
+-- ---- #3201: o traço do turno ganha prazo (migration 9021) ----
+-- manifest: O traço do turno ganha poda por idade (#3201, entrega parcial da #2869). Função definer sem seletor de organização/linha, padrão 400 e piso 100 no corpo, lote com teto 10000, execute somente service_role. Reusa AI_TELEMETRY_RETENTION_DAYS, conforme decisão 218; índice de created_at e comentário guardado. Apêndice idempotente espelhado no baseline; a 0721 permanece intacta.
+--
+-- 9021 — adaptação da migration inédita 0778 de @webtecnica (#3516).
+-- Número/carimbo reservados pelo mantenedor; fonte e autoria preservadas na história.
+--
+-- A retenção usa o knob existente da telemetria da IA: padrão 400, piso 100.
+-- A API é uma entrega parcial; a tela continua na issue #3201. O leitor corta
+-- a janela no instante agora - retenção e entrega recibos técnicos projetados.
+-- As linhas legadas podem conter texto livre de erro: esta poda NÃO é uma
+-- higienização de conteúdo nem substitui a projeção segura do leitor.
+--
+-- Função irmã da 0587, sem editar sua definição aplicada. Reaplicar não muda
+-- o piso, não seleciona organização/id e não produz auditoria quando não apagou.
+
+-- Índice de poda: o DELETE por idade é diário e cresceria com a tabela. O
+-- índice que já existe começa por `organization_id` (0721), e esta poda não tem
+-- seletor de organização — sem este, cada rodada varre a tabela inteira.
+create index if not exists idx_agent_turn_traces_expurgo_created_at
+  on public.agent_turn_traces (created_at);
+
+-- O expurgo do traço do turno vencido. Mesma forma da família da 0587:
+-- `security definer` SEM seletor de linha (nenhum parâmetro de organização,
+-- contato, conversa ou id — o único predicado vindo de fora é a idade), piso
+-- dentro do CORPO (vale para qualquer chamador, inclusive um `psql` na mão),
+-- lote com teto de 10000 e revogação de `public`/`anon`/`authenticated`.
+create or replace function public.fn_expurgar_traco_do_turno_vencido(
+  p_retencao_dias int default null,
+  p_limite int default null
+) returns int
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  -- 400 = o mesmo padrão de `AI_TELEMETRY_RETENTION_DAYS` (RETENCAO_TELEMETRIA_
+  -- DE_IA_DIAS_PADRAO) e 100 = o mesmo piso (RETENCAO_TELEMETRIA_DE_IA_DIAS_
+  -- PISO). Os números são repetidos aqui de propósito, como nas irmãs da 0587:
+  -- a função vale para chamador que não passou pelo TypeScript (o `psql` da
+  -- madrugada). O par SQL × TypeScript é medido em
+  -- `tests/unit/retencao-do-traco-do-turno.test.ts`.
+  v_dias int := greatest(coalesce(p_retencao_dias, 400), 100);
+  v_limite int := least(greatest(coalesce(p_limite, 1000), 1), 10000);
+  v_corte timestamptz := now() - make_interval(days => v_dias);
+  v_apagadas int;
+begin
+  -- O corte fica no `where` ANTES do `limit` (a lição da 0167): filtrar depois
+  -- faria um lote inteiro de linhas ainda válidas devolver 0 e o cron parar com
+  -- backlog atrás.
+  with vencidas as (
+    select t.id from public.agent_turn_traces t
+     where t.created_at < v_corte
+     order by t.created_at limit v_limite
+  )
+  delete from public.agent_turn_traces t using vencidas v where t.id = v.id;
+  get diagnostics v_apagadas = row_count;
+  return v_apagadas;
+end;
+$$;
+revoke execute on function public.fn_expurgar_traco_do_turno_vencido(int,int) from public, anon, authenticated;
+grant  execute on function public.fn_expurgar_traco_do_turno_vencido(int,int) to service_role;
+
+-- O relógio da poda é `created_at`, e quem lê o traço pergunta por ele. Dizer
+-- isso na coluna é o que impede a próxima pessoa de indexar/filtrar por
+-- `updated_at` (que muda no upsert de um turno repetido) achando que é o mesmo
+-- eixo. Dentro da guarda: num clone sem a tabela da 0721 o comentário não pode
+-- derrubar a atualização.
+do $$
+begin
+  if to_regclass('public.agent_turn_traces') is not null then
+    comment on column public.agent_turn_traces.created_at is
+      'Quando o turno gravou o traço. É o relógio de fn_expurgar_traco_do_turno_vencido (9021) e o eixo do leitor /api/v1/ai/turn-traces — NÃO confundir com updated_at, que o upsert reescreve quando o mesmo job regrava.';
+  end if;
+end
+$$;
+
+notify pgrst, 'reload schema';
+
+-- ---- claim livre exige motivo e CAS (migration 9017) ----
+-- manifest: Restringe a exceção de atribuição da 0776 ao claim para si com CAS (#3479). Transferência, roteamento e escrita sem lock otimista continuam exigindo visibilidade; preserva filtros de organização, elegibilidade e grants. Substitui na árvore final a proposta 0776, inédita na main e com timestamp colidido; seus bytes e autoria permanecem no ancestor original. A 9017 redefine a função completa, sem depender da proposta.
+-- 9017 — a conversa livre invisível só é assumida pelo claim com CAS.
+-- Reserva do alocador root: 9017 @ 20261026221200; população conferida antes da criação.
+-- Idempotente, mesma assinatura, sem mudança de dados ou da leitura em own.
+
+CREATE OR REPLACE FUNCTION public.fn_conversation_assign(p_organization_id uuid, p_conversation_id uuid, p_to_user_id uuid, p_reason text, p_expected_assignee uuid DEFAULT NULL::uuid, p_enforce_expected boolean DEFAULT false)
+ RETURNS SETOF conversations
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_from uuid;
+  v_conv public.conversations%rowtype;
+begin
+  if not public.fn_support_write_allowed(p_organization_id) then raise exception 'support_readonly' using errcode='42501'; end if;
+  if auth.uid() is not null
+     and not public.fn_role_at_least(p_organization_id, 'agent') then
+    raise exception 'caller_not_authorized_for_org'
+      using hint = 'caller must be an active agent+ member of the organization';
+  end if;
+
+  if p_to_user_id is not null then
+    if coalesce(public.fn_member_role_in_org(p_to_user_id, p_organization_id), 'none')
+         not in ('agent','manager','admin') then
+      raise exception 'assignee_not_eligible_member'
+        using hint = 'target must be an active agent+ member of the organization';
+    end if;
+  end if;
+
+  -- Conversa fora da visibilidade de quem chama responde como conversa
+  -- inexistente (zero linhas). A regra fica no WHERE, com o dono da própria
+  -- linha (reavaliado na versão nova se houver espera), nunca um valor do
+  -- corpo. Service role (sem auth.uid) segue.
+  --
+  -- A EXCEÇÃO DA #3479: conversa SEM dono pode ser assumida por quem assume
+  -- para si. Sem ela o modo "Só os seus" se morde: a conversa que nasceu do
+  -- cadastro do contato tem dono nulo, o predicado do modo responde "não vejo"
+  -- para dono nulo, e o claim — a operação que daria dono a ela — era recusado,
+  -- com a tela dizendo "está com outro atendente" sobre uma conversa de
+  -- ninguém. O termo se limita sozinho: exige dono nulo E dono novo =
+  -- chamador, então conversa de colega (o caso que a 0685 protege), a
+  -- transferência para terceiro e o release continuam respondendo zero linhas
+  -- exatamente como antes.
+  select assigned_to_user_id into v_from
+    from public.conversations
+   where id = p_conversation_id
+     and organization_id = p_organization_id
+     and (
+       auth.uid() is null
+       or public.fn_can_view_conversation(organization_id, assigned_to_user_id)
+       or (assigned_to_user_id is null and p_to_user_id = auth.uid()
+           and p_reason = 'claim' and p_enforce_expected)
+     )
+   for no key update;
+
+  if not found then
+    return;
+  end if;
+
+  if p_enforce_expected and v_from is distinct from p_expected_assignee then
+    return;
+  end if;
+
+  update public.conversations
+     set assigned_to_user_id = p_to_user_id,
+         -- Desnormalizado JUNTO com o dono, na mesma transação: nunca existe
+         -- uma janela em que id e nome discordam. NULL junto com o id quando
+         -- a atribuição é removida (release) — nunca sobra um nome órfão de
+         -- dono nenhum. Lido de auth.users porque quem chama esta função
+         -- (RPC) não necessariamente tem acesso ao Admin API — a definer
+         -- resolve por dentro.
+         assigned_to_user_name = case
+           when p_to_user_id is null then null
+           else (select raw_user_meta_data ->> 'full_name' from auth.users where id = p_to_user_id)
+         end,
+         assigned_at = case when p_to_user_id is null then null else now() end,
+         assignee_kind = case when p_to_user_id is null then null else 'user' end,
+         status = case when p_to_user_id is null then 'open' else 'claimed' end,
+         status_changed_at = now(),
+         unread_count_for_assignee = 0,
+         bot_silenced_until = case
+           when p_reason = 'routing'  then bot_silenced_until
+           when p_to_user_id is null  then (case when last_handoff_at is null
+                                                 then null
+                                                 else bot_silenced_until end)
+           else 'infinity'::timestamptz
+         end,
+         updated_at = now()
+   where id = p_conversation_id
+   returning * into v_conv;
+
+  insert into public.conversation_assignment_events
+    (organization_id, conversation_id, from_user_id, to_user_id, changed_by, reason)
+  values
+    (p_organization_id, p_conversation_id, v_from, p_to_user_id, auth.uid(), p_reason);
+
+  return next v_conv;
+end;
+$function$;
+
+revoke all     on function public.fn_conversation_assign(uuid, uuid, uuid, text, uuid, boolean) from public, anon;
+grant  execute on function public.fn_conversation_assign(uuid, uuid, uuid, text, uuid, boolean) to authenticated, service_role;
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
@@ -63280,33 +63759,6 @@ create view public.external_db_connections_safe
 revoke all on public.external_db_connections_safe from anon;
 grant select on public.external_db_connections_safe to authenticated;
 
--- ---- 0563: contato pessoal — a coluna e a saída de campanha (spec 21, fatia 1) ----
--- Espelho idempotente da migration 0563. É este apêndice que chega a todo
--- self-host: o install.sh aplica o baseline num banco novo e o update.sh o
--- re-aplica num banco existente; nenhum dos dois roda as migrations.
--- `is_personal` nasce desligado: contato novo é operacional até alguém marcar.
--- O status `personal` é saída própria de campanha — nunca `opted_out`, para
--- não inflar "pediu para parar".
-alter table public.contacts
-  add column if not exists is_personal boolean default false not null;
-
-comment on column public.contacts.is_personal is
-  'Contato de vida pessoal (spec 21): escondido da operação e inutilizado para envio. Só gerente/dono marca e desmarca, pela rota personal; quem/quando fica em auditoria + timeline, nunca aqui.';
-
-create index if not exists idx_contacts_org_personal
-  on public.contacts (organization_id)
-  where (is_personal = true);
-
-alter table public.campaign_recipients
-  drop constraint if exists campaign_recipients_status_check;
-
-alter table public.campaign_recipients
-  add constraint campaign_recipients_status_check check (status in (
-    'pending','queued','sending','sent','delivered','read','replied',
-    'failed','skipped','cancelled','opted_out','personal'
-  ));
-
-notify pgrst, 'reload schema';
 
 -- ---- APÊNDICE 0580: a chave do servidor MCP externo vira coluna cifrada ----
 -- Espelho idempotente da migration 0580. É este apêndice que chega a todo
@@ -64408,124 +64860,6 @@ alter table public.campaigns
 
 comment on column public.campaigns.velocidade is
   'gradual = uma mensagem por número a cada rodada (uma por minuto); rapida = rajada de várias por segundo, só com modelo aprovado (número oficial). Migration 0711.';
-
--- ---- traço do turno do agente (migration 0721) ----
--- manifest: traço do turno do agente — uma linha por execução, chave `job_id` (issue #2869).
-
--- ═══ O que esta tabela responde, e por que ela existe ═════════════════════════
---
--- O turno real do agente é auditável hoje em pedaços que moram longe um do
--- outro: `llm_calls` guarda cada chamada de modelo, `skill_activations` guarda
--- quais skills entraram, `event_log` guarda a cadeia de eventos. Nenhuma linha
--- responde "o que aconteceu NESTE turno": quais ferramentas o modelo chamou (e
--- qual falhou), qual janela de histórico foi carregada, quais fontes de
--- conhecimento estavam ligadas e como o turno terminou. Um turno que respondeu
--- errado só se explica lendo o código.
---
--- ═══ Por que tabela nova, e não `ai_agent_runs` ═══════════════════════════════
---
--- `ai_agent_runs` nasceu com a forma disso (0023) e o motor vivo NUNCA escreveu
--- nela: o único escritor é a prévia (`is_dry_run = true`), e por isso a aba
--- Execuções passou a ler `llm_calls` (medido: 0 linhas em produção com 130
--- chamadas `agent_turn`). Reaproveitá-la significaria decidir, de passagem, que
--- ela volta a ser a fonte do turno real — decisão do mantenedor, não nossa.
--- Esta tabela é ADITIVA: a tela de Execuções continua lendo o que já lê.
---
--- ═══ Por que SEM trigger de auditoria ════════════════════════════════════════
---
--- Toda outra tabela do módulo de IA audita cada linha. Aqui não, de propósito:
--- é uma escrita por TURNO, e o conteúdo do traço já é o registro do que
--- aconteceu. Auditar a auditoria dobraria o volume de `audit_log` sem responder
--- nenhuma pergunta nova. Se a política mudar, é um `create trigger` de uma linha.
---
--- ═══ O que esta fatia ainda NÃO grava ════════════════════════════════════════
---
--- O snapshot/hash da composição do prompt, os trechos de conhecimento
--- efetivamente recuperados, a janela de histórico REALMENTE carregada (a coluna
--- `historico_mensagens` existe para a fatia que medir isso, e nasce `null` em
--- vez de receber a janela PEDIDA, que é outra coisa) e a comparação entre a
--- resposta crua do modelo e o texto enviado ficam para as fatias seguintes. O
--- que esta já separa é prévia de turno real (`is_dry_run`).
-
-create table if not exists public.agent_turn_traces (
-  id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references public.organizations (id) on delete cascade,
-  -- Turno real: `job_id` (o job da fila É o run). Prévia: `preview_run_id`.
-  -- Exatamente um dos dois — o CHECK abaixo é o que impede a linha órfã.
-  job_id uuid,
-  preview_run_id text,
-  conversation_id uuid,
-  contact_id uuid,
-  agent_id uuid,
-  agent_version_id uuid,
-  is_dry_run boolean not null default false,
-  status text not null check (status in ('completed', 'failed', 'aborted')),
-  abort_reason text,
-  error_code text,
-  error_message text,
-  provider text,
-  model text,
-  messages_sent integer not null default 0 check (messages_sent >= 0),
-  historico_mensagens integer check (historico_mensagens is null or historico_mensagens >= 0),
-  -- Agregados do job, somados na hora de gravar (não há segunda escrita).
-  tokens_in integer not null default 0 check (tokens_in >= 0),
-  tokens_out integer not null default 0 check (tokens_out >= 0),
-  cost_cents numeric not null default 0,
-  latency_ms integer not null default 0 check (latency_ms >= 0),
-  -- Skills ativadas no turno (`skill_activations` do mesmo job).
-  skills jsonb not null default '[]'::jsonb,
-  -- Ferramentas chamadas: nome, estado (ok|falhou|bloqueada), erro e duração.
-  ferramentas jsonb not null default '[]'::jsonb,
-  ferramentas_truncadas boolean not null default false,
-  -- Fontes de conhecimento ligadas ao agente, com versão e hash.
-  kb_sources jsonb not null default '[]'::jsonb,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  constraint agent_turn_traces_chave check (
-    (job_id is not null and preview_run_id is null)
-    or (job_id is null and preview_run_id is not null)
-  )
-);
-
-comment on table public.agent_turn_traces is
-  'Uma linha por execução do agente (issue #2869): chave `job_id` no turno real, `preview_run_id` na prévia. Agrega tokens/custo/latência de `llm_calls` e as skills de `skill_activations` do mesmo job, e guarda o que só existe no turno: as ferramentas chamadas (nome, estado, erro, duração), a janela de histórico e as fontes de conhecimento ligadas. Escrita melhor-esforço pelo motor — falhar aqui nunca derruba o atendimento.';
-
--- A chave do turno real. Parcial de propósito: a prévia não tem job, e uma
--- coluna nula não colide no Postgres — sem o `where`, o upsert do turno real
--- não teria em que se apoiar (e o `on conflict` da gravação é o que torna a
--- repetição de um turno idempotente em vez de duplicar a linha).
-create unique index if not exists agent_turn_traces_job_idx
-  on public.agent_turn_traces (job_id) where job_id is not null;
-
-create index if not exists agent_turn_traces_org_created_idx
-  on public.agent_turn_traces (organization_id, created_at desc);
-
-create index if not exists agent_turn_traces_preview_idx
-  on public.agent_turn_traces (preview_run_id) where preview_run_id is not null;
-
--- O agregado do traço lê `skill_activations` pelo `job_id` a cada turno, e a
--- tabela só tinha índice por organização e por skill (0078). Sem isto, cada
--- turno paga uma varredura da tabela inteira para descobrir o que ele mesmo
--- acabou de gravar.
-create index if not exists idx_skill_activations_job
-  on public.skill_activations (job_id) where job_id is not null;
-
--- RLS: o traço é da organização e ninguém mais o lê. A leitura é do painel
--- (sessão do usuário, `authenticated`), por uma policy só de `select`. A
--- escrita é só do worker, que passa por fora do RLS: por isso `authenticated`
--- perde o grant de escrita (o molde de `automation_rodizio_atribuicoes`, 0692),
--- e `anon` não recebe nada em hipótese alguma: um traço carrega o texto do erro
--- e os ids das fontes de conhecimento.
-alter table public.agent_turn_traces enable row level security;
-
-drop policy if exists tenant_isolation_agent_turn_traces_all on public.agent_turn_traces;
-drop policy if exists tenant_isolation_agent_turn_traces_select on public.agent_turn_traces;
-create policy tenant_isolation_agent_turn_traces_select on public.agent_turn_traces
-  for select using (organization_id in (select public.fn_user_org_ids()));
-
-revoke all on public.agent_turn_traces from anon, authenticated;
-grant select on public.agent_turn_traces to authenticated;
-grant all on public.agent_turn_traces to service_role;
 
 -- ---- #3202: channel_sessions — a regra de escrita deixa de valer para a leitura (migration 0752) ----
 -- `for all` também vale para SELECT: fn_role_at_least (~4 ms) rodava por linha em todo embed de channel_sessions.
