@@ -26,6 +26,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Stage } from "@/lib/kanban/types";
 import type { Lead } from "@/lib/types/leads";
+import { DEFAULT_CHANNEL_PROVIDER } from "@/lib/channels";
 import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
 
 const pushMock = vi.hoisted(() => vi.fn());
@@ -115,8 +116,7 @@ function rotear(opts: { abertura?: () => Response; erroContato?: boolean; canais
         data: Array.from({ length: opts.canais ?? 0 }, (_, i) => ({
           id: `canal-${i + 1}`,
           display_name: `Canal ${i + 1}`,
-          waha_session_name: `cadastro-numero-${i + 1}`,
-          provider: "waha",
+          provider: DEFAULT_CHANNEL_PROVIDER,
           status: "WORKING",
           phone_number: `+551198765430${i}`,
           metadata: {},

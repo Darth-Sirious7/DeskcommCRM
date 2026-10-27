@@ -32,6 +32,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CreateContactResult } from "@/app/api/v1/contacts/_handler";
 import type { ApiSuccess } from "@/lib/api/wrappers";
 import type { Contact } from "@/lib/types/contacts";
+import { DEFAULT_CHANNEL_PROVIDER } from "@/lib/channels";
 import { NewContactDialog } from "@/components/contacts/NewContactDialog";
 import { VinculoDaMarcacao } from "@/components/agenda/VinculoDaMarcacao";
 import { ContactsListClient } from "@/app/app/contacts/_client";
@@ -127,8 +128,7 @@ function rotear(
         data: Array.from({ length: opts.canais ?? 0 }, (_, i) => ({
           id: `canal-${i + 1}`,
           display_name: `Canal ${i + 1}`,
-          waha_session_name: `cadastro-numero-${i + 1}`,
-          provider: "waha",
+          provider: DEFAULT_CHANNEL_PROVIDER,
           status: "WORKING",
           phone_number: `+551198765430${i}`,
           metadata: {},
