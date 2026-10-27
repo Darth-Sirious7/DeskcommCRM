@@ -6078,6 +6078,52 @@ export type Database = {
           },
         ];
       };
+      conversation_participants: {
+        Row: {
+          conversation_id: string;
+          id: string;
+          invited_by: string | null;
+          joined_at: string;
+          left_at: string | null;
+          organization_id: string;
+          user_id: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          conversation_id: string;
+          id?: string;
+          invited_by?: string | null;
+          joined_at?: string;
+          left_at?: string | null;
+          organization_id: string;
+          user_id: string;
+        };
+        Update: {
+          conversation_id?: string;
+          id?: string;
+          invited_by?: string | null;
+          joined_at?: string;
+          left_at?: string | null;
+          organization_id?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "conversation_participants_conversation_id_fkey";
+            columns: ["conversation_id"];
+            isOneToOne: false;
+            referencedRelation: "conversations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "conversation_participants_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       conversations: {
         Row: {
           active_agent_set_at: string | null;
@@ -9476,6 +9522,7 @@ export type Database = {
       job_queue: {
         Row: {
           attempts: number;
+          catalog_presentation_snapshot: Json | null;
           contact_id: string | null;
           created_at: string;
           id: string;
@@ -9494,6 +9541,7 @@ export type Database = {
         ComputedFields: never;
         Insert: {
           attempts?: number;
+          catalog_presentation_snapshot?: Json | null;
           contact_id?: string | null;
           created_at?: string;
           id?: string;
@@ -9511,6 +9559,7 @@ export type Database = {
         };
         Update: {
           attempts?: number;
+          catalog_presentation_snapshot?: Json | null;
           contact_id?: string | null;
           created_at?: string;
           id?: string;
@@ -15049,6 +15098,10 @@ export type Database = {
         Returns: number;
       };
       fn_expurgar_telemetria_de_ia_vencida: {
+        Args: { p_limite?: number; p_retencao_dias?: number };
+        Returns: number;
+      };
+      fn_expurgar_traco_do_turno_vencido: {
         Args: { p_limite?: number; p_retencao_dias?: number };
         Returns: number;
       };
