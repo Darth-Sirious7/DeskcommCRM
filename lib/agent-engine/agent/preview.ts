@@ -27,7 +27,7 @@ import { camadaLigada, lerCamadasDaOrg } from '../guardrails/camadas-da-org';
 import { loadDisclosureTemplate, countPriorAcceptedSends } from '../guardrails/disclosure/template';
 import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
 import { getToolByName } from '@/lib/mcp/tools';
-import { escolhasRemotas } from '@/lib/mcp/servidor-externo/ids';
+import { ehLeituraRemota } from '@/lib/mcp/servidor-externo/leitura-remota';
 import type { Logger } from '../obs/logger';
 import type { Citation } from '@/lib/ai/citations/types';
 import type { FotosPreparadas, MidiaPreparada } from './fotos-do-produto';
@@ -298,16 +298,6 @@ export function applyPreviewPolicy(
    */
   conferirAfirmacoes?: (candidata: string) => Promise<ConferenciaDeFato>,
 ): ToolSet {
-  // #2147 — a ferramenta de um servidor MCP externo chega com o nome que o
-  // servidor anuncia e não está no catálogo compilado. A que o administrador
-  // marcou como LEITURA (`mcp_externo:leitura:<nome>`) roda como as leituras de
-  // cenário; a marcada como escrita segue fechada. O `execute` dela é o do turno
-  // real, que reconfere `readOnlyHint` + marca antes de chamar o servidor.
-  const leiturasRemotas = new Set(
-    escolhasRemotas(p.agent?.toolIds ?? [])
-      .filter((e) => e.leitura)
-      .map((e) => e.nome),
-  );
   return Object.fromEntries(
     Object.entries(tools).map(([name, definition]) => {
       const nativeRead = [
@@ -320,7 +310,10 @@ export function applyPreviewPolicy(
       if (
         nativeRead ||
         (catalog?.category === 'read' && (p.contactId !== null || SCENARIO_READS.has(name))) ||
-        (!catalog && leiturasRemotas.has(name))
+        // #2147 — leitura de servidor MCP externo: só o objeto que
+        // `pickToolsFromMcp` marcou (marca do admin E `readOnlyHint` do
+        // servidor). Nome igual ou marca no `tool_ids` não bastam.
+        (!catalog && ehLeituraRemota(definition))
       )
         return [name, definition];
       return [
