@@ -271,7 +271,7 @@ consertos estão em commits próprios desta branch — procure pelas palavras ab
 |---|------|-------------|
 | J5.1 | Admin convida atendente pela UI (sem Resend) | UI diz a verdade + accept_url copiável |
 | J5.2 | Convidado abre link, cria sessão, aceita | vira membro agent, cai no inbox |
-| J5.3 | Atendente vê APENAS fila + suas conversas | escopo RLS na prática |
+| J5.3 | Atendente vê APENAS fila + suas conversas | escopo RLS na prática; a autorização dos anexos e da reprodução AAC também é conferida pela rota real em `tests/e2e/inbox-scope.spec.ts`, com recursos sintéticos de duas organizações. **Cobertura preparada; execução real pendente no CI.** O teste de rota com Storage dublê está em `tests/unit/midia-da-mensagem-isolamento.test.ts` |
 | J5.4 | Atendente dá claim numa conversa da fila | claim ok; 2º atendente levando 409 amigável |
 | J5.5 | Transferir conversa pra colega | imediata, contador de não-lidas zera pro novo dono |
 | J5.6 | Atendente tenta ver billing/api-tokens | 403 página amigável |
