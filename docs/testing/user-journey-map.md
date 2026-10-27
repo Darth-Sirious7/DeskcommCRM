@@ -10,6 +10,8 @@
 
 ## Convenções
 
+Atendimento conjunto (#2542/#2848): a repetição com gestor, convidada, colega sem convite e viewer está **pendente**, junto da organização vizinha e da remoção/reentrada entre sessões abertas. Escopo, controles e limites medidos em [atendimento-conjunto-2848.md](atendimento-conjunto-2848.md); ainda não é prova visual verde.
+
 - `[P0]` primeira impressão — bug aqui é vergonha pública; prioridade máxima.
 - `[P1]` rotina diária do operador/atendente.
 - `[P2]` exploração/edge.

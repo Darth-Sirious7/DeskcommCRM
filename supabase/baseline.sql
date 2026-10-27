@@ -5426,6 +5426,13 @@ grant execute on function public.fn_can_view_conversation(uuid, uuid)
 -- linha-por-linha que vivia aqui era reinstalada a cada update.sh e valia até
 -- aquele bloco, e era ela que fazia a caixa de entrada custar ~7 ms por linha
 -- (#3090): quem derruba o clone antigo é o `drop` colado no bloco final.
+-- A policy `conversations_select` saiu daqui: a 0035 a criava só com
+-- `fn_can_view_conversation` e o ramo de PARTICIPANTE da 0661 a redefine adiante.
+-- Deixar as duas reabria uma janela — em todo install/update a versão
+-- intermediária (sem o `or exists`) valia até a final chegar, e o convidado não
+-- via a conversa nesse intervalo. O `drop policy if exists` do bloco da 0661
+-- continua, e é ele que limpa o clone que recebeu a versão antiga. Vigiado por
+-- `tests/unit/baseline-nao-constroi-o-que-derruba.test.ts`.
 
 drop policy if exists "conversations_agent_write" on public.conversations;
 drop policy if exists "conversations_agent_insert" on public.conversations;
@@ -54434,6 +54441,55 @@ $$;
 revoke execute on function public.fn_vocabulario_de_tags_operar(uuid, text, text, text, text) from public, anon;
 grant  execute on function public.fn_vocabulario_de_tags_operar(uuid, text, text, text, text) to authenticated, service_role;
 
+-- ---- participantes do atendimento conjunto (migration 0661, issue #2542) ----
+-- Tabela introduzida pela 0661. A policy final vive na forward-fix 9016,
+-- depois do escopo em lote da 0726; cadeia e baseline terminam na mesma regra.
+-- Nasce ANTES da VARREDURA anon por vizinhança, embora não crie função.
+--
+-- A tabela, a RLS de leitura (organização + papel + a PRÓPRIA linha) e — a
+-- linha que faz o convidado VER — o ramo de participante no `conversations_select`
+-- (o `fn_can_view_conversation` continua a régua; aqui só se ACRESCENTA a porta).
+-- `messages` herda o escopo por `exists` na própria policy. O DONO único
+-- (`assigned_to_user_id`) não é tocado por nada disto: entrar não é assumir.
+create table if not exists public.conversation_participants (
+  id               uuid primary key default gen_random_uuid(),
+  organization_id  uuid not null references public.organizations(id) on delete cascade,
+  conversation_id  uuid not null references public.conversations(id) on delete cascade,
+  user_id          uuid not null references auth.users(id) on delete cascade,
+  invited_by       uuid references auth.users(id) on delete set null,
+  joined_at        timestamptz not null default now(),
+  left_at          timestamptz,
+  constraint conversation_participants_unico unique (conversation_id, user_id)
+);
+
+alter table public.conversation_participants add column if not exists invited_by uuid;
+alter table public.conversation_participants add column if not exists joined_at timestamptz not null default now();
+alter table public.conversation_participants add column if not exists left_at timestamptz;
+
+create index if not exists participantes_por_usuario
+  on public.conversation_participants (organization_id, user_id)
+  where left_at is null;
+create index if not exists participantes_por_conversa
+  on public.conversation_participants (organization_id, conversation_id);
+
+alter table public.conversation_participants enable row level security;
+
+revoke all    on public.conversation_participants from anon, authenticated;
+grant  select on public.conversation_participants to authenticated;
+grant  all    on public.conversation_participants to service_role;
+
+drop policy if exists tenant_isolation_conversation_participants_select on public.conversation_participants;
+create policy tenant_isolation_conversation_participants_select
+  on public.conversation_participants
+  for select to authenticated
+  using (
+    organization_id in (select public.fn_user_org_ids())
+    and public.fn_role_at_least(organization_id, 'agent')
+    and user_id = auth.uid()
+  );
+
+do $f$ begin perform public.fn_aplicar_travas_de_suporte(); end $f$;
+
 -- manifest: **O entregue e o lido da API oficial chegam ao destinatário da campanha (issue #2937).** `fn_campanha_sincroniza_ack` saía cedo quando `new.status is not distinct from old.status` e o gatilho escutava só `after update of status`: na API oficial o webhook de entrega/leitura mantém `messages.status = 'sent'` e grava apenas `delivered_at`/`read_at` (`lib/channels/meta/status-update.ts:23-31`), então o gatilho nem disparava ou saía no primeiro `if` — `campaign_recipients.delivered_at`/`read_at` ficavam nulos para sempre e as taxas de entrega/leitura da campanha, zeradas. A função passa a derivar o "status efetivo" dos carimbos quando o canal não muda o `status`, e o gatilho passa a escutar exatamente as três colunas que aquele ack toca (`status`, `delivered_at`, `read_at`). O caminho do canal não oficial (o `status` chega `delivered`/`read`, `lib/waha/ingest.ts`), a regra de "status analítico nunca retrocede" e o caminho de `failed` seguem idênticos. Gate: `tests/invariants/ack-da-api-oficial-alcanca-o-destinatario.test.ts` (vermelho na main, verde aqui).
 
 -- ---- o ack da API oficial alcança o destinatário da campanha (migration 0678, issue #2937) ----
@@ -58377,25 +58433,6 @@ $$;
 revoke all on function public.fn_conversation_scope() from public, anon;
 grant execute on function public.fn_conversation_scope() to authenticated, service_role;
 
--- A policy: o mesmo resultado da 0035, sem uma chamada por linha.
-drop policy if exists "conversations_select" on public.conversations;
-create policy "conversations_select" on public.conversations
-  for select using (
-    (select public.fn_is_platform_admin())
-    or organization_id in (
-         select s.organization_id from public.fn_conversation_scope() s where s.org_wide_read
-       )
-    or (
-         assigned_to_user_id = auth.uid()
-         and organization_id in (select s.organization_id from public.fn_conversation_scope() s)
-       )
-    or (
-         assigned_to_user_id is null
-         and organization_id in (
-              select s.organization_id from public.fn_conversation_scope() s where s.sees_unassigned
-            )
-       )
-  );
 
 -- 0734 — avaliação única de permissões (#3087)
 -- manifest: Avalia papel e contexto de suporte uma vez por verificação RBAC (#3087), preservando regras, grants e limites.
@@ -60114,6 +60151,148 @@ $$;
 
 revoke execute on function public.fn_enfileirar_midia_vencida(integer) from public, anon, authenticated;
 grant execute on function public.fn_enfileirar_midia_vencida(integer) to service_role;
+-- ---- 0563: contato pessoal — a coluna e a saída de campanha (spec 21, fatia 1) ----
+-- Espelho idempotente da migration 0563. É este apêndice que chega a todo
+-- self-host: o install.sh aplica o baseline num banco novo e o update.sh o
+-- re-aplica num banco existente; nenhum dos dois roda as migrations.
+-- `is_personal` nasce desligado: contato novo é operacional até alguém marcar.
+-- O status `personal` é saída própria de campanha — nunca `opted_out`, para
+-- não inflar "pediu para parar".
+alter table public.contacts
+  add column if not exists is_personal boolean default false not null;
+
+comment on column public.contacts.is_personal is
+  'Contato de vida pessoal (spec 21): escondido da operação e inutilizado para envio. Só gerente/dono marca e desmarca, pela rota personal; quem/quando fica em auditoria + timeline, nunca aqui.';
+
+create index if not exists idx_contacts_org_personal
+  on public.contacts (organization_id)
+  where (is_personal = true);
+
+alter table public.campaign_recipients
+  drop constraint if exists campaign_recipients_status_check;
+
+alter table public.campaign_recipients
+  add constraint campaign_recipients_status_check check (status in (
+    'pending','queued','sending','sent','delivered','read','replied',
+    'failed','skipped','cancelled','opted_out','personal'
+  ));
+
+notify pgrst, 'reload schema';
+
+-- manifest: Preserva atendimento conjunto depois do escopo em lote da 0726, limita convite a leitura/resposta sem conceder controle e entrega entrada/saída pelo Realtime (#2542, integração #2848).
+-- ---- atendimento conjunto: controle e atualização da tela (migration 9016) ----
+-- A 0661 precede a 0726 na cadeia. Esta forward-fix reinstala a policy atual
+-- COM participação depois dela, sem editar nenhuma migration já publicada.
+do $conversations_select$ begin
+  -- O ramo de PARTICIPANTE (conversa atendida em conjunto) fica, e a forma da
+  -- main também: escopo resolvido em conjunto por fn_conversation_scope(), ANTES
+  -- do scan. A forma antiga do PR (fn_can_view_conversation por linha) fazia o
+  -- planner voltar a chamar a função por candidata — reprovado por
+  -- tests/invariants/escopo-da-conversa-avaliado-uma-vez.test.ts (#2848 sobre o
+  -- conserto #3090). A política abaixo é a da main (58213) + o ramo participante.
+  drop policy if exists "conversations_select" on public.conversations;
+  create policy "conversations_select" on public.conversations
+    for select using (
+      (select public.fn_is_platform_admin())
+      or organization_id in (
+           select s.organization_id from public.fn_conversation_scope() s where s.org_wide_read
+         )
+      or (
+           assigned_to_user_id = auth.uid()
+           and organization_id in (select s.organization_id from public.fn_conversation_scope() s)
+         )
+      or (
+           assigned_to_user_id is null
+           and organization_id in (
+                select s.organization_id from public.fn_conversation_scope() s where s.sees_unassigned
+              )
+         )
+      or exists (
+           select 1
+             from public.conversation_participants cp
+            where cp.conversation_id = conversations.id
+              and cp.organization_id = conversations.organization_id
+              and cp.user_id = auth.uid()
+              and cp.left_at is null
+              and not exists (
+                select 1 from public.contacts pc
+                 where pc.id=conversations.contact_id
+                   and pc.organization_id=conversations.organization_id
+                   and pc.is_personal
+              )
+         )
+    );
+end $conversations_select$;
+
+-- O convite não amplia UPDATE/DELETE. Mantém o escopo anterior de quem já
+-- escrevia: owner, gestor e o modo de visibilidade configurado no banco.
+-- WITH CHECK true preserva a mudança de responsável que já era permitida;
+-- o USING mede a linha ANTES da escrita, não a identidade que o corpo propõe.
+drop policy if exists conversation_participant_read_is_not_control_update on public.conversations;
+create policy conversation_participant_read_is_not_control_update
+  on public.conversations as restrictive for update to authenticated
+  using (public.fn_can_view_conversation(organization_id, assigned_to_user_id))
+  with check (true);
+drop policy if exists conversation_participant_read_is_not_control_delete on public.conversations;
+create policy conversation_participant_read_is_not_control_delete
+  on public.conversations as restrictive for delete to authenticated
+  using (public.fn_can_view_conversation(organization_id, assigned_to_user_id));
+
+
+-- Responder não dá edição/exclusão do histórico de outra pessoa. Quem já
+-- tinha escopo mantém a escrita anterior; a convidada pode editar/revogar sua
+-- própria saída, como exige messages/[id], sem poder apagar linhas do histórico.
+drop policy if exists message_participant_reply_is_not_history_update on public.messages;
+create policy message_participant_reply_is_not_history_update
+  on public.messages as restrictive for update to authenticated
+  using (
+    (sent_by_user_id=auth.uid() and direction='outbound' and sent_via in ('user','crm'))
+    or exists (select 1 from public.conversations c
+      where c.id=messages.conversation_id and c.organization_id=messages.organization_id
+        and public.fn_can_view_conversation(c.organization_id,c.assigned_to_user_id))
+  ) with check (
+    exists (select 1 from public.conversations c
+      where c.id=messages.conversation_id and c.organization_id=messages.organization_id
+        and (public.fn_can_view_conversation(c.organization_id,c.assigned_to_user_id)
+          or (messages.sent_by_user_id=auth.uid() and messages.direction='outbound'
+            and messages.sent_via in ('user','crm'))))
+  );
+drop policy if exists message_participant_reply_is_not_history_delete on public.messages;
+create policy message_participant_reply_is_not_history_delete
+  on public.messages as restrictive for delete to authenticated
+  using (exists (select 1 from public.conversations c
+    where c.id=messages.conversation_id and c.organization_id=messages.organization_id
+      and public.fn_can_view_conversation(c.organization_id,c.assigned_to_user_id)));
+
+-- O vínculo só é escrito pelo servidor. O toque notifica quem já observa a
+-- conversa, sem conceder SELECT nas participações alheias e sem trocar o dono.
+create or replace function public.fn_participacao_atualiza_conversa()
+returns trigger language plpgsql set search_path=public as $$
+begin
+  update public.conversations set updated_at=clock_timestamp()
+   where id=new.conversation_id and organization_id=new.organization_id;
+  return new;
+end;
+$$;
+revoke execute on function public.fn_participacao_atualiza_conversa() from public, anon, authenticated;
+grant execute on function public.fn_participacao_atualiza_conversa() to service_role;
+drop trigger if exists participacao_atualiza_conversa on public.conversation_participants;
+create trigger participacao_atualiza_conversa
+  after insert or update on public.conversation_participants
+  for each row execute function public.fn_participacao_atualiza_conversa();
+
+-- A própria linha continua legível depois de left_at, então o removido recebe
+-- a revogação. Publication pode não existir num Postgres puro do self-host.
+do $participacoes_realtime$ begin
+  if exists (select 1 from pg_publication where pubname='supabase_realtime')
+     and not exists (select 1 from pg_publication_tables
+       where pubname='supabase_realtime' and schemaname='public' and tablename='conversation_participants') then
+    alter publication supabase_realtime add table public.conversation_participants;
+  end if;
+end $participacoes_realtime$;
+
+notify pgrst, 'reload schema';
+
 
 -- ---- leitura sensível pelo poder de plataforma pede a sessão confirmada (migration 0762) ----
 -- `decrypt_cpf` troca `fn_is_platform_admin()` por `fn_is_platform_admin_full()`
@@ -63385,33 +63564,6 @@ create view public.external_db_connections_safe
 revoke all on public.external_db_connections_safe from anon;
 grant select on public.external_db_connections_safe to authenticated;
 
--- ---- 0563: contato pessoal — a coluna e a saída de campanha (spec 21, fatia 1) ----
--- Espelho idempotente da migration 0563. É este apêndice que chega a todo
--- self-host: o install.sh aplica o baseline num banco novo e o update.sh o
--- re-aplica num banco existente; nenhum dos dois roda as migrations.
--- `is_personal` nasce desligado: contato novo é operacional até alguém marcar.
--- O status `personal` é saída própria de campanha — nunca `opted_out`, para
--- não inflar "pediu para parar".
-alter table public.contacts
-  add column if not exists is_personal boolean default false not null;
-
-comment on column public.contacts.is_personal is
-  'Contato de vida pessoal (spec 21): escondido da operação e inutilizado para envio. Só gerente/dono marca e desmarca, pela rota personal; quem/quando fica em auditoria + timeline, nunca aqui.';
-
-create index if not exists idx_contacts_org_personal
-  on public.contacts (organization_id)
-  where (is_personal = true);
-
-alter table public.campaign_recipients
-  drop constraint if exists campaign_recipients_status_check;
-
-alter table public.campaign_recipients
-  add constraint campaign_recipients_status_check check (status in (
-    'pending','queued','sending','sent','delivered','read','replied',
-    'failed','skipped','cancelled','opted_out','personal'
-  ));
-
-notify pgrst, 'reload schema';
 
 -- ---- APÊNDICE 0580: a chave do servidor MCP externo vira coluna cifrada ----
 -- Espelho idempotente da migration 0580. É este apêndice que chega a todo
