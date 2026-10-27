@@ -5,7 +5,7 @@ import * as path from "node:path";
 
 import { createClient } from "@supabase/supabase-js";
 import { strToU8, zipSync } from "fflate";
-import { test, expect, type Page } from "./helpers/test";
+import { test, expect, type Page, type Request as PedidoDeRede, type Response as RespostaDeRede } from "./helpers/test";
 
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 
@@ -809,15 +809,89 @@ test.describe("documentos recebidos: rótulo e arquivo salvo (#2613)", () => {
         const preview = await page.request.get(`/api/v1/messages/${mensagens[i]}/media`, { maxRedirects: 0 });
         expect(preview.status()).toBe(302);
         expect(new URL(preview.headers()["location"]!).searchParams.has("download")).toBe(false);
-        const aguardando = page.waitForEvent("download");
-        await baixar.tap();
-        const download = await aguardando;
-        expect(download.suggestedFilename()).toBe(arquivo.nome);
-        expect((await download.failure()) === null).toBe(true);
-        const salvo = await download.path();
-        expect(Boolean(salvo)).toBe(true);
-        // Booleano evita despejar bytes ou URL assinada em caso de falha.
-        expect(fs.readFileSync(salvo!).equals(arquivo.bytes)).toBe(true);
+        const contexto = page.context();
+        const observado = {
+          ponto: null as null | { x: number; y: number; largura: number; altura: number; linkNoCentro: boolean; opcoesNoCentro: boolean; tagNoCentro: string | null },
+          paginasNovasNoContexto: 0,
+          toqueConcluiu: null as boolean | null,
+          eventoRecebido: null as boolean | null,
+          downloadNaPaginaOriginal: null as boolean | null,
+          respostas: [] as Array<{ tipo: "rota" | "storage"; status: number; attachment: boolean; parametroDownload: boolean; nomeNoParametro: boolean }>,
+          falhasDeRede: [] as Array<"rota" | "storage">,
+        };
+        // Só classificamos o fluxo deste objeto; nenhuma URL/token vai ao diagnóstico.
+        const tipoDaUrl = (valor: string): "rota" | "storage" | null => {
+          try {
+            const u = new URL(valor);
+            if (u.pathname === `/api/v1/messages/${mensagens[i]}/media` && u.searchParams.get("baixar") === "1") return "rota";
+            if (u.pathname.endsWith(`/whatsapp-media/${caminhos[i]}`)) return "storage";
+          } catch { /* URL inválida não deve acabar no relatório de erro. */ }
+          return null;
+        };
+        const respostaDoGesto = (r: RespostaDeRede) => {
+          const tipo = tipoDaUrl(r.url());
+          if (!tipo) return;
+          const headers = r.headers();
+          let destino: URL | null = null;
+          try { destino = new URL(headers.location ?? r.url(), r.url()); } catch { /* Só registramos flags. */ }
+          observado.respostas.push({
+            tipo, status: r.status(),
+            attachment: /^attachment(?:;|$)/i.test(headers["content-disposition"] ?? ""),
+            parametroDownload: destino?.searchParams.has("download") ?? false,
+            nomeNoParametro: destino?.searchParams.get("download") === arquivo.nome,
+          });
+        };
+        const falhaDoGesto = (r: PedidoDeRede) => {
+          const tipo = tipoDaUrl(r.url());
+          if (tipo) observado.falhasDeRede.push(tipo);
+        };
+        const novaPagina = () => { observado.paginasNovasNoContexto += 1; };
+        contexto.on("response", respostaDoGesto);
+        contexto.on("requestfailed", falhaDoGesto);
+        contexto.on("page", novaPagina);
+        try {
+          await baixar.scrollIntoViewIfNeeded();
+          await expect.poll(async () => {
+            observado.ponto = await baixar.evaluate((link) => {
+              const r = link.getBoundingClientRect();
+              const x = r.left + r.width / 2;
+              const y = r.top + r.height / 2;
+              const alvo = document.elementFromPoint(x, y);
+              return {
+                x, y, largura: r.width, altura: r.height,
+                linkNoCentro: !!alvo && link.contains(alvo),
+                opcoesNoCentro: !!alvo?.closest('button[aria-label="Opções da mensagem"]'),
+                tagNoCentro: alvo?.tagName ?? null,
+              };
+            });
+            return observado.ponto.linkNoCentro;
+          }, { message: "o centro do download precisa receber o toque real", timeout: 5_000 }).toBe(true);
+          // Espera ambas as operações e prioriza o erro do gesto, para o
+          // timeout do evento não esconder um toque interceptado.
+          const [evento, toque] = await Promise.allSettled([
+            contexto.waitForEvent("download", { predicate: (d) => tipoDaUrl(d.url()) !== null, timeout: 30_000 }),
+            baixar.tap({ timeout: 30_000 }),
+          ]);
+          observado.toqueConcluiu = toque.status === "fulfilled";
+          observado.eventoRecebido = evento.status === "fulfilled";
+          if (toque.status === "rejected") throw toque.reason;
+          if (evento.status === "rejected") throw evento.reason;
+          const download = evento.value;
+          observado.downloadNaPaginaOriginal = download.page() === page;
+          expect(download.suggestedFilename()).toBe(arquivo.nome);
+          expect((await download.failure()) === null).toBe(true);
+          const salvo = await download.path();
+          expect(Boolean(salvo)).toBe(true);
+          // Booleano evita despejar bytes ou URL assinada em caso de falha.
+          expect(fs.readFileSync(salvo!).equals(arquivo.bytes)).toBe(true);
+        } finally {
+          contexto.off("response", respostaDoGesto);
+          contexto.off("requestfailed", falhaDoGesto);
+          contexto.off("page", novaPagina);
+          await test.info().attach(`documento-download-${i + 1}-observado`, {
+            body: JSON.stringify(observado, null, 2), contentType: "application/json",
+          });
+        }
       }
       fs.mkdirSync("evidence/documento-3511-01a178b3", { recursive: true });
       await page.screenshot({ path: "evidence/documento-3511-01a178b3/documentos-no-inbox.png" });

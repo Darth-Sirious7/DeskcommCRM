@@ -29,3 +29,15 @@ export function cabecalhoDeDownload(nome: string): string {
   );
   return `attachment; filename="${ascii}"; filename*=UTF-8''${codificado}`;
 }
+
+/**
+ * O SDK do Storage codifica a URL inteira depois de montar `download` com
+ * URLSearchParams. Isso duplica escapes de acentos, `%` e outros caracteres.
+ * Recompomos só esse parâmetro com o nome original: objeto e token continuam
+ * os da assinatura, sem decodificar a URL inteira nem usar o nome como path.
+ */
+export function urlAssinadaParaDownload(urlAssinada: string, nome: string): string {
+  const destino = new URL(urlAssinada);
+  destino.searchParams.set("download", nome);
+  return destino.toString();
+}

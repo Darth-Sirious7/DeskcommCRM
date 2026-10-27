@@ -26,6 +26,7 @@
  * do canal é dublado em (D) — ele é quem busca os bytes.
  */
 import { NextRequest } from "next/server";
+import { createClient as criarClienteDoSdk } from "@supabase/supabase-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type * as Channels from "@/lib/channels";
@@ -253,5 +254,53 @@ describe("janela do worker (bytes ainda no canal)", () => {
 
     expect(res.status).toBe(200);
     expect(res.headers.get("content-disposition")).toBeNull();
+  });
+});
+
+describe("o nome atravessa o SDK instalado sem codificação duplicada", () => {
+  const caminho = `${ORG_ID}/conv/${MENSAGEM}.xlsx`;
+  const token = "token_ficticio.A-B_C.123";
+
+  // Transporte sintético, SDK real do lockfile: nenhuma rede ou Storage real.
+  // O E2E continua responsável pelos bytes e cabeçalhos do servidor real.
+  const sdk = criarClienteDoSdk("https://storage.test", "chave-ficticia", {
+    auth: { persistSession: false, autoRefreshToken: false, storageKey: "sdk-rota-media-teste" },
+    global: {
+      fetch: async () => Response.json({
+        signedURL: `/object/sign/whatsapp-media/${caminho}?token=${token}`,
+      }),
+    },
+  });
+
+  function usarSdkReal(metadata: Record<string, unknown> | null) {
+    vi.mocked(createAdminClient).mockReturnValue({ storage: sdk.storage } as never);
+    MENSAGENS = [linha({ media_storage_path: caminho, metadata })];
+  }
+
+  it.each(["arquivo.xlsx", "Relatório sintético.xlsx", "Planilha [100%] + final.xlsx"])(
+    "o parâmetro download decodifica para o nome original %s",
+    async (nome) => {
+      usarSdkReal({ media_filename: nome });
+      const res = await GET(new NextRequest(url("?baixar=1")), PARAMS);
+      expect(res.status).toBe(302);
+      const destino = new URL(res.headers.get("location")!);
+      expect(destino.searchParams.get("download")).toBe(nome);
+      expect(destino.searchParams.get("token")).toBe(token);
+      expect(destino.pathname).toBe(`/storage/v1/object/sign/whatsapp-media/${caminho}`);
+    },
+  );
+
+  it("preview com nome conhecido continua sem parâmetro download", async () => {
+    usarSdkReal({ media_filename: "Relatório sintético.xlsx" });
+    const res = await GET(new NextRequest(url()), PARAMS);
+    const destino = new URL(res.headers.get("location")!);
+    expect(destino.searchParams.has("download")).toBe(false);
+    expect(destino.searchParams.get("token")).toBe(token);
+  });
+
+  it("download sem nome continua sem nome inventado", async () => {
+    usarSdkReal(null);
+    const res = await GET(new NextRequest(url("?baixar=1")), PARAMS);
+    expect(new URL(res.headers.get("location")!).searchParams.has("download")).toBe(false);
   });
 });

@@ -3980,7 +3980,14 @@ não foram alterados e os recursos exclusivos foram removidos ao fim.
 
 ## Nome e rótulo do documento recebido — adaptação #3511 (2026-10-26)
 
-**Preparado; não executado nesta sessão no navegador/Storage.** O caso de
+**Execução real iniciada; sem aceite visual.** No head `ecee03644`, a
+[parte 6 do CI](https://github.com/melgarafael/DeskcommCRM/actions/runs/40422932674/job/121922883020)
+coletou e executou o caso, mas ele atingiu o timeout esperando o evento de
+download. Isso não confirma o arquivo salvo. A próxima execução observa alvo
+do toque, status HTTP e evento no contexto, com indicadores sanitizados e sem
+arquivar URLs, mantendo as exigências de nome e bytes.
+
+O caso de
 `atender-pelo-celular.spec.ts` reutiliza a conta agent e a conversa sintética do
 spec. Upload real no bucket e mensagens próprias preparam XLSX/PDF com nomes
 acentuados; o clique real no download deve preservar `suggestedFilename` e os

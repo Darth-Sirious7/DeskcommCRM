@@ -21,7 +21,7 @@ import { loadAuthUser } from "@/lib/auth/server";
 import { orgAtivaDaApi } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { logger } from "@/lib/logger";
-import { cabecalhoDeDownload } from "@/lib/messaging/media/download-com-nome";
+import { cabecalhoDeDownload, urlAssinadaParaDownload } from "@/lib/messaging/media/download-com-nome";
 import { VALIDADE_DO_LINK_DE_MIDIA_S } from "@/lib/messaging/media/link-temporario";
 import { nomeOriginalDaMensagem } from "@/lib/messaging/media/nome-de-arquivo";
 import { isMediaPathInOrganization } from "@/lib/messaging/media/upload-validation";
@@ -226,7 +226,10 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
         nomeDoArquivo ? { download: nomeDoArquivo } : undefined,
       );
     if (!signErr && signed?.signedUrl) {
-      const response = NextResponse.redirect(signed.signedUrl, 302);
+      const response = NextResponse.redirect(
+        nomeDoArquivo ? urlAssinadaParaDownload(signed.signedUrl, nomeDoArquivo) : signed.signedUrl,
+        302,
+      );
       response.headers.set("X-Request-Id", requestId);
       return response;
     }
