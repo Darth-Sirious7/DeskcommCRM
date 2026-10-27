@@ -51,7 +51,7 @@ export function DocumentCard({
   return (
     <div
       className={cn(
-        "flex w-60 items-center gap-1 rounded-lg transition-colors",
+        "flex w-60 max-w-full items-center gap-1 rounded-lg transition-colors",
         isOutbound
           ? "bg-primary-foreground/10 hover:bg-primary-foreground/20"
           : "bg-background/60 hover:bg-background",
@@ -84,7 +84,7 @@ export function DocumentCard({
         target="_blank"
         rel="noreferrer"
         aria-label={`${t("Baixar")} ${label} (${tamanho})`}
-        className="shrink-0 p-2 opacity-70 transition-opacity hover:opacity-100"
+        className="flex shrink-0 items-center justify-center p-2 opacity-70 transition-opacity hover:opacity-100 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
       >
         <DownloadSimple size={18} aria-hidden />
       </a>

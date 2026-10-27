@@ -803,6 +803,7 @@ test.describe("documentos recebidos: rótulo e arquivo salvo (#2613)", () => {
       await expect(page.getByText("Documento XLSX", { exact: true })).toBeVisible();
       for (const [i, arquivo] of arquivos.entries()) {
         await expect(page.getByText(arquivo.nome, { exact: true })).toBeVisible();
+        await expect(page.getByText(arquivo.nome, { exact: true })).toHaveAttribute("title", arquivo.nome);
         const baixar = page.getByRole("link", { name: new RegExp(`^Baixar ${arquivo.nome.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`) });
         await expect(baixar).toHaveAttribute("href", `/api/v1/messages/${mensagens[i]}/media?baixar=1`);
         // Controle do preview pela rota real: não pede o Content-Disposition de download.
@@ -824,6 +825,20 @@ test.describe("documentos recebidos: rótulo e arquivo salvo (#2613)", () => {
           const recorteY = temRecorte ? (topo + fundo) / 2 : null;
           const alvoDoRecorte = recorteX !== null && recorteY !== null
             ? document.elementFromPoint(recorteX, recorteY) : null;
+          const bolha = link.closest('[data-testid="message-bubble"]');
+          const menu = bolha?.querySelector('button[aria-label="Opções da mensagem"]');
+          const caixaDaBolha = bolha?.getBoundingClientRect();
+          const cartao = link.parentElement?.getBoundingClientRect();
+          const acerto = (elemento: Element | null | undefined) => {
+            if (!elemento) return [];
+            const caixa = elemento.getBoundingClientRect();
+            const cx = caixa.left + caixa.width / 2;
+            const cy = caixa.top + caixa.height / 2;
+            return [[20, 0], [-20, 0], [0, 20], [0, -20]].map(([dx, dy]) => {
+              const ponto = document.elementFromPoint(cx + dx!, cy + dy!);
+              return !!ponto && elemento.contains(ponto);
+            });
+          };
           return {
             x, y, largura: r.width, altura: r.height,
             viewportLargura: window.innerWidth, viewportAltura: window.innerHeight,
@@ -837,6 +852,11 @@ test.describe("documentos recebidos: rótulo e arquivo salvo (#2613)", () => {
             linkNoCentroDoRecorte: !!alvoDoRecorte && link.contains(alvoDoRecorte),
             opcoesNoCentroDoRecorte: !!alvoDoRecorte?.closest('button[aria-label="Opções da mensagem"]'),
             tagNoCentroDoRecorte: alvoDoRecorte?.tagName ?? null,
+            acertoDoDownload: acerto(link),
+            acertoDoMenu: acerto(menu),
+            cartaoDentroDaBolha: !!cartao && !!caixaDaBolha
+              && cartao.left >= caixaDaBolha.left && cartao.right <= caixaDaBolha.right,
+            paginaSemOverflowHorizontal: document.documentElement.scrollWidth <= window.innerWidth,
           };
         });
         type MedidaDoAlvo = Awaited<ReturnType<typeof medirAlvo>>;
@@ -903,6 +923,15 @@ test.describe("documentos recebidos: rótulo e arquivo salvo (#2613)", () => {
           expect(Boolean(salvo)).toBe(true);
           // Booleano evita despejar bytes ou URL assinada em caso de falha.
           expect(fs.readFileSync(salvo!).equals(arquivo.bytes)).toBe(true);
+          // Os dois alvos mantêm ao menos 44px úteis; o nome/bytes acima só
+          // passam depois do tap nativo, nunca por um ponto forçado.
+          expect(observado.ponto?.largura).toBeGreaterThanOrEqual(44);
+          expect(observado.ponto?.altura).toBeGreaterThanOrEqual(44);
+          expect(observado.ponto?.acertoDoDownload).toEqual([true, true, true, true]);
+          expect(observado.ponto?.acertoDoMenu).toEqual([true, true, true, true]);
+          expect(observado.ponto?.centroNaViewport).toBe(true);
+          expect(observado.ponto?.cartaoDentroDaBolha).toBe(true);
+          expect(observado.ponto?.paginaSemOverflowHorizontal).toBe(true);
         } finally {
           try { observado.pontoDepois = await medirAlvo(); } catch { /* Página pode ter fechado; sem registrar erro cru. */ }
           contexto.off("response", respostaDoGesto);
@@ -917,6 +946,7 @@ test.describe("documentos recebidos: rótulo e arquivo salvo (#2613)", () => {
           // falha e no coletor de sucesso, sempre só flags/medidas sanitizadas.
           const evidencia = path.join("evidence", "documento-3511-01a178b3");
           fs.mkdirSync(evidencia, { recursive: true });
+          await page.screenshot({ path: path.join(evidencia, `documento-download-${i + 1}-antes-limpeza.png`) });
           fs.writeFileSync(path.join(evidencia, nomeDoRecibo), recibo);
           await test.info().attach(`documento-download-${i + 1}-observado`, { path: saida, contentType: "application/json" });
         }
