@@ -13,7 +13,7 @@
  * recusar essa colisão antes de iniciar Playwright.
  */
 import { createHmac, randomInt, randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 
 import { createClient } from "@supabase/supabase-js";
@@ -609,7 +609,7 @@ test.describe("LeadSubmitted causal pelo webhook WAHA", () => {
   test("CTWA assinado nasce e envia uma conversão com prova vinculada à mensagem", async ({
     page,
     request,
-  }) => {
+  }, testInfo) => {
     const click = `ctwa-${randomUUID()}`;
     const adId = `ad-${randomUUID()}`;
     const { externalId, message, lead } = await nascer(request, {
@@ -690,6 +690,22 @@ test.describe("LeadSubmitted causal pelo webhook WAHA", () => {
 
     // O coletor e a projeção reais leem o mesmo Supabase deste fio; nenhuma
     // resposta de consulta é dublada para preencher o arquivo de acesso.
+    // A instalação fresca não instala honorários. Guarda a resposta BRUTA
+    // desse transporte antes da coleta: uma mensagem traduzida não prova o code.
+    const honorarios = await db.from("honorarios_contratos").select("id")
+      .eq("organization_id", creds.org_id).limit(0);
+    mkdirSync("evidence/ctwa-3128", { recursive: true });
+    const ausenciaPath = "evidence/ctwa-3128/honorarios-ausente-postgrest.json";
+    writeFileSync(ausenciaPath, JSON.stringify({
+      run_id: process.env.GITHUB_RUN_ID ?? null,
+      checkout_sha: process.env.GITHUB_SHA ?? null,
+      observado_em: new Date().toISOString(),
+      tabela: "honorarios_contratos", status: honorarios.status,
+      error: honorarios.error,
+    }, null, 2));
+    await testInfo.attach("honorarios-ausente-postgrest", { path: ausenciaPath, contentType: "application/json" });
+    expect(honorarios.error).not.toBeNull();
+    expect(["42P01", "PGRST205"]).toContain(honorarios.error?.code);
     const payload = await collectExportData({
       organizationId: creds.org_id,
       requestId: randomUUID(),

@@ -1388,7 +1388,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
   // coletados: o contrato é `lead_id`, não `contact_id` direto.
   //
   // Módulo pode não estar instalado nesta instalação — a tabela então não
-  // existe (42P01) — e o bloco sai vazio nesse caso, sem falhar o export
+  // existe (42P01 no SQL, PGRST205 no PostgREST) — e o bloco sai vazio, sem falhar o export
   // inteiro por causa de um módulo que a organização nem ligou.
   let honorarios_contratos: HonorariosContratoRow[] = [];
   let honorarios_parcelas: HonorariosParcelaRow[] = [];
@@ -1405,7 +1405,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     // novo, em vez de entregar ao titular um export sem o contrato como se fosse
     // completo (ADR-0002 D8 — seção de módulo ilegível nunca sai como completa).
     if (error) {
-      if (error.code !== "42P01") {
+      if (error.code !== "42P01" && error.code !== "PGRST205") {
         throw new Error(`honorarios_contratos_load_failed: ${error.message}`);
       }
     } else if (data) {
