@@ -86,7 +86,7 @@ import {
 } from "@/lib/extensions/consentimento";
 import type { ExtensionPermission } from "@/lib/extensions/capacidades";
 import type { ActivityType } from "@/lib/leads/activity-vocabulary";
-import type { ChannelAdapter, ChannelSendResult } from "../channel-adapter";
+import type { ChannelAdapter, ChannelSendInput, ChannelSendResult } from "../channel-adapter";
 import type { DesfechoDoAvisoAoCliente } from "@/lib/escalacao/passagem";
 import { runBeforeSend } from "../guardrails/before-send";
 import type { Logger } from "../obs/logger";
@@ -638,6 +638,9 @@ export async function enviarTextoSemModelo(
     channelSessionId: string;
     /** `job_queue.id` do turno — o ledger do canal exige chave de dedup. */
     jobId: string;
+    /** Contexto capturado pelo núcleo; a extensão não fornece autoridade. */
+    jobClaim: ChannelSendInput["jobClaim"];
+    agentOperation: ChannelSendInput["agentOperation"];
     agentId: string | null;
     channel: ChannelAdapter;
     texto: string;
@@ -681,6 +684,8 @@ export async function enviarTextoSemModelo(
         tenantId: args.tenantId,
         leadId: args.leadId,
         jobId: args.jobId,
+        jobClaim: args.jobClaim,
+        agentOperation: args.agentOperation,
         seq: args.seq,
         conversationId: args.conversationId,
         body,

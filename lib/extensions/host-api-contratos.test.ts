@@ -13,10 +13,12 @@ const bytesLegados = readFileSync(fixture("catalogo-api2-rev1.json"));
 const legado = leitorApi2.parseCatalog(bytesLegados);
 const documentar = (valor: unknown) => Buffer.from(`${JSON.stringify(valor, null, 2)}\n`);
 const hash = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
-const pacoteNovo = readFileSync(join(raiz, "extensoes/pacotes/deskcomm/consulta-de-laudos-1.0.0.json"));
-const manifestoNovo = JSON.parse(pacoteNovo.toString("utf8")) as ExtensionManifest;
 const bytesNovos = readFileSync(fixture("catalogo-api3-rev4.json"));
 const catalogoNovo = JSON.parse(bytesNovos.toString("utf8")) as ExtensionCatalog;
+const entradaNova = catalogoNovo.entries.find(entrada => entrada.name === "consulta-de-laudos");
+if (!entradaNova) throw new Error("Pacote de laudos ausente do catálogo de prova.");
+const pacoteNovo = readFileSync(join(raiz, "extensoes/pacotes", entradaNova.publisher, `${entradaNova.name}-${entradaNova.version}.json`));
+const manifestoNovo = JSON.parse(pacoteNovo.toString("utf8")) as ExtensionManifest;
 const faixasQuePrometemApi2 = [{ min: 2, max: 2 }, { min: 2, max: 3 }, { min: 1, max: 3 }];
 
 describe("contratos API2 e API3 sobre leitores e bytes reais", () => {
@@ -86,7 +88,9 @@ describe("contratos API2 e API3 sobre leitores e bytes reais", () => {
   });
 
   it("suporta os contratos fechados 2 e 3 sem aceitar contrato exclusivo 1 ou 4", () => {
-    const manifesto = parseManifest(readFileSync(join(raiz, "extensoes/pacotes/deskcomm/primeira-semana-1.0.0.json")));
+    const entrada = legado.entries.find(entrada => entrada.name === "primeira-semana");
+    if (!entrada) throw new Error("Pacote API2 ausente do catálogo legado.");
+    const manifesto = parseManifest(readFileSync(join(raiz, "extensoes/pacotes", entrada.publisher, `${entrada.name}-${entrada.version}.json`)));
     expect(checkCompatibility({ ...manifesto, host_api: { min: 2, max: 2 } }).compatible).toBe(true);
     expect(checkCompatibility({ ...manifesto, host_api: { min: 3, max: 3 } }).compatible).toBe(true);
     for (const api of [1, 4]) expect(checkCompatibility({ ...manifesto, host_api: { min: api, max: api } }).reason).toBe("host_api_unsupported");

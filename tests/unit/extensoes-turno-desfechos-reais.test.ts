@@ -4,6 +4,11 @@ import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
 
+import { assertAgentOperationPg } from "@/lib/ai/agents/operation";
+import { assertCurrentServiceBoundary, parseServiceBoundary, StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
+import type { ChannelSendInput } from "@/lib/agent-engine/channel-adapter";
+import { claimOfJob } from "@/lib/agent-engine/queue/claim";
+
 /**
  * Executa os nós REAIS do host com falhas dirigidas nas bordas. Não importa o
  * runtime inteiro, não copia sua implementação e não inicia banco ou canal.
@@ -35,6 +40,14 @@ const callbackReal = noReal("lib/agent-engine/agent/inbound-turn.ts",
 const coletaReal = noReal("lib/agent-engine/agent/inbound-turn.ts",
   (no, fonte) => ts.isPropertyAssignment(no) && no.name.getText(fonte) === "enviar" &&
     ts.isArrowFunction(no.initializer) && no.initializer.getText(fonte).includes("enviarTextoSemModelo"));
+const sinkReal = noReal("lib/agent-engine/edge/crm/send-message.ts",
+  (no) => ts.isFunctionDeclaration(no) && no.name?.text === "sendTurnMessage");
+const fronteiraReal = ["readCurrentServiceBoundary", "requireCurrentServiceBoundary", "requireCurrentAutonomousTurn"]
+  .map(nome => noReal("lib/atendimento/fronteira-server.ts", no => ts.isFunctionDeclaration(no) && no.name?.text === nome)).join("\n");
+const sqlDaFronteira = noReal("lib/atendimento/fronteira-server.ts",
+  no => ts.isVariableStatement(no) && no.declarationList.declarations.some(d => d.name.getText() === "SERVICE_BOUNDARY_SQL"));
+const claim = { worker_id: "worker-sintetico", acquired_at: "2026-10-27 13:00:00.123456+00" };
+const operacao = { organizationId: "org-sintetica", agentId: "agente-sintetico", versionId: "versao-sintetica", revision: "7" };
 
 async function gravar(opts: { falha?: RegExp; rollbackFalha?: boolean; repetido?: boolean; registroFalha?: boolean } = {}) {
   const erroConsulta = new Error("Query read timeout");
@@ -116,16 +129,19 @@ async function passar(kind: string) {
     erroCurto: () => "erro_sintetico", pool: {}, runLog: { warn() {}, info() {} },
     tenantId: "org-sintetica", leadId: "contato-sintetico",
     input: { conversationId: "conversa-sintetica", channelSessionId: "canal-sintetico" },
-    liveJob: () => ({ id: "job-sintetico" }), agentConfig: null, liveChannel: () => canal,
+    liveJob: () => ({ id: "job-sintetico", locked_by: claim.worker_id, claim_acquired_at: claim.acquired_at }),
+    claimOfJob, agentOperation: operacao, agentConfig: null, liveChannel: () => canal,
     optedOutThisTurn: false, clock: () => new Date("2026-10-26T12:00:00Z"),
     performHumanHandoff: async (_db: unknown, _ids: unknown, opts: { avisoAoLead: unknown }) => { aviso = opts.avisoAoLead; },
   }) as { enviar(texto: string): Promise<boolean>; passarParaHumano(args: unknown): Promise<void> };
   // A fila conserva a custódia da coleta: não devolver à IA nem repetir envio.
   expect(await callbacks.enviar("Pergunta sintética.")).toBe(["sent", "already_sent", "queued"].includes(kind));
   expect(canal.send).toHaveBeenCalledTimes(kind === "vetoed" ? 0 : 1);
+  if (kind !== "vetoed") expect(canal.send).toHaveBeenLastCalledWith(expect.objectContaining({ jobClaim: claim, agentOperation: operacao }));
   canal.send.mockClear();
   await callbacks.passarParaHumano({ campos: { categoria: "patologia" }, aviso: "Passando para a equipe.", idempotencia: "tentativa-1" });
   expect(canal.send).toHaveBeenCalledTimes(kind === "vetoed" ? 0 : 1);
+  if (kind !== "vetoed") expect(canal.send).toHaveBeenLastCalledWith(expect.objectContaining({ jobClaim: claim, agentOperation: operacao }));
   return aviso;
 }
 
@@ -143,4 +159,62 @@ describe("o helper e o callback reais preservam o fato do aviso", () => {
   it.each(["blocked", "failed", "unavailable", "vetoed"])("%s não afirma entrega nem repete envio", async (kind) => {
     expect(await passar(kind)).toMatchObject({ avisado: false });
   });
+});
+
+async function envioAteOLedger(opts: { semClaim?: boolean; claimRevogado?: boolean; agentePausado?: boolean; fronteiraTrocada?: boolean } = {}) {
+  const fronteira = { organization_id: "org-sintetica", contact_id: "contato-sintetico", conversation_id: "conversa-sintetica", service_revision: 1, demanda_id: null, demanda_revision: null };
+  // Só as quatro leituras anteriores ao ledger; SQL não previsto falha. Isto
+  // mede os nós reais com bordas dirigidas, não executa SQL nem prova banco.
+  const query = vi.fn(async (sql: string, params: unknown[]) => {
+    if (sql.startsWith("select published_version_id")) {
+      expect(params).toEqual(["org-sintetica", "agente-sintetico"]);
+      return { rows: [{ published_version_id: "versao-sintetica", operation_revision: "7", operation_mode: "automatic", paused_at: opts.agentePausado ? "2026-10-27T13:00:00Z" : null, archived_at: null }] };
+    }
+    if (sql.startsWith("select payload,kind")) {
+      expect(params).toEqual(["job-sintetico", "org-sintetica", "contato-sintetico"]);
+      return { rows: [{ kind: "inbound_turn", payload: { service_boundary: fronteira } }] };
+    }
+    if (sql.startsWith("select c.organization_id")) {
+      expect(params).toEqual(["org-sintetica", "conversa-sintetica"]);
+      return { rows: [{ ...fronteira, service_revision: opts.fronteiraTrocada ? 2 : 1, status: "open", demanda_fechada_em: null }] };
+    }
+    if (sql.startsWith("select exists")) {
+      expect(params).toEqual(["org-sintetica", "job-sintetico", "contato-sintetico", "inbound_turn", "worker-sintetico", "2026-10-27 13:00:00.123456+00"]);
+      return { rows: [{ current: !opts.claimRevogado }] };
+    }
+    throw new Error("Leitura não prevista na prova anterior ao ledger.");
+  });
+  const ledger = vi.fn(async (_ledger: unknown, _input: ChannelSendInput) => ({ kind: "sent", idempotencyKey: "chave", messageId: "mensagem" }));
+  const executar = runInNewContext(compilar(envioReal) + "; enviarTextoSemModelo", {
+    runBeforeSend: async (args: { body: string; send(body: string): Promise<unknown> }) => ({ status: "sent", outcome: await args.send(args.body) }),
+  }) as (args: unknown) => Promise<unknown>;
+  const enviarNoSink = runInNewContext(compilar(`${sqlDaFronteira}\n${fronteiraReal}\n${sinkReal}`) + "; sendTurnMessage", {
+    assertAgentOperationPg, assertCurrentServiceBoundary, parseServiceBoundary, claimOfJob, StaleServiceBoundaryError,
+    pgSendLedger: () => ({}), sendWithLedger: ledger,
+  }) as (db: unknown, cfg: unknown, input: ChannelSendInput) => Promise<unknown>;
+  const resultado = executar({
+    pool: { query }, log: { warn() {}, info() {} }, tenantId: "org-sintetica", leadId: "contato-sintetico",
+    conversationId: "conversa-sintetica", channelSessionId: "canal-sintetico", jobId: "job-sintetico",
+    jobClaim: opts.semClaim ? undefined : claim, agentOperation: operacao, agentId: "agente-sintetico",
+    channel: { send: (input: ChannelSendInput) => enviarNoSink({ query }, {}, input) },
+    texto: "Pergunta sintética.", optedOutThisTurn: false, agora: new Date("2026-10-27T13:00:00Z"), seq: 1,
+  });
+  if (Object.values(opts).some(Boolean)) await expect(resultado).rejects.toBeInstanceOf(StaleServiceBoundaryError);
+  else await expect(resultado).resolves.toMatchObject({ aceito: true });
+  return { query, ledger };
+}
+
+describe("o envio real da extensão conserva as cercas antes do ledger", () => {
+  it("claim com microssegundos e operação atual permitem chegar ao ledger", async () => {
+    const r = await envioAteOLedger();
+    expect(r.ledger).toHaveBeenCalledTimes(1);
+    expect(r.ledger.mock.calls[0]?.[1]).toMatchObject({ jobClaim: claim, agentOperation: operacao });
+  });
+
+  it.each([{ semClaim: true }, { claimRevogado: true }, { agentePausado: true }, { fronteiraTrocada: true }])(
+    "%j recusa antes de criar intenção de envio", async opts => {
+      const r = await envioAteOLedger(opts);
+      expect(r.ledger).not.toHaveBeenCalled();
+    },
+  );
 });
