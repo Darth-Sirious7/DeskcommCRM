@@ -41,31 +41,47 @@ verdes. O código foi restaurado byte a byte. A rodada final passou 120 casos em
 sete arquivos, um worker, incluindo os 18 casos da matriz. Esses resultados não
 provam admissão persistida, concorrência nem navegador.
 
-## Execução real ainda pendente
+## Banco e tipos observados
+
+A bancada própria PostgreSQL 17.11 aplicou e reaplicou o baseline combinado com
+`ON_ERROR_STOP=1`. A CLI 2.122.0 produziu dois arquivos brutos integrais idênticos,
+SHA256 `03f8719e3dadffbc4b491448823a82b981622ec52c45da5af43bf3104d70da68`.
+Os dois passaram pelo Prettier canônico, também com bytes idênticos, SHA256
+`4107ae4613981137ea860ba839144c3ee6a720d92f8549c5723cd0ed99aa8c07`.
+O arquivo gerado inteiro substituiu o anterior. A comparação por AST preservou
+os 11.632 membros canônicos e as constantes, acrescentando somente a coluna
+`accepted_permissions` em Row/Insert/Update e o argumento da RPC.
+
+Na mesma bancada, a configuração e o setup canônicos executaram oito casos de
+`extensoes-turno-consentimento.test.ts` e dois casos existentes de concorrência
+em `extensoes-declarativas.test.ts`: dez passaram, 37 não foram selecionados,
+um worker. O clone limpo por arquivo e a reaplicação do baseline foram reais,
+por túnel loopback e transporte SSH dos dois comandos psql canônicos ao
+contêiner próprio; nenhum Docker local ou mock de SQL foi usado. O contêiner
+e o túnel foram encerrados e a porta liberada. Isso não é a suíte completa de
+banco, uma rodada PG15 ou prova de interface e retorno entre hosts.
+
+## Interface e retorno ainda pendentes
 
 O roteiro abaixo depende da bancada serial autorizada pela manutenção. Não foi
 executado por esta prova local; não há novas capturas para citar.
 
-1. Aplicar o baseline combinado em instalação fresca e reaplicação com erro
-   alto. Conservar os blocos 0798/0800 e as proteções 6-bis. Gerar os tipos reais
-   com a CLI canônica: a fonte herdada ainda não representa `accepted_permissions`
-   nem o argumento de concessão. Não editar tipos à mão.
-2. Usar os atores e receivers locais reais da suíte. A origem local remapeada
+1. Usar os atores e receivers locais reais da suíte. A origem local remapeada
    deve ser a mesma nos três snapshots; registrar essa transformação separada
    dos bytes públicos preservados na matriz. Pacotes continuam byte idênticos.
-3. Admitir o snapshot com três pela UI normal e instalar/ativar seus artefatos.
+2. Admitir o snapshot com três pela UI normal e instalar/ativar seus artefatos.
    Conferir guias, configuração e ausência de alteração na outra organização.
    Um leitor API2 deve recusar os bytes com quatro antes da RPC; a prova deve
    comparar id, revisão, digest e snapshot admitido antes/depois dessa recusa.
-4. No host novo, admitir a revisão seguinte com quatro e executar TL01–TL07:
+3. No host novo, admitir a revisão seguinte com quatro e executar TL01–TL07:
    instalar não concede envio/passagem/contexto; as concessões continuam
    explícitas; envio/passagem não incluem o aceite de contexto, com os mesmos controles de tenant, contexto, idempotência e SDKs
    HTTP reais. Preservar o orçamento existente, sem pagamento ou credencial real.
-5. Remover laudos pela gestão com revisão esperada e recibo. Conferir remoção
+4. Remover laudos pela gestão com revisão esperada e recibo. Conferir remoção
    lógica, vínculos desligados e configuração/histórico preservados. Só então
    admitir o retorno de três com revisão crescente da mesma origem, pela porta
    normal, sem SQL manual. Conferir os três guias e sua configuração.
-6. Conferir o retorno em host API2 real, pinado por versão/digest, sem restaurar
+5. Conferir o retorno em host API2 real, pinado por versão/digest, sem restaurar
    backup sobre o banco nem rebaixar sua revisão. Um card incompatível não pode
    derrubar a gestão; os três instalados devem continuar utilizáveis. Essa etapa
    não é substituída pela matriz dos parsers.
