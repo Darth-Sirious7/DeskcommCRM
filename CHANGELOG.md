@@ -8,6 +8,30 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.92.0] — 2026-10-27
+
+### Adicionado
+
+- **Dados lidos de documentos podem ser revisados antes de preencher o card** O assistente pode propor valores para os campos do negócio a partir de um
+  documento que leu. O dossiê mostra o valor atual, a proposta e o trecho de origem;
+  quem atende confirma, corrige ou descarta cada campo. As sugestões vencem após
+  sete dias. A confirmação conserva os números mostrados e a anonimização também
+  remove o motivo livre de recusa. Contribuição de @webtecnica, adaptada pela
+  manutenção a partir do PR #3471.
+
+- **O curso ganha histórias visuais para apresentar o sistema por tipo de negócio** O material público reúne exemplos de atendimento em dez setores, com cenas para
+  apresentar ao cliente e links para aprender a montar cada operação. As imagens
+  mostram o sistema real com dados fictícios e distinguem os roteiros das provas
+  separadas do agente. Essa ampliação do curso não exige atualizar ou configurar a
+  instalação do CRM.
+
+### Corrigido
+
+- **Acesso à mídia das conversas respeita a organização ativa** A leitura dos anexos e a reprodução de áudio conferem a organização da mídia
+  antes de liberar o acesso. A atualização não exige configuração adicional.
+
+- **A validade padrão da proposta respeita os dias de calendário no horário de verão** Propostas criadas pelo agente ou pela API sem uma validade explícita passam a contar o prazo configurado em dias de calendário no fuso da organização. Quando o prazo atravessava a entrada ou a saída do horário de verão, uma proposta criada perto da meia-noite podia vencer um dia antes ou depois. Não é preciso mudar a configuração da instalação. Crédito: @samirhvbr.
+
 ## [1.91.0] — 2026-10-26
 
 ### ⚠️ Requer atenção
@@ -13054,7 +13078,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.91.0...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.92.0...HEAD
+[1.92.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.91.0...v1.92.0
 [1.91.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.90.0...v1.91.0
 [1.90.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.89.0...v1.90.0
 [1.89.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.88.0...v1.89.0
