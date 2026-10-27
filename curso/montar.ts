@@ -19,6 +19,7 @@ import path from "node:path";
 
 import { GRUPO_NO_RODAPE, NAV_CATALOG, NAV_GROUPS } from "../lib/navigation/catalogo";
 import { Modulo, chaveDoPasso } from "./licao";
+import { Nicho, validarJornadas } from "./jornada";
 import { menuDoAdmin } from "./menu-do-admin";
 
 const RAIZ = path.dirname(new URL(import.meta.url).pathname);
@@ -31,11 +32,13 @@ function ordemDaTela(href: string): number {
   const i = NAV_CATALOG.findIndex((d) => d.href === href);
   return i >= 0 ? i : NAV_CATALOG.length + menuDoAdmin().findIndex((d) => d.href === href);
 }
-const modulos = readdirSync(path.join(RAIZ, "licoes"))
-  .filter((f) => f.endsWith(".json") && (soEstes.length === 0 || soEstes.includes(f.replace(/\.json$/, ""))))
+const todosModulos = readdirSync(path.join(RAIZ, "licoes"))
+  .filter((f) => f.endsWith(".json"))
   .map((f) => Modulo.parse(JSON.parse(ler(path.join("licoes", f)))))
   // ordem do menu do produto (a empresa, depois o Admin), para o curso seguir a ordem da tela
   .sort((a, b) => ordemDaTela(a.tela) - ordemDaTela(b.tela));
+
+const modulos = todosModulos.filter((m) => soEstes.length === 0 || soEstes.includes(m.id));
 
 const ADMIN = menuDoAdmin();
 const telas = new Set<string>([...NAV_CATALOG.map((d) => d.href), ...ADMIN.map((i) => i.href)]);
@@ -45,7 +48,7 @@ for (const m of modulos) {
 
 const arquivoCapturas = path.join(SAIDA, "capturas.json");
 if (!existsSync(arquivoCapturas)) throw new Error("falta curso/saida/capturas.json — rode curso/capturar.ts antes");
-const { largura, altura, capturas, falhas = [] } = JSON.parse(readFileSync(arquivoCapturas, "utf8"));
+const { largura, altura, capturas: manifesto, falhas = [] } = JSON.parse(readFileSync(arquivoCapturas, "utf8"));
 
 // O capturador conserva fotos anteriores; elas não podem esconder uma falha
 // desta rodada, inclusive de revogação. Manifestos antigos não tinham `falhas`.
@@ -54,6 +57,33 @@ const modulosComFalha = modulos.filter((m) => falhas.some((falha: string) =>
 )).map((m) => m.id);
 if (modulosComFalha.length) {
   throw new Error(`capturas com falha nos módulos selecionados: ${modulosComFalha.join(", ")} — capture novamente antes de montar`);
+}
+
+const pastaJornadas = path.join(RAIZ, "demonstracoes");
+const todosNichos = existsSync(pastaJornadas) ? readdirSync(pastaJornadas).filter((f) => f.endsWith(".json")).sort()
+  .map((f) => Nicho.parse(JSON.parse(readFileSync(path.join(pastaJornadas, f), "utf8")))) : [];
+// Recorte de desenvolvimento: não publicar histórias com links para lições omitidas.
+const nichos = todosNichos.map((n) => ({ ...n, jornadas: n.jornadas.filter((j) =>
+  j.montagem.every((ref) => modulos.some((m) => m.id === ref.modulo)),
+) })).filter((n) => n.jornadas.length > 0);
+// A montagem completa valida tudo; um recorte não depende das fotos omitidas.
+validarJornadas(soEstes.length === 0 ? todosNichos : nichos, todosModulos, manifesto);
+const cenasPendentes = nichos.flatMap((n) => n.jornadas.flatMap((j) => j.cenas
+  .filter((c) => falhas.includes(c.captura)).map((c) => c.captura),
+));
+if (cenasPendentes.length) {
+  throw new Error(`capturas pendentes nas jornadas publicadas: ${cenasPendentes.join(", ")} — recapture antes de montar`);
+}
+const referenciadas = new Set([
+  ...modulos.flatMap((m) => m.licoes.flatMap((l) => l.passos.map((p) => chaveDoPasso(m.id, l.id, p.id)))),
+  ...nichos.flatMap((n) => n.jornadas.flatMap((j) => j.cenas.map((c) => c.captura))),
+]);
+const capturas = Object.fromEntries(Object.entries(manifesto).filter(([chave]) => referenciadas.has(chave)));
+for (const [chave, captura] of Object.entries(capturas)) {
+  const foto = (captura as { foto?: unknown }).foto;
+  if (typeof foto !== "string" || !/^(?:fotos|capturas)\/[a-zA-Z0-9_./-]+\.(png|webp|jpe?g)$/.test(foto) || foto.split("/").includes("..") || !existsSync(path.join(SAIDA, foto))) {
+    throw new Error(`foto ausente ou inválida: ${chave}`);
+  }
 }
 
 const faltando = modulos.flatMap((m) =>
@@ -107,6 +137,7 @@ const dados = {
   largura,
   altura,
   modulos,
+  nichos,
   capturas,
   menu,
 };
@@ -114,9 +145,9 @@ const dados = {
 // "<" escapado: o JSON vai dentro de <script>, e um "</script>" num texto de lição fecharia a tag
 const json = JSON.stringify(dados).replace(/</g, "\\u003c");
 const html = ler("site/pagina.html")
-  .replace("/*ESTILO*/", () => ler("site/estilo.css"))
+  .replace("/*ESTILO*/", () => ler("site/estilo.css") + "\n" + ler("site/demonstracoes.css"))
   .replace("/*DADOS*/", () => json)
-  .replace("/*APP*/", () => ler("site/app.js"));
+  .replace("/*APP*/", () => ler("site/demonstracoes.js") + "\n" + ler("site/app.js"));
 const DOCUMENTO = `<!doctype html>
 <html lang="pt-BR">
 <meta charset="utf-8">

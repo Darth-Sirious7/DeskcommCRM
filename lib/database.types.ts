@@ -6078,6 +6078,52 @@ export type Database = {
           },
         ];
       };
+      conversation_participants: {
+        Row: {
+          conversation_id: string;
+          id: string;
+          invited_by: string | null;
+          joined_at: string;
+          left_at: string | null;
+          organization_id: string;
+          user_id: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          conversation_id: string;
+          id?: string;
+          invited_by?: string | null;
+          joined_at?: string;
+          left_at?: string | null;
+          organization_id: string;
+          user_id: string;
+        };
+        Update: {
+          conversation_id?: string;
+          id?: string;
+          invited_by?: string | null;
+          joined_at?: string;
+          left_at?: string | null;
+          organization_id?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "conversation_participants_conversation_id_fkey";
+            columns: ["conversation_id"];
+            isOneToOne: false;
+            referencedRelation: "conversations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "conversation_participants_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       conversations: {
         Row: {
           active_agent_set_at: string | null;
