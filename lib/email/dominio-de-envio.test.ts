@@ -234,10 +234,10 @@ describe("DMARC e estado oficial permanecem separados", () => {
     expect(d).not.toHaveProperty("prontoParaEnviar");
   });
   it.each([
-    [],
-    [["v=DMARC1; rua=mailto:d@lojadaana.com"]],
-    [["v=DMARC1; p=none"], ["v=DMARC1; p=reject"]],
-  ])("ausência/política inválida não recebe selo de envio", (registros) => {
+    { registros: [] },
+    { registros: [["v=DMARC1; rua=mailto:d@lojadaana.com"]] },
+    { registros: [["v=DMARC1; p=none"], ["v=DMARC1; p=reject"]] },
+  ])("ausência/política inválida não recebe selo de envio", ({ registros }) => {
     expect(diagnostico(registros).bloqueios).toHaveLength(1);
   });
   it("estado verified e envio habilitado vêm da Resend, mesmo se o DNS divergir", () => {

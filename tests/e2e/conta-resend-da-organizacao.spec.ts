@@ -22,7 +22,6 @@ const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 type Creds = {
   password: string;
   org_id: string;
-  org_name: string;
   users: { admin: { id: string; email: string } };
   admin_totp: { secret: string };
 };
@@ -108,6 +107,14 @@ test("admin conecta e recarrega sem segredo, confere DNS, envia por duas contas 
   ).toBe(true);
   expect(process.env.RESEND_BASE_URL).toBe(RECEIVER);
   const db = bancoLocal();
+  const original = await db
+    .from("organizations")
+    .select("display_name")
+    .eq("id", creds.org_id)
+    .single();
+  if (original.error || !original.data?.display_name)
+    throw new Error("Não foi possível confirmar o nome atual da organização original.");
+  const nomeOriginal = original.data.display_name;
   const suffix = randomUUID();
   const names = [
     `Empresa a sintética ${suffix.slice(0, 8)}`,
@@ -379,7 +386,7 @@ test("admin conecta e recarrega sem segredo, confere DNS, envia por duas contas 
     expect(await count(ids[1]!)).toBe(1);
     await noSecret();
     await capture("06-desconectada-vizinha-preservada.png");
-    await trocar(page, creds.org_id, creds.org_name);
+    await trocar(page, creds.org_id, nomeOriginal);
     evidence = {
       candidate_sha: process.env.CANDIDATO_SHA ?? null,
       checkout_sha: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
