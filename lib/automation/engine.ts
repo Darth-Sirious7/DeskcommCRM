@@ -35,6 +35,7 @@ import {
   GATILHOS_DO_TRIGGER_DE_LEAD,
 } from "@/lib/schemas/webhooks";
 import { logger } from "@/lib/logger";
+import { ocultarProvaMetaNaResposta } from "@/lib/leads/prova-meta-lead-submitted";
 
 export const AUTOMATION_CONSUMER_KEY = "automation-rules";
 
@@ -90,7 +91,7 @@ export async function buildContext(admin: SupabaseClient, row: EventRow): Promis
           .maybeSingle()
       : { data: null };
     if (lead) {
-      context.lead = lead;
+      context.lead = ocultarProvaMetaNaResposta(lead as Record<string, unknown>);
       if (lead.contact_id) {
         const { data: contact } = await admin
           .from("contacts")
