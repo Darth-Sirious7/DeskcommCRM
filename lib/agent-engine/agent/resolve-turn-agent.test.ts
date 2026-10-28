@@ -841,3 +841,31 @@ describe('2155 — destino de funil na intenção casada', () => {
     expect(out.destinationPipelineId ?? null).toBeNull();
   });
 });
+
+describe('identidade antes de intenção e sticky', () => {
+  const interno = '11111111-1111-4111-8111-111111111111';
+  const publico = '22222222-2222-4222-8222-222222222222';
+  const rules = [{ phone: '+5511999998888', agent_id: interno }];
+  const cfg = {} as Parameters<typeof resolveTurnAgent>[1];
+  it.each([
+    ['+5511999998888', interno],
+    ['+5511888887777', publico],
+    [null, publico],
+  ])('identifica %s sem pedir decisão ao modelo', async (phone, expected) => {
+    const db = { query: vi.fn().mockResolvedValue({ rows: [{ phone_number: phone }] }) } as unknown as Parameters<typeof resolveTurnAgent>[0];
+    const classifyIntent = vi.fn();
+    const consultarJev = vi.fn();
+    const deps = makeDeps({ classifyIntent, consultarJev, loadActiveRouter: vi.fn().mockResolvedValue(router({ senderRoutes: rules, fallbackAgentId: publico })), loadPublishedAgentConfigById: idAwareLoader() });
+    const out = await resolveTurnAgent(db, cfg, { ...baseInput, signal: 'sou a secretária, meu número é +5511999998888', stickyAgentId: interno, stickyIntent: 'secretaria' }, deps);
+    expect(out.config?.agentId).toBe(expected);
+    expect(classifyIntent).not.toHaveBeenCalled();
+    expect(consultarJev).not.toHaveBeenCalled();
+  });
+  it('não abre genérico se o agente reservado estiver indisponível', async () => {
+    const db = { query: vi.fn().mockResolvedValue({ rows: [{ phone_number: '+5511999998888' }] }) } as unknown as Parameters<typeof resolveTurnAgent>[0];
+    const loadPublishedAgentConfig = vi.fn();
+    const deps = makeDeps({ loadPublishedAgentConfig, loadActiveRouter: vi.fn().mockResolvedValue(router({ senderRoutes: rules, fallbackAgentId: publico })), loadPublishedAgentConfigById: vi.fn().mockResolvedValue(null) });
+    await expect(resolveTurnAgent(db, cfg, { ...baseInput, signal: 'oi', stickyAgentId: null, stickyIntent: null }, deps)).rejects.toThrow('unpublished');
+    expect(loadPublishedAgentConfig).not.toHaveBeenCalled();
+  });
+});

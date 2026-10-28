@@ -352,3 +352,25 @@ describe("destino do funil/etapa do roteador (#2415)", () => {
     );
   });
 });
+
+describe('regras por remetente', () => {
+  it('carrega a associação e salva a troca de telefone', () => {
+    authMock.mockReturnValue({ activeOrg: { modulos_ligados: [] } });
+    flowsMock.mockReturnValue({ data: undefined });
+    routerDataMock.mockReturnValue({ data: undefined });
+    updateMock.mockClear();
+    const agentId = '11111111-1111-4111-8111-111111111111';
+    const fallback = '22222222-2222-4222-8222-222222222222';
+    render(<RouterEditorClient routerId="r1" initialState={{
+      router: { id: 'r1', name: 'R', channel_session_id: 's1', is_active: true, fallback_agent_id: fallback,
+        config: { sender_routes: [{ phone: '+5511999998888', agent_id: agentId }] } }, members: [],
+    }} agents={[{ id: agentId, name: 'Secretária' }, { id: fallback, name: 'Paciente' }]} channelSessions={[]} classifierModels={[]} />);
+    const phone = screen.getByLabelText('Telefone com DDI');
+    expect(phone).toHaveValue('+5511999998888');
+    fireEvent.change(phone, { target: { value: '+5511888887777' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Salvar$/ }));
+    expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ config: expect.objectContaining({
+      sender_routes: [{ phone: '+5511888887777', agent_id: agentId }],
+    }) }));
+  });
+});
