@@ -20,7 +20,7 @@ const { authMock, flowsMock, testeMock, updateMock, pipelinesMock, stagesMock, r
 }));
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
-vi.mock("@/hooks/auth/AuthProvider", () => ({ useAuth: authMock, usePermission: () => true }));
+vi.mock("@/hooks/auth/AuthProvider", () => ({ useAuth: authMock, usePermission: () => true, usePaisDaOrgAtiva: () => "BR" }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));
 vi.mock("@/hooks/followup/useFollowupFlows", () => ({ useFollowupFlows: flowsMock }));
 // #2155 — o seletor de funil/etapa de destino usa os MESMOS hooks dos webhooks:

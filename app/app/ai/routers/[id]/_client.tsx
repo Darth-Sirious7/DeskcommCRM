@@ -3,6 +3,7 @@ import { senderRoutesSchema, type SenderRoute } from "@/lib/ai/agents/sender-rou
 import * as React from "react";
 import Link from "next/link";
 import { useRouter as useNextRouter } from "next/navigation";
+import { useTelefoneExemplo } from "@/hooks/contacts/useTelefoneExemplo";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -129,6 +130,7 @@ export function RouterEditorClient({
   const members = data?.members ?? initialState.members;
 
   const channel = channelSessions.find((c) => c.id === router.channel_session_id);
+  const telefoneExemplo = useTelefoneExemplo();
 
   const [senderRoutes, setSenderRoutes] = React.useState<SenderRoute[]>(() => {
     const parsed = senderRoutesSchema.safeParse(router.config?.sender_routes ?? []);
@@ -394,12 +396,12 @@ export function RouterEditorClient({
               )}
             </p>
             {senderRoutes.map((route, index) => (
-              <div key={index} className="space-y-2 rounded border p-2">
+              <div key={index} className="space-y-2 rounded-md border p-2">
                 <Label htmlFor={`sender-phone-${index}`}>{t("Telefone com DDI")}</Label>
                 <Input
                   id={`sender-phone-${index}`}
                   value={route.phone ?? ""}
-                  placeholder="+5511999998888"
+                  placeholder={telefoneExemplo}
                   disabled={!canManage}
                   onChange={(e) =>
                     setSenderRoutes((prev) =>
